@@ -129,7 +129,7 @@ def cmd_batch(args) -> int:
     opts = options_from_args(args, cfg)
     store = open_store(cfg)
     try:
-        inputs = collect_inputs(d.resolve())
+        inputs = collect_inputs(d.resolve(), exclude=opts.output_dir)
         job = run_batch(store, cfg, get_engines(cfg), inputs, opts, emit=_emit_verbose(args.verbose),
                         input_root=d.resolve())
         rows = manifest_rows(store, job, input_root=d.resolve())
