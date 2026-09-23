@@ -93,9 +93,17 @@ def test_timeout_is_transient(env):
 def test_cancel_during_backoff(env, monkeypatch):
     monkeypatch.setattr("aidoc.pipeline.RETRY_POLICY", RetryPolicy(max_transient=2, backoff=(30.0, 30.0)))
     write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "crash"}])
-    tid = env["make"](); ev = threading.Event(); threading.Timer(0.5, ev.set).start(); t0 = time.time()
+    tid = env["make"](); ev = threading.Event(); set_at = []
+
+    def cancel_in_backoff():                  # Review Focus 4: set cancel while the 30 s backoff is running
+        while not (env["store"].get_task(tid) or {}).get("tried"):
+            time.sleep(0.02)
+        time.sleep(0.2)
+        set_at.append(time.time()); ev.set()
+    threading.Thread(target=cancel_in_backoff, daemon=True).start()
     assert run_task(env["store"], tid, env["engines"](), env["cfg"], cancel=ev) == TaskStatus.cancelled
-    assert time.time() - t0 < 5
+    assert set_at and time.time() - set_at[0] < 1.0
+    assert len(env["store"].get_task(tid)["tried"]) == 1       # no second attempt started
 
 
 def test_input_error_from_engine_fails_without_retry(env):
