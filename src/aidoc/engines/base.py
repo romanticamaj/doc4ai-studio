@@ -1,6 +1,7 @@
 """Engine interface (index §3) and the concrete RunnerEngine base used by all engines."""
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -42,7 +43,7 @@ def raw_from_result(res: dict, raw_dir: Path) -> RawResult:
 
 
 class RunnerEngine:
-    """Engine backed by a runner script in envs/<name>/.venv (one-shot runner per convert in P1)."""
+    """Engine backed by a runner script in envs/<name>/.venv; open_session() keeps one runner alive."""
     name: str = ""
 
     def __init__(self, config: AidocConfig | None = None):
@@ -81,22 +82,53 @@ class RunnerEngine:
                 "engine_opts": engine_opts, "kind": probe.kind,
                 "pages": list(pages) if pages else None, "segment_idx": segment_idx}
 
+    def open_session(self, opts: ConvertOptions, probe: ProbeResult, *, engine_opts: dict | None = None,
+                     full_page_ocr: bool = False) -> RunnerSession:
+        """Start the runner once; every convert() on the session reuses the loaded models (spec §3)."""
+        from aidoc.engines.host import RunnerHost
+        eo = engine_opts if engine_opts is not None else self.engine_opts(opts, probe, full_page_ocr)
+        host = RunnerHost(self.python(), self.script(), self.env_extra(), self.config.limits.startup_timeout_s)
+        cwd = paths.data_dir() / "work"
+        host.start(cwd)
+        return RunnerSession(self, host, eo, opts, probe)
+
     def convert(self, src: Path, workdir: Path, opts: ConvertOptions, pages: tuple[int, int] | None,
                 on_progress: ProgressCb, *, timeout_s: float, probe: ProbeResult,
                 engine_opts: dict | None = None, full_page_ocr: bool = False, segment_idx: int = 0,
-                on_start=None) -> RawResult:
-        from aidoc.engines.host import RunnerHost
+                on_start=None, cancel: threading.Event | None = None) -> RawResult:
+        """One-shot conversion: open_session -> convert -> close."""
+        session = self.open_session(opts, probe, engine_opts=engine_opts, full_page_ocr=full_page_ocr)
+        if on_start is not None:
+            on_start(session.pid)
+        try:
+            return session.convert(src, workdir, pages, on_progress, timeout_s=timeout_s, segment_idx=segment_idx,
+                                   cancel=cancel)
+        finally:
+            session.close()
+
+
+class RunnerSession:
+    """A live runner process for one engine attempt; sends one request per segment (index §5 multi-request)."""
+
+    def __init__(self, engine: RunnerEngine, host, engine_opts: dict, opts: ConvertOptions, probe: ProbeResult):
+        self.engine = engine
+        self.host = host
+        self.engine_opts = dict(engine_opts)
+        self.opts = opts
+        self.probe = probe
+
+    @property
+    def pid(self) -> int | None:
+        return self.host.pid
+
+    def convert(self, src: Path, workdir: Path, pages: tuple[int, int] | None, on_progress: ProgressCb, *,
+                timeout_s: float, segment_idx: int = 0, cancel: threading.Event | None = None) -> RawResult:
         workdir = Path(workdir).resolve()
         src = Path(src).resolve()
         workdir.mkdir(parents=True, exist_ok=True)
-        eo = engine_opts if engine_opts is not None else self.engine_opts(opts, probe, full_page_ocr)
-        req = self.build_request(src, workdir, opts, probe, pages, eo, segment_idx)
-        host = RunnerHost(self.python(), self.script(), self.env_extra(), self.config.limits.startup_timeout_s)
-        host.start(workdir)
-        if on_start is not None:
-            on_start(host.pid)
-        try:
-            res = host.run(req, workdir, timeout_s, on_progress)
-        finally:
-            host.close()
+        req = self.engine.build_request(src, workdir, self.opts, self.probe, pages, self.engine_opts, segment_idx)
+        res = self.host.run(req, workdir, timeout_s, on_progress, cancel=cancel)
         return raw_from_result(res, workdir / "raw")
+
+    def close(self) -> None:
+        self.host.close()

@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from aidoc import paths, procs
-from aidoc.engines.base import EngineError
+from aidoc.engines.base import EngineCancelled, EngineError
 from aidoc.models import ConvertOptions, ErrorKind, ProgressCb
 
 _PREFIXES = ("AIDOC_READY", "AIDOC_PROGRESS", "AIDOC_DONE", "AIDOC_ERROR")
@@ -107,11 +107,17 @@ class RunnerHost:
         code = self.proc.returncode if self.proc else None
         raise EngineError(ErrorKind.transient, f"{why} (code {code}): {tail[-500:]}", oom=oom)
 
-    def _wait_ready(self, on_progress: ProgressCb) -> None:
+    def _check_cancel(self, cancel: threading.Event | None) -> None:
+        if cancel is not None and cancel.is_set():
+            self.kill()
+            raise EngineCancelled("cancelled")
+
+    def _wait_ready(self, on_progress: ProgressCb, cancel: threading.Event | None = None) -> None:
         if self.ready:
             return
         deadline = time.monotonic() + self.startup_timeout_s
         while True:
+            self._check_cancel(cancel)
             line = self._next_line()
             if line is None or (line == "" and not self.alive() and self._lines.empty()):
                 self._raise_dead("runner exited during startup")
@@ -126,14 +132,17 @@ class RunnerHost:
                 self.kill()
                 raise EngineError(ErrorKind.transient, f"startup timeout after {self.startup_timeout_s:.0f}s")
 
-    def run(self, request: dict, workdir: Path, timeout_s: float, on_progress: ProgressCb) -> dict:
+    def run(self, request: dict, workdir: Path, timeout_s: float, on_progress: ProgressCb,
+            cancel: threading.Event | None = None) -> dict:
+        """Send one request and wait for its result. `cancel` is polled every 0.25 s (set -> kill, EngineCancelled)."""
         if self.proc is None:
             raise RuntimeError("RunnerHost.start() not called")
         workdir = Path(workdir).resolve()          # runner cwd is the workdir: never hand it a relative path
         workdir.mkdir(parents=True, exist_ok=True)
         req_path = workdir / "request.json"
         req_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
-        self._wait_ready(on_progress)
+        self._wait_ready(on_progress, cancel)
+        self._check_cancel(cancel)
         try:
             assert self.proc.stdin is not None
             self.proc.stdin.write((str(req_path) + "\n").encode("utf-8"))
@@ -142,8 +151,10 @@ class RunnerHost:
             self._raise_dead("runner stdin closed")
         deadline = time.monotonic() + timeout_s
         while True:
+            self._check_cancel(cancel)
             line = self._next_line()
             if line is None or (line == "" and not self.alive() and self._lines.empty()):
+                self._check_cancel(cancel)
                 self._raise_dead("runner exited")
             if time.monotonic() > deadline:
                 self.kill()
@@ -157,7 +168,12 @@ class RunnerHost:
             elif kind == "DONE":
                 return json.loads(Path(payload["result"]).read_text(encoding="utf-8"))
             elif kind == "ERROR":
-                raise EngineError(ErrorKind(payload.get("kind", "engine")), payload.get("message", ""))
+                kind_s, msg = str(payload.get("kind", "engine")), str(payload.get("message", ""))
+                try:
+                    kind_e = ErrorKind(kind_s)
+                except ValueError:                   # unknown kind from a runner: treat as an engine failure
+                    kind_e, msg = ErrorKind.engine, f"[runner error kind {kind_s!r}] {msg}"
+                raise EngineError(kind_e, msg)
             elif kind is None:
                 on_progress(-1.0, line.rstrip("\r\n"))   # log line, fraction -1 means "no progress info"
 

@@ -23,5 +23,13 @@ class FakeEngine(RunnerEngine):
     def available(self) -> bool:
         return True
 
+    def _real(self) -> RunnerEngine:
+        from aidoc.engines.registry import _CLASSES
+        return _CLASSES[self.name](self.config)
+
     def engine_opts(self, opts: ConvertOptions, probe: ProbeResult, full_page_ocr: bool = False) -> dict:
-        return {"fake_engine": self.name}
+        """The real engine's options (so retry/OOM rules behave as in production) plus the fake's name."""
+        return {**self._real().engine_opts(opts, probe, full_page_ocr), "fake_engine": self.name}
+
+    def oom_downgrade(self, engine_opts: dict) -> dict | None:
+        return self._real().oom_downgrade(engine_opts)

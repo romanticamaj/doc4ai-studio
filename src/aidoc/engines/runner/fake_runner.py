@@ -76,13 +76,15 @@ def handle(req):
     sc = _load_scenario()
     attempt = _attempt_no(sc, req["src"], req["engine_opts"].get("fake_engine", ""), req.get("pages"))
     b = _behavior(sc, req, attempt)
-    time.sleep(float(sc.get("delay_s", 0)))
+    if b != "slow_ok":
+        time.sleep(float(sc.get("delay_s", 0)))
     if b == "ok":
         return _write_ok(req, sc)
     if b == "no_pages":
         return _write_ok(req, sc, with_pages=False)
     if b == "slow_ok":
-        time.sleep(float(sc.get("slow_s", 5)))
+        # index §6: slow_ok sleeps delay_s; `slow_s` (tests) overrides it for slow_ok only
+        time.sleep(float(sc.get("slow_s", sc.get("delay_s", 0))))
         return _write_ok(req, sc)
     if b == "low":
         out = Path(req["out_dir"])
@@ -92,6 +94,8 @@ def handle(req):
                 "first_table": None, "last_table": None}
     if b == "error":
         raise _proto.RunnerError("engine", "fake engine error")
+    if b == "bad_kind":                                 # protocol robustness test: unknown error kind
+        raise _proto.RunnerError("weird", "weird kind error")
     if b == "input_error":
         raise _proto.RunnerError("input", "fake input error")
     if b == "oom":
