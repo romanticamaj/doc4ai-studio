@@ -19,7 +19,9 @@ def engine_supports(engine: str, probe: ProbeResult) -> bool:
 
 
 def _rule(probe: ProbeResult, opts: ConvertOptions) -> tuple[list[str], str]:
-    en = opts.lang == "en"
+    # §13.2 (revised in P2): English scans go to Docling first only when its OCR has an English-specific model
+    # (EasyOCR `en`). RapidOCR loads one multilingual PP-OCRv6 model for every language, so no gain there.
+    en = opts.lang == "en" and opts.docling_ocr == "easyocr"
     if probe.kind != "pdf" and probe.kind != "image":
         if probe.ext not in MARKITDOWN_EXTS:
             return [], "unsupported_type"

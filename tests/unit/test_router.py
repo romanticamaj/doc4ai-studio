@@ -32,10 +32,16 @@ def test_rules(probe, expected, reason):
     assert d.engines == expected and d.reason == reason
 
 
-def test_lang_en_scanned_prefers_docling():
-    assert route(pdf(text_ratio=0.0), opts(lang="en"), ALL).engines == ["docling", "mineru"]
-    assert route(ProbeResult(kind="image", ext=".png", size=1), opts(lang="en"), ALL).engines == ["docling", "mineru"]
-    assert route(pdf(text_ratio=1.0, math_hint=True), opts(lang="en"), ALL).engines == ["mineru", "docling"]
+def test_lang_en_scanned_prefers_docling_only_with_an_english_ocr_model():
+    """§13.2 (revised in P2): Docling first for English scans only when its OCR has an English model (EasyOCR `en`).
+    RapidOCR (default, spike B) loads the same multilingual PP-OCRv6 model for `en` and `chinese_cht`."""
+    en_easy = opts(lang="en", docling_ocr="easyocr")
+    assert route(pdf(text_ratio=0.0), en_easy, ALL).engines == ["docling", "mineru"]
+    assert route(ProbeResult(kind="image", ext=".png", size=1), en_easy, ALL).engines == ["docling", "mineru"]
+    assert route(pdf(text_ratio=1.0, math_hint=True), en_easy, ALL).engines == ["mineru", "docling"]
+    en_rapid = opts(lang="en", docling_ocr="rapidocr")
+    assert route(pdf(text_ratio=0.0), en_rapid, ALL).engines == ["mineru", "docling"]
+    assert route(ProbeResult(kind="image", ext=".png", size=1), en_rapid, ALL).engines == ["mineru", "docling"]
 
 
 def test_forced_engine_no_fallback():
