@@ -108,3 +108,57 @@ def test_cancel_command(live_server, ctx, tmp_root, fixtures, monkeypatch, capsy
     monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: None)
     assert main(["cancel", job["id"]]) == 1
     assert "no server running" in capsys.readouterr().err
+
+
+def test_convert_forwards_to_running_server(live_server, ctx, tmp_root, fixtures, monkeypatch, capsys):
+    import json
+
+    from aidoc.cli import main
+    shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
+    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
+    ctx.queue.start()
+    assert main(["convert", str(tmp_root / "t.pdf"), "-o", str(tmp_root / "o3"), "--json"]) == 0
+    captured = capsys.readouterr()
+    out = json.loads(captured.out)
+    assert out["status"] == "done" and out["sha256"] and "forwarding to server" in captured.err
+    assert ctx.store.list_jobs()[0]["origin"] == "cli"
+
+
+def _mock_client(handler, lock_path=None):
+    import httpx
+    c = ServerClient("http://127.0.0.1:1", None, transport=httpx.MockTransport(handler))
+    c.lock_path = lock_path
+    return c
+
+
+def test_unreachable_server_is_a_clear_error(tmp_root, monkeypatch, capsys):
+    """Final review I4: a lock whose server is not listening yet gives a message, not a traceback."""
+    import httpx
+
+    from aidoc.cli import main
+
+    def refuse(request):
+        raise httpx.ConnectError("connection refused")
+    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: _mock_client(refuse))
+    (tmp_root / "in").mkdir()
+    (tmp_root / "in" / "a.md").write_text("# a")
+    assert main(["batch", str(tmp_root / "in")]) == 1
+    assert main(["convert", str(tmp_root / "in" / "a.md")]) == 1
+    assert main(["cancel", "x"]) == 1
+    err = capsys.readouterr().err
+    assert err.count("cannot reach the aidoc server") == 3 and "Traceback" not in err
+
+
+def test_follow_stops_when_the_server_is_gone(tmp_root, capsys):
+    import httpx
+
+    from aidoc.batch import run_batch_via_server
+
+    def handler(request):
+        if request.method == "POST" and request.url.path == "/api/jobs":
+            return httpx.Response(201, json={"job": {"id": "j1", "status": "queued"}})
+        raise httpx.ConnectError("gone")
+    c = _mock_client(handler, lock_path=tmp_root / "data" / "aidoc.lock")      # no lock: the server exited
+    (tmp_root / "a.md").write_text("# a")
+    rc = run_batch_via_server(c, [tmp_root / "a.md"], ConvertOptions(output_dir=tmp_root / "out"), print)
+    assert rc == 1 and "server stopped; job j1" in capsys.readouterr().out

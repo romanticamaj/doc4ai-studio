@@ -24,7 +24,13 @@ class ServerError(Exception):
         super().__init__(f"server replied {status}: {err}")
 
 
+class ServerGone(Exception):
+    """The server stopped while we were following a job."""
+
+
 class ServerClient:
+    lock_path: Path | None = None            # set by find_server: lets follow_job notice the server has exited
+
     def __init__(self, base_url: str, token: str | None, transport: httpx.BaseTransport | None = None,
                  timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
@@ -51,7 +57,8 @@ class ServerClient:
                 "lang": opts.lang, "force": opts.force, "retry_low": opts.retry_low,
                 "allow_online_audio": opts.allow_online_audio, "origin": "cli",
                 "output_dir": str(Path(opts.output_dir).resolve()), "timeout_s": opts.timeout_s}
-        return self._json(self._http.post("/api/jobs", json=body))["job"]
+        # the server hashes every input before answering: no read timeout for big batches
+        return self._json(self._http.post("/api/jobs", json=body, timeout=httpx.Timeout(30.0, read=None)))["job"]
 
     def get_job(self, job_id: str) -> dict:
         return self._json(self._http.get(f"/api/jobs/{job_id}"))
@@ -96,6 +103,7 @@ class ServerClient:
         "detached" when `stop` is set. Reconnects with Last-Event-ID; `resync` refetches the job."""
         last_id: int | None = None
         state: dict = {}
+        failures = 0
 
         def check_job() -> None:
             d = self.get_job(job_id)
@@ -125,8 +133,14 @@ class ServerClient:
                             return payload["status"]
                 if state.get("status") in TERMINAL_JOB:
                     return state["status"]
+                failures = 0
             except (httpx.TransportError, httpx.HTTPError):
-                time.sleep(1.0)                    # server restarting / network blip: reconnect with Last-Event-ID
+                failures += 1                      # network blip: reconnect with Last-Event-ID, unless it is gone
+                if self.lock_path is not None and not lockfile.is_live(lockfile.read_lock(self.lock_path)):
+                    raise ServerGone(self.base_url) from None
+                if failures >= 30:
+                    raise ServerGone(self.base_url) from None
+                time.sleep(1.0)
         return "detached"
 
 
@@ -145,4 +159,6 @@ def find_server(config, token: str | None = None) -> ServerClient | None:
         host = "127.0.0.1"
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
-    return ServerClient(f"http://{host}:{info['port']}", cli_token(config, token))
+    client = ServerClient(f"http://{host}:{info['port']}", cli_token(config, token))
+    client.lock_path = Path(config.data_dir) / "aidoc.lock"
+    return client

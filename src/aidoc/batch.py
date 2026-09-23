@@ -166,11 +166,15 @@ def run_batch_via_server(client, inputs: list[Path], opts: ConvertOptions, print
         extra = f"  {p.get('error_kind')}: {p.get('error_msg')}" if p["status"] == TaskStatus.failed.value else ""
         print_fn(f"{p['status']:10} {_source_label(p['source_path'], input_root)} {p.get('engine') or ''}{extra}"
                  .rstrip())
+    from aidoc.client import ServerGone
     try:
         final = client.follow_job(job_id, on_event, threading.Event())
     except KeyboardInterrupt:
         print_fn(f"detached; job {job_id} keeps running (aidoc cancel {job_id} to cancel)")
         return 0
+    except ServerGone:
+        print_fn(f"server stopped; job {job_id} resumes when `aidoc serve` starts again")
+        return 1
     detail = client.get_job(job_id)
     for t in detail["tasks"]:                           # anything the stream did not show (e.g. already cached)
         on_event("task.updated", t)

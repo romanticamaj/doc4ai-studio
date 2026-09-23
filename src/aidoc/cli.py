@@ -21,6 +21,7 @@ def _add_convert_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--allow-online-audio", action="store_true",
                    help="allow audio transcription (sends audio to an online service)")
     p.add_argument("-v", "--verbose", action="store_true", help="print engine log lines to stderr")
+    p.add_argument("--token", help="API token of a running server (default: AIDOC_TOKEN, aidoc.toml server.token)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,7 +35,6 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("batch", help="convert every file under a directory (recursive)")
     b.add_argument("dir")
     _add_convert_options(b)
-    b.add_argument("--token", help="API token of a running server (default: AIDOC_TOKEN, aidoc.toml server.token)")
     ch = sub.add_parser("chunk", help="split converted documents into RAG chunks (chunks.jsonl)")
     ch.add_argument("dir", help="output root that holds the converted document dirs")
     ch.add_argument("--max-tokens", type=int, default=800, help="chunk size limit in cl100k_base tokens")
@@ -96,7 +96,6 @@ def cmd_convert(args) -> int:
     from aidoc.config import load_config
     from aidoc.engines.registry import get_engines
     from aidoc.models import TaskStatus
-    from aidoc.output import read_sidecar
     from aidoc.pipeline import run_task
 
     src = Path(args.file)
@@ -106,6 +105,23 @@ def cmd_convert(args) -> int:
     src = src.resolve()
     cfg = load_config()
     opts = options_from_args(args, cfg)
+    from aidoc import client as client_mod
+    from aidoc.clilock import CliRunLock
+    server = client_mod.find_server(cfg, args.token)
+    if server is not None:                   # spec §8.1: the server owns the queue
+        try:
+            got = _convert_via_server(server, src, opts, args)
+        except (client_mod.ServerError, client_mod.ServerGone, httpx_errors()) as e:
+            print(_server_error_text(e, server), file=sys.stderr)
+            return 1
+        finally:
+            server.close()
+        if isinstance(got, int):
+            return got
+        status, task = got
+        return _print_convert_result(args, src, status, task)
+    run_lock = CliRunLock(cfg.data_dir)
+    run_lock.acquire()
     store = open_store(cfg)
     try:
         _recover(store, cfg)
@@ -121,6 +137,37 @@ def cmd_convert(args) -> int:
         task = store.get_task(tid)
     finally:
         store.close()
+        run_lock.release()
+    return _print_convert_result(args, src, status, task)
+
+
+def httpx_errors():
+    import httpx
+    return httpx.HTTPError
+
+
+def _convert_via_server(server, src: Path, opts, args):
+    """(status, task) of the forwarded conversion, or an exit code when detached."""
+    import threading
+
+    from aidoc.models import TaskStatus
+    print(f"forwarding to server {server.base_url}", file=sys.stderr, flush=True)
+    job = server.create_job([src], opts)
+
+    def on_event(kind: str, p: dict) -> None:
+        if args.verbose and kind == "task.log":
+            print(p.get("line", ""), file=sys.stderr, flush=True)
+    try:
+        server.follow_job(job["id"], on_event, threading.Event())
+    except KeyboardInterrupt:
+        print(f"detached; job {job['id']} keeps running (aidoc cancel {job['id']} to cancel)", file=sys.stderr)
+        return 0
+    task = server.get_job(job["id"])["tasks"][0]
+    return TaskStatus(task["status"]), task
+
+
+def _print_convert_result(args, src: Path, status, task: dict) -> int:
+    from aidoc.output import read_sidecar
     quality = task.get("quality") or {}
     if args.json:
         payload = read_sidecar(Path(task["output_dir"])) if status.value in ("done", "low", "skipped") else None
@@ -161,11 +208,14 @@ def cmd_batch(args) -> int:
         try:
             return run_batch_via_server(server, inputs, opts, lambda line: print(line, flush=True),
                                         input_root=d.resolve(), store_factory=lambda: open_store(cfg))
-        except client_mod.ServerError as e:
-            print(_server_error_text(e), file=sys.stderr)
+        except (client_mod.ServerError, httpx_errors()) as e:
+            print(_server_error_text(e, server), file=sys.stderr)
             return 1
         finally:
             server.close()
+    from aidoc.clilock import CliRunLock
+    run_lock = CliRunLock(cfg.data_dir)
+    run_lock.acquire()
     store = open_store(cfg)
     try:
         _recover(store, cfg)
@@ -175,6 +225,7 @@ def cmd_batch(args) -> int:
         store.refresh_job_status(job)
     finally:
         store.close()
+        run_lock.release()
     manifest = opts.output_dir / "_manifest.jsonl"
     rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
     counts: dict[str, int] = {}
@@ -220,6 +271,12 @@ def cmd_serve(args) -> int:
         print(f"refusing to bind {host} without --token", file=sys.stderr)
         return 2
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    from aidoc.clilock import active_cli_runs
+    n = active_cli_runs(cfg.data_dir)
+    if n:                                    # spec §8.1: one queue owner
+        print(f"an in-process aidoc run is active ({n} convert/batch); wait for it or stop it, then start the "
+              f"server", file=sys.stderr)
+        return 3
     lock = cfg.data_dir / "aidoc.lock"
     # the lock is readable by any local process: it says whether a token is needed, never the token itself
     if not lockfile.acquire_lock(lock, {"pid": os.getpid(), "started_at": time.time(), "host": host, "port": port,
@@ -254,7 +311,13 @@ def cmd_serve(args) -> int:
     return 0
 
 
-def _server_error_text(e) -> str:
+def _server_error_text(e, server=None) -> str:
+    from aidoc.client import ServerGone
+    if isinstance(e, ServerGone):
+        return "error: the aidoc server stopped; the job resumes when `aidoc serve` starts again"
+    if not hasattr(e, "status"):             # httpx transport error
+        where = server.base_url if server is not None else "the server"
+        return f"error: cannot reach the aidoc server at {where} ({type(e).__name__}); is it still starting?"
     if e.status == 401:
         return ("error: the running server requires a token; pass --token or set AIDOC_TOKEN "
                 "(or aidoc.toml server.token)")
@@ -270,8 +333,8 @@ def cmd_cancel(args) -> int:
         return 1
     try:
         job = server.cancel_job(args.job_id)
-    except client_mod.ServerError as e:
-        print(_server_error_text(e), file=sys.stderr)
+    except (client_mod.ServerError, httpx_errors()) as e:
+        print(_server_error_text(e, server), file=sys.stderr)
         return 1
     finally:
         server.close()

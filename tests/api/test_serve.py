@@ -166,3 +166,35 @@ def test_expired_work_copy_of_a_queued_retry_is_kept(client, ctx, tmp_root, fixt
     assert (ctx.config.data_dir / "work" / task["id"] / "src.pdf").exists()
     ctx.queue.process_next()
     assert ctx.store.get_task(task["id"])["status"] == "done"
+
+
+def test_serve_refuses_while_an_in_process_cli_run_is_active(tmp_root, monkeypatch, capsys):
+    """Final review I3: one queue owner — an in-process batch/convert and the server must not both convert."""
+    from aidoc import clilock
+    held = clilock.CliRunLock(paths.data_dir())
+    assert held.acquire()
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    try:
+        assert main(["serve"]) == 3
+        assert "in-process aidoc run" in capsys.readouterr().err
+    finally:
+        held.release()
+    assert main(["serve"]) == 0
+
+
+def test_in_process_convert_holds_the_cli_run_lock(tmp_root, fixtures, monkeypatch):
+    import shutil
+
+    import aidoc.pipeline
+    from aidoc import clilock
+    from tests.fakes.scenario import fake_env, write_scenario
+    fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
+    real, seen = aidoc.pipeline.run_task, []
+
+    def spy(*a, **k):
+        seen.append(clilock.active_cli_runs(paths.data_dir()))
+        return real(*a, **k)
+    monkeypatch.setattr(aidoc.pipeline, "run_task", spy)
+    shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
+    assert main(["convert", str(tmp_root / "t.pdf")]) == 0
+    assert seen == [1] and clilock.active_cli_runs(paths.data_dir()) == 0
