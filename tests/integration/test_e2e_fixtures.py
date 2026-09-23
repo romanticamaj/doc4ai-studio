@@ -38,9 +38,9 @@ def test_scanned_en_routes_to_docling_with_lang_en(tmp_root, fixtures):
 
 
 def test_big_pdf_whole_document_p1(tmp_root, fixtures):
-    """P1: >40 pages converts as ONE segment (segmentation arrives in P2)."""
+    """Since P2 a >40-page PDF converts in 40-page segments (P1 expected one)."""
     src = tmp_root / "big.pdf"
     shutil.copy(fixtures / "big.pdf", src)
     assert main(["convert", str(src), "-o", str(tmp_root / "out"), "--json"]) == 0
     sc = json.loads((tmp_root / "out" / "big" / "big.json").read_text(encoding="utf-8"))
-    assert sc["pages"] == 45 and sc["segments"] == 1 and sc["quality"]["level"] == "ok"
+    assert sc["pages"] == 45 and sc["segments"] == 2 and sc["quality"]["level"] == "ok"
