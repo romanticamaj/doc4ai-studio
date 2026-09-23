@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -51,7 +52,9 @@ def stage_source(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
     if dst.exists():
         dst.unlink()
     linked = False
-    if _same_volume(source_path, work_dir):
+    # hardlinks share NTFS attributes: a read-only source is copied so work-copy cleanup never has to touch it
+    writable = bool(source_path.stat().st_mode & stat.S_IWRITE)
+    if writable and _same_volume(source_path, work_dir):
         try:
             os.link(source_path, dst)
             linked = True

@@ -91,3 +91,32 @@ def test_purge_expired(tmp_root):
     docs = {d["source_path"]: d for d in store.list_documents()}
     assert docs["a"]["work_copy_path"] is None and docs["a"]["work_copy_expires_at"] is None
     assert docs["b"]["work_copy_path"] == str(keep)
+
+
+def _readonly(p) -> bool:
+    import stat
+    return not (os.stat(p).st_mode & stat.S_IWRITE)
+
+
+def test_read_only_source_is_never_made_writable(tmp_path, fixtures):
+    """Final review I2: NTFS attributes are shared by hardlinks; cleaning a work copy must not touch the source."""
+    import stat
+
+    from aidoc import fsops
+    src = tmp_path / "ro.pdf"; shutil.copy(fixtures / "text.pdf", src); os.chmod(src, stat.S_IREAD)
+    try:
+        stage_source(src, file_sha256(src), tmp_path / "work")
+        fsops.remove_tree(tmp_path / "work")
+        assert _readonly(src) and not (tmp_path / "work").exists()
+        # made read-only only after it was hardlinked: cleanup must fail rather than flip the user's flag
+        src2 = tmp_path / "rw.pdf"; shutil.copy(fixtures / "text.pdf", src2)
+        staged = stage_source(src2, file_sha256(src2), tmp_path / "work2")
+        os.chmod(src2, stat.S_IREAD)
+        if os.stat(staged).st_nlink > 1:
+            with pytest.raises(OSError):
+                fsops.remove_tree(tmp_path / "work2")
+            assert _readonly(src2)
+    finally:
+        for p in (src, tmp_path / "rw.pdf"):
+            if p.exists():
+                os.chmod(p, stat.S_IWRITE | stat.S_IREAD)

@@ -57,6 +57,13 @@ def atomic_write_lines(path: Path, lines: Iterable[str]) -> None:
 
 
 def _on_rm_error(func, p, exc_info):
+    # a read-only entry blocks deletion on Windows. Clear the flag only when the file has a single link: NTFS
+    # attributes are shared by hardlinks, so chmod on a hardlinked work copy would change the user's source.
+    try:
+        if os.stat(p).st_nlink > 1:
+            raise exc_info[1]
+    except FileNotFoundError:
+        return
     os.chmod(p, stat.S_IWRITE)
     func(p)
 
