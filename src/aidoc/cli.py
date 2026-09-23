@@ -242,6 +242,10 @@ def cmd_serve(args) -> int:
         except ListenError:
             print(f"error: could not listen on {host}:{port} (address in use?); try --port", file=sys.stderr)
             return 4
+        except KeyboardInterrupt:            # uvicorn re-raises the Ctrl+C / Ctrl+Break it handled
+            pass
+        print("server stopped; a running task went back to the queue and resumes on the next start",
+              file=sys.stderr, flush=True)
     finally:
         if ctx is not None:
             ctx.close()

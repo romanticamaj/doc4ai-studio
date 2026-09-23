@@ -135,3 +135,13 @@ def test_port_in_use_is_a_clear_error_not_exit_3(tmp_root, capsys):
         s.close()
     assert f"could not listen on 127.0.0.1:{port}" in capsys.readouterr().err
     assert not (paths.data_dir() / "aidoc.lock").exists()
+
+
+def test_ctrl_c_stops_the_server_cleanly(tmp_root, monkeypatch, capsys):
+    def interrupted(app, host, port):
+        raise KeyboardInterrupt                     # uvicorn re-raises the captured Ctrl+C / Ctrl+Break on exit
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", interrupted)
+    assert main(["serve"]) == 0
+    err = capsys.readouterr().err
+    assert "server stopped" in err and "conversion was cancelled" not in err
+    assert not (paths.data_dir() / "aidoc.lock").exists()
