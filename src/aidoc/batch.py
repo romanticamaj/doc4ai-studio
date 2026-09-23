@@ -13,7 +13,7 @@ from aidoc.config import AidocConfig
 from aidoc.models import ConvertOptions, ErrorKind, JobStatus, TaskStatus
 from aidoc.output import planned_output_dir
 from aidoc.pipeline import run_task
-from aidoc.store import Store
+from aidoc.store import Store, TaskBusyError
 
 IGNORED_NAMES = {"_manifest.jsonl", "chunks.jsonl"}
 
@@ -74,7 +74,8 @@ def write_manifest(store: Store, job_id: str, out_root: Path, input_root: Path |
 def register_source(store: Store, job_id: str, src: Path, opts: ConvertOptions) -> tuple[str, bool]:
     """Create (or reuse) the task for one input. An input that vanished or cannot be read (locked, no permission)
     still gets a row, ending as failed(input: source_missing | source_unreadable), so one bad file never aborts
-    the batch. Such rows use a path-derived placeholder key ("!" + 63 hex) instead of a content sha256."""
+    the batch; so does a file whose task another process is converting right now (already_converting).
+    Such rows use a placeholder key ("!" + 63 hex, from path/job/code) instead of a content sha256."""
     src = Path(src)
     try:
         st = src.stat()
@@ -85,8 +86,11 @@ def register_source(store: Store, job_id: str, src: Path, opts: ConvertOptions) 
         code, err = "source_unreadable", e
     else:
         out_dir = planned_output_dir(store, opts.output_dir, src, sha)
-        return store.create_task(job_id, str(src), sha, st.st_size, st.st_mtime, opts.lang, str(out_dir))
-    key = "!" + hashlib.sha256(str(src).encode("utf-8")).hexdigest()[1:]
+        try:
+            return store.create_task(job_id, str(src), sha, st.st_size, st.st_mtime, opts.lang, str(out_dir))
+        except TaskBusyError as e:
+            code, err = "already_converting", f"{src} (task {e.task_id} is running in another process)"
+    key = "!" + hashlib.sha256(f"{src}|{job_id}|{code}".encode()).hexdigest()[1:]
     out_dir = Path(opts.output_dir) / names.sanitize_stem(src.stem)
     tid, reused = store.create_task(job_id, str(src), key, 0, 0.0, opts.lang, str(out_dir))
     store.update_task(tid, status=TaskStatus.failed, error_kind=ErrorKind.input, error_msg=f"{code}: {err}", pid=None)

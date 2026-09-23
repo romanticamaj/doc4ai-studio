@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import fitz
+import pymupdf as fitz
 
 from aidoc.models import SEGMENT_PAGES, NormalizedResult, TableEdge
 

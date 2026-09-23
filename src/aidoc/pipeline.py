@@ -38,6 +38,7 @@ from aidoc.router import route
 from aidoc.segment import SegmentPart, merge_segments, plan_segments, segment_dir, split_pdf
 from aidoc.sources import SourceError, stage_source
 from aidoc.store import Store
+from aidoc.tasklock import TaskLock, lock_path
 
 Emit = Callable[[str, dict], None]
 SEGMENT_FILES = ("normalized.md", "assets.json", "edges.json")
@@ -316,11 +317,17 @@ def run_task(store: Store, task_id: str, engines: dict, config: AidocConfig, emi
     if store.get_task(task_id) is None:
         raise KeyError(task_id)
     ctx = PipelineContext(store, task_id, config, emit, cancel)
+    lock = TaskLock(lock_path(store.db_path.parent, task_id))
+    if not lock.acquire():                    # another process is running this very task: leave it alone
+        ctx.log("task is being converted by another process; not started")
+        return TaskStatus(store.get_task(task_id)["status"])
     try:
         return _run_task(ctx, engines)
     except Exception as e:  # noqa: BLE001  never leave a task stuck in probing/converting/checking
         ctx.log(traceback.format_exc())
         return _fail(ctx, ErrorKind.engine, f"internal error: {type(e).__name__}: {e}")
+    finally:
+        lock.release()
 
 
 def _prepare_segments(ctx: PipelineContext, decision_engines: list[str]) -> list[str]:

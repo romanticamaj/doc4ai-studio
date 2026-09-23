@@ -1,4 +1,4 @@
-import fitz
+import pymupdf as fitz
 
 from aidoc.segment import plan_segments, segment_dir, split_pdf
 

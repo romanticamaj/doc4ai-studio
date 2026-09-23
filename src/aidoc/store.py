@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS events(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, kind TEXT NOT NULL, ref_id TEXT, payload_json TEXT NOT NULL);
 """
 
+_ACTIVE = {TaskStatus.probing.value, TaskStatus.converting.value, TaskStatus.checking.value}
+
+
+class TaskBusyError(Exception):
+    """The (sha256, output_dir) task is being converted right now by another process."""
+
+    def __init__(self, task_id: str):
+        super().__init__(f"task {task_id} is being converted by another process")
+        self.task_id = task_id
+
+
 _JSON_COLS = {"options_json", "tried_json", "quality_json", "payload_json", "flags_json"}
 _TERMINAL = {s.value for s in TERMINAL_TASK}
 
@@ -151,6 +162,8 @@ class Store:
         now = time.time()
         old = self._q1("SELECT id, status FROM tasks WHERE sha256=? AND output_dir=?", (sha256, output_dir))
         if old is not None:
+            if old["status"] in _ACTIVE and self.task_is_live(old["id"]):
+                raise TaskBusyError(old["id"])
             if old["status"] not in _TERMINAL:
                 self.con.execute("UPDATE tasks SET job_id=?, source_path=?, size=?, mtime=?, lang=?, updated_at=? "
                                  "WHERE id=?", (job_id, source_path, size, mtime, lang, now, old["id"]))
@@ -163,6 +176,11 @@ class Store:
             "updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (tid, job_id, source_path, sha256, size, mtime, lang, TaskStatus.queued.value, output_dir, now, now))
         return tid, False
+
+    def task_is_live(self, task_id) -> bool:
+        """True while some process holds the task's liveness lock (see aidoc.tasklock)."""
+        from aidoc.tasklock import is_locked, lock_path
+        return is_locked(lock_path(self.db_path.parent, task_id))
 
     def get_task(self, task_id) -> dict | None:
         return _row(self._q1("SELECT * FROM tasks WHERE id=?", (task_id,)))

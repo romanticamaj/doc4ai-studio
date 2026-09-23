@@ -50,7 +50,7 @@ def test_kinds(fixtures):
 
 def test_blank_pages_counted_on_every_page_not_just_the_sample(tmp_path):
     """P1 verifier 3: blank pages from a <=20-page sample were subtracted from the full page count."""
-    import fitz
+    import pymupdf as fitz
 
     from aidoc.quality import assess
     doc = fitz.open()
