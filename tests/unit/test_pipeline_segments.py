@@ -145,3 +145,51 @@ def test_source_modified_in_place_mid_conversion_never_mixes(env):
     assert file_sha256(t["work_path"]) == sha              # every segment came from the verified copy
     md = (env["root"] / "out" / "big" / "big.md").read_text(encoding="utf-8")
     assert md.count("<!-- page: ") == 45
+
+
+def test_resume_with_changed_lang_redoes_done_segments(env):
+    """P2 deferred M2: done segments are reused only when the output-affecting options (lang, OCR, tier) match."""
+    write_scenario(env["sc"], rules=[{"match": {"segment_idx": 1}, "behavior": "slow_ok"}], slow_s=30)
+    tid = env["make"]()
+    ev = threading.Event()
+
+    def watch():
+        while not (env["store"].list_segments(tid) and env["store"].list_segments(tid)[0]["status"] == "done"):
+            time.sleep(0.05)
+        ev.set()
+    threading.Thread(target=watch, daemon=True).start()
+    assert run_task(env["store"], tid, env["engines"](), env["cfg"], cancel=ev) == TaskStatus.cancelled
+    write_scenario(env["sc"])
+    src = env["root"] / "big.pdf"
+    job2 = env["store"].create_job(ConvertOptions(output_dir=env["root"] / "out", lang="en"), "cli")
+    tid2, reused = env["store"].create_task(job2, str(src), file_sha256(src), src.stat().st_size, src.stat().st_mtime,
+                                            "en", str(env["root"] / "out" / "big"))
+    assert reused and tid2 == tid
+    assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.done
+    pages = [x["pages"] for x in calls(env["root"])]
+    assert pages.count([1, 40]) == 2                     # segment 0 converted again with lang=en
+
+
+def test_resume_with_same_options_keeps_done_segments(env):
+    write_scenario(env["sc"], rules=[{"match": {"segment_idx": 1}, "behavior": "slow_ok"}], slow_s=30)
+    tid = env["make"]()
+    ev = threading.Event()
+
+    def watch():
+        while not (env["store"].list_segments(tid) and env["store"].list_segments(tid)[0]["status"] == "done"):
+            time.sleep(0.05)
+        ev.set()
+    threading.Thread(target=watch, daemon=True).start()
+    assert run_task(env["store"], tid, env["engines"](), env["cfg"], cancel=ev) == TaskStatus.cancelled
+    write_scenario(env["sc"])
+    env["store"].update_task(tid, status="queued")
+    assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.done
+    assert [x["pages"] for x in calls(env["root"])].count([1, 40]) == 1
+
+
+def test_input_failure_leaves_no_segment_converting(env):
+    """P2 deferred M8: a `fail` retry decision must not leave the in-flight segment in `converting`."""
+    write_scenario(env["sc"], rules=[{"match": {"segment_idx": 1}, "behavior": "input_error"}])
+    tid = env["make"]()
+    assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.failed
+    assert [s["status"] for s in env["store"].list_segments(tid)] == ["done", "failed"]

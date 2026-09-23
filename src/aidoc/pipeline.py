@@ -45,6 +45,12 @@ SEGMENT_FILES = ("normalized.md", "assets.json", "edges.json")
 RETRY_POLICY = RetryPolicy()
 
 
+def options_key(opts: ConvertOptions) -> str:
+    """The options that change what an engine produces; done segments made with other values are redone."""
+    return json.dumps({"lang": opts.lang, "mineru_tier": opts.mineru_tier, "docling_ocr": opts.docling_ocr},
+                      sort_keys=True)
+
+
 def stage_paths(task_id: str) -> tuple[Path, Path]:
     work = paths.data_dir() / "work" / task_id
     return work, work / "seg_0"
@@ -159,7 +165,8 @@ def save_segment_part(seg_dir: Path, part: SegmentPart) -> None:
     fsops.atomic_write_text(seg_dir / "normalized.md", part.markdown)
     fsops.atomic_write_json(seg_dir / "assets.json", [[str(src), name] for src, name in part.assets])
     fsops.atomic_write_json(seg_dir / "edges.json", {
-        "engine": part.engine, "has_page_markers": part.has_page_markers, "page_count": part.page_count,
+        "engine": part.engine, "opts_key": part.opts_key, "has_page_markers": part.has_page_markers,
+        "page_count": part.page_count,
         "first_table": part.first_table.to_json() if part.first_table else None,
         "last_table": part.last_table.to_json() if part.last_table else None})
 
@@ -180,7 +187,8 @@ def load_segment_part(seg_dir: Path, seg_row: dict) -> SegmentPart | None:
                        markdown=md, assets=assets, has_page_markers=bool(edges.get("has_page_markers")),
                        first_table=TableEdge.from_json(ft) if ft else None,
                        last_table=TableEdge.from_json(lt) if lt else None,
-                       page_count=edges.get("page_count"), engine=edges.get("engine"))
+                       page_count=edges.get("page_count"), engine=edges.get("engine"),
+                       opts_key=edges.get("opts_key"))
 
 
 def _discard_segments(ctx: PipelineContext) -> None:
@@ -216,7 +224,7 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
             sd = segment_dir(ctx.work_dir, seg["idx"])
             if seg["status"] == SegmentStatus.done.value:
                 part = load_segment_part(sd, seg)
-                if part is not None and part.engine == engine.name:
+                if part is not None and part.engine == engine.name and part.opts_key == options_key(opts):
                     parts.append(part)
                     continue
             if ctx.cancelled():
@@ -253,7 +261,8 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
                                                         f"{', '.join(q.reasons)}")
             part = SegmentPart(idx=seg["idx"], page_start=ps, page_end=pe, markdown=norm.markdown, assets=norm.assets,
                                has_page_markers=raw.has_page_markers, first_table=raw.first_table,
-                               last_table=raw.last_table, page_count=raw.page_count, engine=engine.name)
+                               last_table=raw.last_table, page_count=raw.page_count, engine=engine.name,
+                               opts_key=options_key(opts))
             save_segment_part(sd, part)
             store.update_segment(seg["id"], status=SegmentStatus.done, output_path=str(sd))
             ctx.segment_updated(seg["id"])
@@ -364,9 +373,14 @@ def _prepare_segments(ctx: PipelineContext, decision_engines: list[str]) -> list
         store.create_segments(ctx.task_id, ranges)
         return list(decision_engines)
     done_engines = set()
+    key = options_key(ctx.opts)
     for r in rows:
         if r["status"] == SegmentStatus.done.value:
             part = load_segment_part(segment_dir(ctx.work_dir, r["idx"]), r)
+            if part is not None and part.opts_key != key:
+                ctx.log("options changed since the done segments were made (lang/OCR/tier); converting again")
+                _discard_segments(ctx)
+                return list(decision_engines)
             done_engines.add(part.engine if part is not None else None)
     if len(done_engines) == 1 and (eng := next(iter(done_engines))) in decision_engines:
         ctx.log(f"resuming with {eng}: {sum(r['status'] == 'done' for r in rows)} of {len(rows)} segments done")
@@ -451,6 +465,10 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
                                                       error_kind=e.kind.value, error_msg=msg[:1000]))
                 ctx.log(f"{name} failed ({e.kind.value}, {d.action}): {msg[:300]}")
                 if d.action == "fail":
+                    for seg in store.list_segments(task_id):      # the segment that hit the input error
+                        if seg["status"] == SegmentStatus.converting.value:
+                            store.update_segment(seg["id"], status=SegmentStatus.failed)
+                            ctx.segment_updated(seg["id"])
                     return _fail(ctx, ErrorKind.input, f"{name}: {e.message[:500]}")
                 if d.action == "fallback":
                     _discard_segments(ctx)
