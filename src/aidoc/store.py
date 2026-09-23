@@ -53,6 +53,9 @@ class TaskBusyError(Exception):
 
 _JSON_COLS = {"options_json", "tried_json", "quality_json", "payload_json", "flags_json"}
 _TERMINAL = {s.value for s in TERMINAL_TASK}
+# index A14 (P2): rows with these statuses are re-parented and resumed; done/low/skipped rows are replaced
+_REUSABLE = {TaskStatus.queued.value, TaskStatus.probing.value, TaskStatus.converting.value,
+             TaskStatus.checking.value, TaskStatus.failed.value, TaskStatus.cancelled.value}
 
 
 def _new_id() -> str:
@@ -164,9 +167,10 @@ class Store:
         if old is not None:
             if old["status"] in _ACTIVE and self.task_is_live(old["id"]):
                 raise TaskBusyError(old["id"])
-            if old["status"] not in _TERMINAL:
-                self.con.execute("UPDATE tasks SET job_id=?, source_path=?, size=?, mtime=?, lang=?, updated_at=? "
-                                 "WHERE id=?", (job_id, source_path, size, mtime, lang, now, old["id"]))
+            if old["status"] in _REUSABLE:            # A14: unfinished work resumes (segments and history kept)
+                self.con.execute("UPDATE tasks SET job_id=?, source_path=?, size=?, mtime=?, lang=?, status=?, "
+                                 "pid=NULL, error_kind=NULL, error_msg=NULL, updated_at=? WHERE id=?",
+                                 (job_id, source_path, size, mtime, lang, TaskStatus.queued.value, now, old["id"]))
                 return old["id"], True
             self.con.execute("DELETE FROM segments WHERE task_id=?", (old["id"],))
             self.con.execute("DELETE FROM tasks WHERE id=?", (old["id"],))
@@ -176,6 +180,22 @@ class Store:
             "updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (tid, job_id, source_path, sha256, size, mtime, lang, TaskStatus.queued.value, output_dir, now, now))
         return tid, False
+
+    def requeue_task(self, task_id, *, reset_segments: bool, new_sha: str | None = None) -> None:
+        """Back to `queued` (errors and pid cleared). `new_sha` = "convert the new version": sha256/size/mtime
+        are re-read from source_path by the caller and stored here."""
+        fields = {"status": TaskStatus.queued, "error_kind": None, "error_msg": None, "pid": None}
+        if new_sha is not None:
+            fields["sha256"] = new_sha
+            t = self.get_task(task_id)
+            try:
+                st = Path(t["source_path"]).stat()
+                fields.update(size=st.st_size, mtime=st.st_mtime)
+            except OSError:
+                pass
+        self.update_task(task_id, **fields)
+        if reset_segments:
+            self.reset_segments(task_id)
 
     def task_is_live(self, task_id) -> bool:
         """True while some process holds the task's liveness lock (see aidoc.tasklock)."""

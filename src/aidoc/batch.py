@@ -16,6 +16,7 @@ from aidoc.pipeline import run_task
 from aidoc.store import Store, TaskBusyError
 
 IGNORED_NAMES = {"_manifest.jsonl", "chunks.jsonl"}
+_FINISHED = {TaskStatus.done.value, TaskStatus.low.value, TaskStatus.skipped.value}
 
 
 def collect_inputs(input_dir: Path, exclude: Path | None = None) -> list[Path]:
@@ -127,6 +128,8 @@ def run_batch(store: Store, config: AidocConfig, engines: dict, inputs: list[Pat
     for tid in task_ids:
         if cancel is not None and cancel.is_set():
             store.update_task(tid, status=TaskStatus.cancelled)
+            continue
+        if store.get_task(tid)["status"] in _FINISHED:  # finished meanwhile (e.g. by another process)
             continue
         try:
             run_task(store, tid, engines, config, emit=emit, cancel=cancel)

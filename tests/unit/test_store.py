@@ -93,3 +93,29 @@ def test_uploads_and_events(store):
         store.append_event("x", None, {})
     store.prune_events(keep=5)
     assert store.oldest_event_seq() == s2 + 16
+
+
+def test_failed_and_cancelled_reused_keeping_segments(store):
+    j = store.create_job(ConvertOptions(output_dir=Path("out")), "cli")
+    tid, _ = store.create_task(j, "a.pdf", "k" * 64, 1, 1.0, "cht", "out/k")
+    ids = store.create_segments(tid, [(1, 40), (41, 45)]); store.update_segment(ids[0], status="done", output_path="p")
+    store.update_task(tid, status=TaskStatus.cancelled, pid=123)
+    tid2, reused = store.create_task(j, "a.pdf", "k" * 64, 1, 1.0, "cht", "out/k")
+    assert reused and tid2 == tid and store.get_task(tid)["status"] == "queued" and store.get_task(tid)["pid"] is None
+    assert store.list_segments(tid)[0]["status"] == "done"
+    store.requeue_task(tid, reset_segments=True, new_sha="m" * 64)
+    assert store.list_segments(tid)[0]["status"] == "queued" and store.get_task(tid)["sha256"] == "m" * 64
+
+
+def test_failed_input_reused_with_history(store):
+    j = store.create_job(ConvertOptions(output_dir=Path("out")), "cli")
+    tid, _ = store.create_task(j, "a.pdf", "f" * 64, 1, 1.0, "cht", "out/f")
+    store.append_attempt(tid, Attempt(engine="docling", attempt=1, score=None, reasons=[], error_kind="input"))
+    store.update_task(tid, status=TaskStatus.failed, error_kind="input", error_msg="source_missing: a.pdf", attempt=1)
+    j2 = store.create_job(ConvertOptions(output_dir=Path("out")), "cli")
+    tid2, reused = store.create_task(j2, "a.pdf", "f" * 64, 1, 1.0, "cht", "out/f")
+    t = store.get_task(tid)
+    assert reused and tid2 == tid and t["job_id"] == j2 and t["status"] == "queued"
+    assert t["error_kind"] is None and t["error_msg"] is None and t["attempt"] == 1 and len(t["tried"]) == 1
+    store.requeue_task(tid, reset_segments=False)
+    assert store.get_task(tid)["status"] == "queued"

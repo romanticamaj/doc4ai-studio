@@ -163,3 +163,43 @@ def test_batch_job_never_left_queued_when_collection_crashes(tmp_root, fixtures,
     with pytest.raises(RuntimeError):
         run_batch(store, cfg, get_engines(cfg), [d / "a.docx"], ConvertOptions(output_dir=tmp_root / "out"))
     assert store.list_jobs()[0]["status"] == "done"
+
+
+def test_batch_resumes_unfinished_segments(tmp_root, fixtures, monkeypatch):
+    """Interrupted run: segment 0 done, task cancelled while segment 1 runs; re-running the batch converts only
+    segment 1."""
+    import threading
+    import time
+
+    from aidoc.names import file_sha256
+    from aidoc.pipeline import run_task
+    sc = write_scenario(tmp_root / "sc.json", rules=[{"match": {"segment_idx": 1}, "behavior": "slow_ok"}], slow_s=30)
+    fake_env(monkeypatch, sc)
+    d = tmp_root / "in"; d.mkdir(); shutil.copy(fixtures / "big.pdf", d / "big.pdf"); out = tmp_root / "out"
+    cfg = load_config(); store = Store(tmp_root / "data" / "aidoc.db"); opts = ConvertOptions(output_dir=out)
+    src = d / "big.pdf"; job = store.create_job(opts, "cli")
+    tid, _ = store.create_task(job, str(src), file_sha256(src), src.stat().st_size, src.stat().st_mtime, "cht",
+                               str(out / "big"))
+    ev = threading.Event()
+
+    def calls():
+        p = tmp_root / "calls.jsonl"
+        return [json.loads(line)["pages"] for line in p.read_text().splitlines()] if p.exists() else []
+
+    def watch():             # cancel once segment 0 is done and the slow segment-1 call has been logged
+        while not (store.list_segments(tid) and store.list_segments(tid)[0]["status"] == "done"
+                   and [41, 45] in calls()):
+            time.sleep(0.05)
+        ev.set()
+    threading.Thread(target=watch, daemon=True).start()
+    assert run_task(store, tid, get_engines(cfg), cfg, cancel=ev).value == "cancelled"
+    write_scenario(tmp_root / "sc.json")                                          # fast again
+    assert main(["batch", str(d), "-o", str(out)]) == 0
+    assert calls().count([1, 40]) == 1 and calls().count([41, 45]) == 2
+    t2 = store.list_tasks(store.list_jobs()[0]["id"])[0]
+    assert t2["id"] == tid and t2["status"] == "done" and (out / "big" / "big.md").exists()
+
+
+def test_cancel_command_without_server(capsys):
+    assert main(["cancel", "abc"]) == 1
+    assert "no server running; use Ctrl+C" in capsys.readouterr().err

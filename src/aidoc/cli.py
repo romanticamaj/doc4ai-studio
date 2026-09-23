@@ -34,6 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("batch", help="convert every file under a directory (recursive)")
     b.add_argument("dir")
     _add_convert_options(b)
+    k = sub.add_parser("cancel", help="cancel a running job (needs a running server; P3)")
+    k.add_argument("job_id")
     s = sub.add_parser("setup", help="install an engine env, download models, self-check")
     s.add_argument("engine", choices=ENGINE_CHOICES + ["all"])
     return p
@@ -193,6 +195,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_batch(args)
     if args.cmd == "setup":
         return cmd_setup(args)
+    if args.cmd == "cancel":
+        # P2: batches run in-process (index A10); P3 forwards this to the server
+        print("no server running; use Ctrl+C in the terminal running the batch", file=sys.stderr)
+        return 1
     return 0
 
 
