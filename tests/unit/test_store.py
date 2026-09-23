@@ -119,3 +119,26 @@ def test_failed_input_reused_with_history(store):
     assert t["error_kind"] is None and t["error_msg"] is None and t["attempt"] == 1 and len(t["tried"]) == 1
     store.requeue_task(tid, reset_segments=False)
     assert store.get_task(tid)["status"] == "queued"
+
+
+def test_store_is_safe_to_share_between_threads(store):
+    """Watcher threads poll the Store the pipeline writes to (final-review follow-up: flaky InterfaceError)."""
+    import threading
+    j = store.create_job(ConvertOptions(output_dir=Path("out")), "cli")
+    tid, _ = store.create_task(j, "a.pdf", "t" * 64, 1, 1.0, "cht", "out/t")
+    errors = []
+
+    def hammer(k):
+        try:
+            for i in range(300):
+                store.update_task(tid, error_msg=f"{k}-{i}")
+                assert store.get_task(tid)["id"] == tid
+                store.list_tasks(status_in=["queued"])
+        except Exception as e:  # noqa: BLE001
+            errors.append(repr(e))
+    ts = [threading.Thread(target=hammer, args=(k,)) for k in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(60)
+    assert errors == []

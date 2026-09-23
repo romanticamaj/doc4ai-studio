@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from enum import Enum
@@ -96,14 +97,52 @@ def _fields_to_cols(fields: dict) -> dict:
     return out
 
 
+class _Result:
+    """A fully fetched cursor result (safe to use after the lock is released)."""
+
+    def __init__(self, cur: sqlite3.Cursor):
+        self.rows = cur.fetchall() if cur.description is not None else []
+        self.rowcount = cur.rowcount
+        self.lastrowid = cur.lastrowid
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return list(self.rows)
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class _LockedConnection:
+    def __init__(self, con: sqlite3.Connection):
+        self._con = con
+        self.lock = threading.RLock()
+
+    def execute(self, sql, args=()):
+        with self.lock:
+            return _Result(self._con.execute(sql, args))
+
+    def executescript(self, sql):
+        with self.lock:
+            return self._con.executescript(sql)
+
+    def close(self):
+        with self.lock:
+            self._con.close()
+
+
 class Store:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        # check_same_thread=False: watcher threads (cancel/progress) read the same Store; autocommit mode and
-        # SQLite's serialized threading keep single statements safe (P3 adds an RLock via threadsafe=True).
-        self.con = sqlite3.connect(str(self.db_path), isolation_level=None, check_same_thread=False)
-        self.con.row_factory = sqlite3.Row
+        # Watcher threads (cancel / progress / tests) share this Store: the connection allows other threads and
+        # every statement runs, and is fully fetched, under one RLock (concurrent use of a sqlite3 connection
+        # raises "bad parameter or other API misuse").
+        raw = sqlite3.connect(str(self.db_path), isolation_level=None, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        self.con = _LockedConnection(raw)
         self.con.execute("PRAGMA journal_mode=WAL")
         self.con.execute("PRAGMA busy_timeout=5000")
         self.con.execute("PRAGMA foreign_keys=ON")
