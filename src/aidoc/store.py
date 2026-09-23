@@ -386,9 +386,13 @@ class Store:
     def update_upload(self, upload_id, **fields) -> None:
         self._update("uploads", "id", upload_id, fields)
 
-    def stale_uploads(self, older_than_ts) -> list[dict]:
-        return self._qa("SELECT * FROM uploads WHERE created_at < ? AND status IN ('receiving', 'failed') "
-                        "ORDER BY created_at", (older_than_ts,))
+    def stale_uploads(self, older_than_ts, statuses=("receiving", "failed")) -> list[dict]:
+        vals = list(statuses) or [""]
+        return self._qa(f"SELECT * FROM uploads WHERE created_at < ? AND status IN ({', '.join('?' * len(vals))}) "
+                        "ORDER BY created_at", (older_than_ts, *vals))
+
+    def delete_upload(self, upload_id) -> None:
+        self.con.execute("DELETE FROM uploads WHERE id=?", (upload_id,))
 
     # ---- events
     def append_event(self, kind, ref_id, payload: dict) -> int:
