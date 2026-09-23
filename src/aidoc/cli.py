@@ -34,6 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("batch", help="convert every file under a directory (recursive)")
     b.add_argument("dir")
     _add_convert_options(b)
+    ch = sub.add_parser("chunk", help="split converted documents into RAG chunks (chunks.jsonl)")
+    ch.add_argument("dir", help="output root that holds the converted document dirs")
+    ch.add_argument("--max-tokens", type=int, default=800, help="chunk size limit in cl100k_base tokens")
+    ch.add_argument("--doc", metavar="STEM", help="only this document dir")
     k = sub.add_parser("cancel", help="cancel a running job (needs a running server; P3)")
     k.add_argument("job_id")
     s = sub.add_parser("setup", help="install an engine env, download models, self-check")
@@ -160,6 +164,20 @@ def cmd_batch(args) -> int:
     return 2 if counts.get("failed") else 0
 
 
+def cmd_chunk(args) -> int:
+    from aidoc.chunk import _chunk_dirs, count_tokens
+    d = Path(args.dir)
+    if not d.is_dir():
+        print(f"error: directory not found: {d}", file=sys.stderr)
+        return 1
+    if args.doc is not None and not (d / args.doc).is_dir():
+        print(f"error: no document dir {args.doc!r} under {d}", file=sys.stderr)
+        return 1
+    path, n = _chunk_dirs(d, args.max_tokens, args.doc, count_tokens)
+    print(f"wrote {n} chunks to {_display_path(str(path))}")
+    return 0
+
+
 def cmd_setup(args) -> int:
     from aidoc.config import load_config
     from aidoc.setup_engines import setup
@@ -195,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_batch(args)
     if args.cmd == "setup":
         return cmd_setup(args)
+    if args.cmd == "chunk":
+        return cmd_chunk(args)
     if args.cmd == "cancel":
         # P2: batches run in-process (index A10); P3 forwards this to the server
         print("no server running; use Ctrl+C in the terminal running the batch", file=sys.stderr)
