@@ -3,7 +3,7 @@ import threading
 
 import httpx
 
-from aidoc.server.sse import EventBus, format_event, replay_plan
+from aidoc.server.sse import format_event, replay_plan
 
 
 def test_format():

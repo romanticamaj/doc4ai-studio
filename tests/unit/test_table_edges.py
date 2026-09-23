@@ -6,7 +6,7 @@ import sys
 from aidoc import paths
 
 sys.path.insert(0, str(paths.runner_dir()))
-import _proto  # noqa: E402
+import _proto
 
 _spec = importlib.util.spec_from_file_location("mineru_runner", paths.runner_script("mineru"))
 mr = importlib.util.module_from_spec(_spec)

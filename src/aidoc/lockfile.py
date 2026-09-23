@@ -20,7 +20,7 @@ def is_aidoc_process(pid: int) -> bool:
         a = arg.replace("\\", "/").lower()
         base = a.rsplit("/", 1)[-1]
         if base in ("aidoc", "aidoc.exe", "aidoc-script.py") or a in ("aidoc", "aidoc.cli") \
-                or a.endswith("/aidoc/cli.py") or a.endswith("/aidoc/__main__.py"):
+                or a.endswith(("/aidoc/cli.py", "/aidoc/__main__.py")):
             return True
     return False
 

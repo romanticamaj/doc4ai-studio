@@ -16,9 +16,9 @@ if TYPE_CHECKING:
 class ServerContext:
     config: AidocConfig
     store: Store
-    bus: "EventBus"
-    queue: "JobQueue"
-    uploads: "UploadManager"
+    bus: EventBus
+    queue: JobQueue
+    uploads: UploadManager
     token: str | None
     started_at: float
     extras: dict[str, Any] = field(default_factory=dict)     # setup runner, maintenance thread, ...

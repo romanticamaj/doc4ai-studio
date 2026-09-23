@@ -31,7 +31,7 @@ def count_tokens(text: str) -> int:
         try:
             import tiktoken
             _encoder = tiktoken.get_encoding("cl100k_base")
-        except Exception as e:  # noqa: BLE001  requests.ProxyError, ConnectionError, ...
+        except Exception as e:
             raise TokenizerUnavailable(
                 f"the cl100k_base tokenizer is not cached in {os.environ['TIKTOKEN_CACHE_DIR']} and could not be "
                 f"downloaded ({type(e).__name__}); run `aidoc setup markitdown` (or any engine) once with network "
@@ -127,7 +127,7 @@ def _blocks(md: str) -> list[_Block]:
         f = _FENCE.match(s)
         if f:                                            # fenced code: up to the closing fence
             fence = f.group(1)[0] * len(f.group(1))
-            j = close_at(i + 1, lambda t: t.startswith(fence))
+            j = close_at(i + 1, lambda t, fence=fence: t.startswith(fence))
             out.append(_Block("text", "\n".join(lines[i:j + 1]), start_page,
                               pages=[start_page] if start_page is not None else [],
                               pre=first_marker is not None and not seen_marker))

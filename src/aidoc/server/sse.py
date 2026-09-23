@@ -25,7 +25,7 @@ PING_FRAME = ": ping\n\n"
 
 
 class Subscription:
-    def __init__(self, bus: "EventBus", maxsize: int):
+    def __init__(self, bus: EventBus, maxsize: int):
         self.bus = bus
         self.queue: queue.Queue[tuple[int, str, dict]] = queue.Queue(maxsize=maxsize)
         self.overflowed = False
