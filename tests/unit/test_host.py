@@ -91,3 +91,29 @@ def test_relative_workdir(tmp_path, monkeypatch):
     res = h.run(req(tmp_path), Path("wd_rel"), 30, lambda f, line: None)
     h.close()
     assert res["page_count"] == 3
+
+
+def test_clock_starts_at_ready_not_at_spawn(tmp_path, monkeypatch):
+    """Index A1: model loading before AIDOC_READY does not eat the conversion timeout."""
+    h = make_host(tmp_path, monkeypatch, startup_delay_s=2.5)
+    h.start(tmp_path)
+    try:
+        res = h.run(req(tmp_path), tmp_path / "wd", 1.5, lambda f, line: None)
+    finally:
+        h.close()
+    assert res["page_count"] == 3
+
+
+def test_no_ready_within_startup_cap_is_transient_and_killed(tmp_path, monkeypatch):
+    import psutil
+
+    from aidoc.models import ErrorKind
+    monkeypatch.setenv("AIDOC_FAKE_SCENARIO", str(write_scenario(tmp_path / "sc.json", startup_delay_s=60)))
+    h = RunnerHost(Path(sys.executable), paths.runner_script("fake"), {}, startup_timeout_s=1.5)
+    h.start(tmp_path)
+    t0 = time.time()
+    with pytest.raises(EngineError) as ei:
+        h.run(req(tmp_path), tmp_path / "wd", 30, lambda f, line: None)
+    assert ei.value.kind == ErrorKind.transient and "startup timeout" in ei.value.message
+    assert time.time() - t0 < 10
+    assert h.proc.poll() is not None and not (psutil.pid_exists(h.pid) and psutil.Process(h.pid).status() != "zombie")

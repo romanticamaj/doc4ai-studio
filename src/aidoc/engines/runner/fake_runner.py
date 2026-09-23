@@ -110,4 +110,7 @@ def handle(req):
 
 
 if __name__ == "__main__":
+    # simulated model loading before AIDOC_READY (index A1 clock / startup-cap tests)
+    _proto.log("fake runner loading models")
+    time.sleep(float(_load_scenario().get("startup_delay_s", 0)))
     _proto.serve(handle)

@@ -76,7 +76,8 @@ def test_three_step_waits_for_open_handle(tmp_path, monkeypatch):
     fh = open(final / "held.md")  # noqa: SIM115  closed by the timer below
     threading.Timer(0.12, fh.close).start()
     fsops.replace_dir_three_step(tmp, final, tmp_path / ".trash" / "t3")
-    assert (final / "new").exists() and not (tmp_path / ".trash").exists() or not any((tmp_path / ".trash").iterdir())
+    assert (final / "new").exists() and not (final / "held.md").exists()
+    assert not (tmp_path / ".trash").exists() or not any((tmp_path / ".trash").iterdir())
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows share-mode semantics")
