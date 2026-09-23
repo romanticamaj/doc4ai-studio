@@ -190,6 +190,8 @@ class Store:
 
     def refresh_job_status(self, job_id) -> JobStatus:
         job = self.get_job(job_id)
+        if job and job["status"] == JobStatus.cancelled.value:
+            return JobStatus.cancelled                    # sticky until a task of it is retried (P3 JobQueue)
         statuses = [r[0] for r in self.con.execute("SELECT status FROM tasks WHERE job_id=?", (job_id,))]
         if not statuses:
             st = JobStatus.queued
@@ -266,6 +268,11 @@ class Store:
         """The oldest queued task whose job is not cancelled."""
         return _row(self._q1("SELECT t.* FROM tasks t JOIN jobs j ON j.id = t.job_id WHERE t.status='queued' "
                              "AND j.status != 'cancelled' ORDER BY t.created_at, t.rowid LIMIT 1"))
+
+    def count_queued_tasks(self) -> int:
+        r = self._q1("SELECT COUNT(*) FROM tasks t JOIN jobs j ON j.id = t.job_id WHERE t.status='queued' "
+                     "AND j.status != 'cancelled'")
+        return int(r[0]) if r else 0
 
     def cancel_queued_tasks(self, job_id) -> list[str]:
         with self.con.lock:

@@ -41,7 +41,7 @@ def ctx(tmp_root, monkeypatch):
 def client(ctx):
     from fastapi.testclient import TestClient
     from aidoc.server.app import create_app
-    with TestClient(create_app(ctx)) as c:
+    with TestClient(create_app(ctx), client=("127.0.0.1", 50000)) as c:     # a loopback client
         yield c
 
 

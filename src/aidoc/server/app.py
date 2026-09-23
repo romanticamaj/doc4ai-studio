@@ -87,7 +87,7 @@ def build_context(cfg: AidocConfig, token: str | None, start_workers: bool = Tru
 
 def create_app(ctx: ServerContext) -> FastAPI:
     from aidoc.server import sse
-    from aidoc.server.api import system
+    from aidoc.server.api import jobs, system
     app = FastAPI(title="aidoc", version="0.1.0", docs_url="/api/docs", openapi_url="/api/openapi.json",
                   redoc_url=None)
     app.state.ctx = ctx
@@ -108,6 +108,7 @@ def create_app(ctx: ServerContext) -> FastAPI:
     api = APIRouter(prefix="/api", dependencies=[Depends(auth.require_token)])
     api.include_router(system.router)
     api.include_router(sse.router)
+    api.include_router(jobs.router)
     app.include_router(api)
     app.add_middleware(EnvelopeMiddleware)
     return app

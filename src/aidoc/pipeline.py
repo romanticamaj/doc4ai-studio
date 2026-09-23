@@ -65,6 +65,7 @@ class PipelineContext:
     config: AidocConfig
     emit: Emit | None
     cancel: threading.Event | None
+    pause: threading.Event | None = None      # set = queue paused: stop between segments, task back to queued
     started: float = field(default_factory=time.time)
     # filled in by _run_task once known
     opts: ConvertOptions | None = None
@@ -87,6 +88,9 @@ class PipelineContext:
     def cancelled(self) -> bool:
         return self.cancel is not None and self.cancel.is_set()
 
+    def paused(self) -> bool:
+        return self.pause is not None and self.pause.is_set()
+
     def segment_updated(self, seg_id: str) -> None:
         if self.emit is not None:
             self.emit("segment.updated", {**self.store.get_segment(seg_id), "task_id": self.task_id})
@@ -104,9 +108,19 @@ class PipelineContext:
                                    "progress": {"pages_done": done, "pages_total": total}})
 
 
+class TaskPaused(Exception):
+    """The queue was paused; raised between segments (index A16: the current segment finishes first)."""
+
+
 def _fail(ctx: PipelineContext, kind: ErrorKind, msg: str) -> TaskStatus:
     ctx.set(status=TaskStatus.failed, error_kind=kind, error_msg=msg, pid=None)
     return TaskStatus.failed
+
+
+def _requeue_paused(ctx: PipelineContext) -> TaskStatus:
+    ctx.log("queue paused: task goes back to the queue; finished segments are kept")
+    ctx.set(status=TaskStatus.queued, pid=None)
+    return TaskStatus.queued
 
 
 def _cancel(ctx: PipelineContext) -> TaskStatus:
@@ -207,6 +221,8 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
                     continue
             if ctx.cancelled():
                 raise EngineCancelled("cancelled")
+            if parts and ctx.paused():
+                raise TaskPaused()
             store.update_segment(seg["id"], status=SegmentStatus.converting, attempt=ctx.attempt, output_path=None)
             ctx.segment_updated(seg["id"])
             for name in SEGMENT_FILES:                     # stale results of an earlier attempt
@@ -312,21 +328,27 @@ def _drop_unused_work_dir(ctx: PipelineContext) -> None:
 
 
 def run_task(store: Store, task_id: str, engines: dict, config: AidocConfig, emit: Emit | None = None,
-             cancel: threading.Event | None = None) -> TaskStatus:
-    """Run one task to a terminal status. Unexpected exceptions end as failed(engine: internal error)."""
+             cancel: threading.Event | None = None, pause: threading.Event | None = None) -> TaskStatus:
+    """Run one task to a terminal status (or back to `queued` when `pause` is set between segments).
+    Unexpected exceptions end as failed(engine: internal error)."""
     if store.get_task(task_id) is None:
         raise KeyError(task_id)
-    ctx = PipelineContext(store, task_id, config, emit, cancel)
+    ctx = PipelineContext(store, task_id, config, emit, cancel, pause)
     lock = TaskLock(lock_path(store.db_path.parent, task_id))
     if not lock.acquire():                    # another process is running this very task: leave it alone
         ctx.log("task is being converted by another process; not started")
         return TaskStatus(store.get_task(task_id)["status"])
+    status = None
     try:
-        return _run_task(ctx, engines)
+        status = _run_task(ctx, engines)
+        return status
     except Exception as e:  # noqa: BLE001  never leave a task stuck in probing/converting/checking
         ctx.log(traceback.format_exc())
-        return _fail(ctx, ErrorKind.engine, f"internal error: {type(e).__name__}: {e}")
+        status = _fail(ctx, ErrorKind.engine, f"internal error: {type(e).__name__}: {e}")
+        return status
     finally:
+        if status in TERMINAL_TASK and (store.get_task(task_id) or {}).get("flags"):
+            store.set_task_flags(task_id, {})        # index A18: `force` applies to one run only
         lock.release()
 
 
@@ -379,7 +401,8 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     output_dir = planned_output_dir(store, opts.output_dir, src, task["sha256"])
     _set_output_dir(store, task, output_dir)
     task = store.get_task(task_id)
-    if not opts.force:
+    force = opts.force or bool((task.get("flags") or {}).get("force"))
+    if not force:
         hit = lookup_cached(store, task["sha256"], output_dir)
         if hit is not None:
             level = (hit.get("quality") or {}).get("level") or hit.get("status")
@@ -416,6 +439,8 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
                 result = run_engine_attempt(ctx, engine, eo, quick_check=not last)
             except EngineCancelled:
                 return _cancel(ctx)
+            except TaskPaused:
+                return _requeue_paused(ctx)
             except EngineError as e:
                 d = RETRY_POLICY.decide(e, transient_used, engine, eo)
                 msg = e.message
