@@ -54,3 +54,28 @@ def token_ctx(tmp_root, monkeypatch):
     c = build_context(load_config(), token="s3cret", start_workers=False)
     yield c
     c.close()
+
+
+@pytest.fixture
+def live_server(ctx):
+    """A real uvicorn server (ephemeral port) in a thread: Starlette's TestClient buffers whole response bodies,
+    so it cannot read an endless SSE stream. Yields the base URL."""
+    import threading
+    import time as _time
+
+    import uvicorn
+
+    from aidoc.server.app import create_app
+    server = uvicorn.Server(uvicorn.Config(create_app(ctx), host="127.0.0.1", port=0, log_level="warning",
+                                           lifespan="off"))
+    th = threading.Thread(target=server.run, daemon=True)
+    th.start()
+    deadline = _time.time() + 10
+    while not server.started:
+        if _time.time() > deadline:
+            raise RuntimeError("uvicorn did not start")
+        _time.sleep(0.02)
+    port = server.servers[0].sockets[0].getsockname()[1]
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    th.join(10)
