@@ -136,7 +136,10 @@ def _gfm_cols(text):
 
 
 def table_edges(middle):
-    """(first, last) TableEdge dicts from middle_json (MinerU 4: normalised [0..1] bbox per block)."""
+    """(first, last) TableEdge dicts from middle_json (MinerU 4: normalised [0..1] bbox per block).
+
+    "touches_edge" is measured against the page's content (P2 verifier I2): the last table touches the bottom when
+    no non-furniture block ends below it; the first table touches the top when none starts above it."""
     try:
         pages = middle["pages"] if isinstance(middle, dict) else middle
         tabs = []
@@ -144,20 +147,28 @@ def table_edges(middle):
             page_idx = pg.get("page_idx", k)
             blocks = pg.get("blocks", pg.get("para_blocks", []))
             size = pg.get("page_size")
+            spans = []
             for blk in blocks:
-                if blk.get("type") != "table" or not blk.get("bbox"):
+                if not blk.get("bbox") or blk.get("type") in _proto.FURNITURE_TYPES:
                     continue
                 _x0, y0, _x1, y1 = blk["bbox"]
                 if size and max(y0, y1) > 1.5:          # absolute coordinates (older layouts)
                     y0, y1 = y0 / size[1], y1 / size[1]
+                spans.append((blk, y0, y1))
+            for blk, y0, y1 in spans:
+                if blk.get("type") != "table":
+                    continue
+                others = [(a, b) for other, a, b in spans if other is not blk]
                 html = _block_html(blk)
                 ncols = _html_cols(html) or _gfm_cols(blk.get("content"))
-                tabs.append({"page": page_idx + 1, "top": y0, "bottom": y1, "n_cols": ncols})
+                tabs.append({"page": page_idx + 1, "n_cols": ncols,
+                             "top_edge": _proto.touches_content_edge((y0, y1), others, top=True),
+                             "bottom_edge": _proto.touches_content_edge((y0, y1), others, top=False)})
         if not tabs:
             return None, None
         f, last = tabs[0], tabs[-1]
-        return ({"page": f["page"], "n_cols": f["n_cols"], "touches_edge": f["top"] <= 0.05},
-                {"page": last["page"], "n_cols": last["n_cols"], "touches_edge": last["bottom"] >= 0.95})
+        return ({"page": f["page"], "n_cols": f["n_cols"], "touches_edge": f["top_edge"]},
+                {"page": last["page"], "n_cols": last["n_cols"], "touches_edge": last["bottom_edge"]})
     except Exception:  # noqa: BLE001  structure differs -> no edge info
         return None, None
 

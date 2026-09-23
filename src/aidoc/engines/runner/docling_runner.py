@@ -41,17 +41,31 @@ def build_converter(opts):
 
 
 def table_edges(doc):
-    """Return (first, last) TableEdge dicts using prov bbox; None when no tables / no bbox."""
+    """Return (first, last) TableEdge dicts using prov bboxes; None when no tables / no bbox.
+
+    "touches_edge" is measured against the page's content (P2 verifier I2), not the physical page: the last table
+    touches the bottom when no body item (page header/footer furniture excluded) ends below it on that page."""
     tables = [t for t in doc.tables if t.prov]
     if not tables:
         return None, None
+    per_page = {}
+    for item, _lvl in doc.iterate_items():
+        if str(getattr(item, "label", "")).split(".")[-1].lower() in _proto.FURNITURE_TYPES:
+            continue
+        layer = str(getattr(item, "content_layer", "body")).split(".")[-1].lower()
+        if layer not in ("body", ""):
+            continue
+        for prov in getattr(item, "prov", None) or []:
+            h = doc.pages[prov.page_no].size.height
+            bb = prov.bbox.to_top_left_origin(h) if hasattr(prov.bbox, "to_top_left_origin") else prov.bbox
+            per_page.setdefault(prov.page_no, []).append((item, bb.t, bb.b))
 
     def edge(t, top):
         prov = t.prov[0]
-        page = doc.pages[prov.page_no]
-        h = page.size.height
+        h = doc.pages[prov.page_no].size.height
         bb = prov.bbox.to_top_left_origin(h) if hasattr(prov.bbox, "to_top_left_origin") else prov.bbox
-        touches = (bb.t <= 0.05 * h) if top else (bb.b >= 0.95 * h)
+        others = [(a, b) for item, a, b in per_page.get(prov.page_no, []) if item is not t]
+        touches = _proto.touches_content_edge((bb.t, bb.b), others, top=top, tol=0.005 * h)
         return {"page": prov.page_no, "n_cols": t.data.num_cols, "touches_edge": bool(touches)}
     return edge(tables[0], True), edge(tables[-1], False)
 

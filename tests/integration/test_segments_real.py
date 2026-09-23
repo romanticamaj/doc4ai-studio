@@ -36,3 +36,21 @@ def test_big_pdf_segmented_with_mineru_forced(tmp_root, fixtures, capsys):
     md = (tmp_root / "out" / "big" / "big.md").read_text(encoding="utf-8")
     assert "<!-- page: 41 -->" in md and "第 45 頁" in md
     assert len(_runner_pids(err)) == 1
+
+
+def _span_table_joined(md: str) -> bool:
+    """The A-rows (page 40) and B-rows (page 41) form one GFM table: no non-table line between them."""
+    lines = md.splitlines()
+    first_a = next(i for i, ln in enumerate(lines) if ln.startswith("|") and "A0C0" in ln)
+    last_b = max(i for i, ln in enumerate(lines) if ln.startswith("|") and "B4C" in ln)
+    return all(ln.startswith("|") for ln in lines[first_a:last_b + 1])
+
+
+@pytest.mark.parametrize("engine", ["docling", "mineru"])
+def test_table_across_segment_boundary_with_real_margins_is_joined(tmp_root, fixtures, engine):
+    """P2 verifier I2: 1-inch margins + a page number footer; the table crossing pages 40/41 must be one table."""
+    src = tmp_root / "span_margin.pdf"; shutil.copy(fixtures / "span_margin.pdf", src)
+    assert main(["convert", str(src), "-o", str(tmp_root / "out"), "--engine", engine, "--json"]) == 0
+    md = (tmp_root / "out" / "span_margin" / "span_margin.md").read_text(encoding="utf-8")
+    assert "A0C0" in md and "B4C2" in md
+    assert _span_table_joined(md), md[md.find("A20C0") - 200: md.find("B4C2") + 200]

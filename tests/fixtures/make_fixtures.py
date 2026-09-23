@@ -59,7 +59,7 @@ def _write_paragraphs(page, texts, y=72, size=11):
     return y
 
 
-def _draw_table(page, y, rows=4, cols=3, w=450, rh=22):
+def _draw_table(page, y, rows=4, cols=3, w=450, rh=22, label="R"):
     x0 = 72
     sh = page.new_shape()
     for r in range(rows + 1):
@@ -72,7 +72,7 @@ def _draw_table(page, y, rows=4, cols=3, w=450, rh=22):
     font = _font(page)
     for r in range(rows):
         for c in range(cols):
-            tw.append((x0 + c * w / cols + 4, y + r * rh + 15), f"R{r}C{c} 值", font=font, fontsize=10)
+            tw.append((x0 + c * w / cols + 4, y + r * rh + 15), f"{label}{r}C{c} 值", font=font, fontsize=10)
     tw.write_text(page)
 
 
@@ -194,6 +194,28 @@ def make_big_pdf(path, n=45):
     _save(doc, path)
 
 
+def make_span_margin_pdf(path, n=45, split_after=40):
+    """P2 verifier I2: a table that runs from the bottom margin of page 40 onto the top margin of page 41 (the
+    40-page segment boundary), with ordinary 1-inch margins and a page number in the footer."""
+    doc = fitz.open()
+    for i in range(1, n + 1):
+        page = doc.new_page()                                  # A4-ish default 595 x 842
+        bottom = page.rect.height - 72
+        if i == split_after:
+            y = _write_paragraphs(page, [f"Section {i} 表格開始", ZH, EN])
+            rows = int((bottom - (y + 10)) // 22)
+            _draw_table(page, bottom - rows * 22, rows=rows, label="A")
+        elif i == split_after + 1:
+            _draw_table(page, 72, rows=5, label="B")
+            _write_paragraphs(page, [ZH, EN], y=72 + 5 * 22 + 24)
+        else:
+            _write_paragraphs(page, [f"Section {i}", ZH * 2, EN])
+        tw = fitz.TextWriter(page.rect)
+        tw.append((page.rect.width / 2 - 10, page.rect.height - 36), f"- {i} -", font=_font(page), fontsize=9)
+        tw.write_text(page)
+    _save(doc, path)
+
+
 def make_blank_pdf(path):
     doc = fitz.open()
     doc.new_page()
@@ -278,6 +300,7 @@ def main():
     make_twocol_pdf(HERE / "twocol.pdf")
     make_big_pdf(HERE / "big.pdf")
     make_blank_pdf(HERE / "blank.pdf")
+    make_span_margin_pdf(HERE / "span_margin.pdf")
     make_encrypted_pdf(HERE / "encrypted.pdf")
     make_corrupt_pdf(HERE / "corrupt.pdf")
     make_png(HERE / "page.png")

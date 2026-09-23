@@ -28,3 +28,4 @@ The same script copies self-check samples into `src/aidoc/engines/runner/samples
 
 Real scanned documents may be placed in `tests/fixtures/manual/` (gitignored) and are picked up by
 `tests/integration/test_manual_fixtures.py` when present.
+- `span_margin.pdf` — 45 pages, 1-inch margins, page-number footer; a ruled table runs from the bottom of page 40 onto the top of page 41 (the segment boundary). Cross-segment table join (P2 verifier I2).

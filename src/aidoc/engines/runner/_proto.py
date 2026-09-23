@@ -68,3 +68,19 @@ def serve(handle: Callable[[dict], dict]) -> None:
             # apply the OOM downgrade (index §0 retry policy); the message keeps the OOM marker the host looks for
             kind = "transient" if is_oom_text(msg) else "engine"
             _emit("AIDOC_ERROR", {"request": req_path, "kind": kind, "message": msg})
+
+
+# ---- cross-segment tables (spec §8.3): does a table reach the edge of its page's *content*?
+# Layout labels that are page furniture, not content (Docling + MinerU names).
+FURNITURE_TYPES = frozenset({"page_header", "page_footer", "header", "footer", "page_number", "page_footnote",
+                             "discarded"})
+
+
+def touches_content_edge(table, others, top, tol=0.005):
+    """`table` = (top, bottom) and `others` = [(top, bottom)] of the other non-furniture blocks on the same page,
+    all in one top-left-origin coordinate system; `tol` in the same units. top=True: nothing starts above the
+    table; top=False: nothing ends below it. Margins do not matter, only the page's content does."""
+    t, b = table
+    if top:
+        return all(ot >= t - tol for ot, _ob in others)
+    return all(ob <= b + tol for _ot, ob in others)
