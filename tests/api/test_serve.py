@@ -120,3 +120,18 @@ def test_maintenance_keeps_work_of_unfinished_tasks(client, ctx, tmp_root, fixtu
     os.utime(work, (old, old))
     Maintenance(ctx).run_once()
     assert (work / "src.pdf").exists()                                   # queued upload task: never purged
+
+
+def test_port_in_use_is_a_clear_error_not_exit_3(tmp_root, capsys):
+    """uvicorn exits with its own code 3 when it cannot bind, which clashed with "another server" (3)."""
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    try:
+        assert main(["serve", "--port", str(port)]) == 4
+    finally:
+        s.close()
+    assert f"could not listen on 127.0.0.1:{port}" in capsys.readouterr().err
+    assert not (paths.data_dir() / "aidoc.lock").exists()

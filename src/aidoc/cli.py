@@ -187,11 +187,21 @@ def cmd_batch(args) -> int:
     return 2 if counts.get("failed") else 0
 
 
+class ListenError(Exception):
+    pass
+
+
 def _run_uvicorn(app, host: str, port: int) -> None:
     import uvicorn
     # open SSE streams must not hold a Ctrl+C shutdown for long
-    uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info",
-                                  timeout_graceful_shutdown=3)).run()
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info",
+                                           timeout_graceful_shutdown=3))
+    try:
+        server.run()
+    except SystemExit as e:                  # uvicorn exits (code 3) when it cannot bind
+        if not server.started:
+            raise ListenError(str(e)) from None
+        raise
 
 
 def cmd_serve(args) -> int:
@@ -227,7 +237,11 @@ def cmd_serve(args) -> int:
         m = ctx.extras["maintenance"] = Maintenance(ctx)
         m.start()
         print(f"aidoc serve: http://{host}:{port}  (data: {cfg.data_dir})", flush=True)
-        _run_uvicorn(create_app(ctx), host, port)
+        try:
+            _run_uvicorn(create_app(ctx), host, port)
+        except ListenError:
+            print(f"error: could not listen on {host}:{port} (address in use?); try --port", file=sys.stderr)
+            return 4
     finally:
         if ctx is not None:
             ctx.close()
