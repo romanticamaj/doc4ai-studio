@@ -39,6 +39,11 @@ def count_tokens(text: str) -> int:
     return len(_encoder.encode(text, disallowed_special=()))
 
 
+def source_label(source: str) -> str:
+    """Chunks name the source file (spec §5 example `"source": "report.pdf"`), not its full local path."""
+    return Path(str(source).replace("\\", "/")).name or str(source)
+
+
 @dataclass
 class Chunk:
     id: str
@@ -231,7 +236,7 @@ def _chunk_dirs(out_root: Path, max_tokens: int, only: str | None, counter: Coun
         if not md.is_file():
             continue
         sc = read_sidecar(d) or {}
-        source = str(sc.get("source") or md.name)
+        source = source_label(sc.get("source") or md.name)
         for c in chunk_markdown(md.read_text(encoding="utf-8"), source, max_tokens, counter, stem=d.name):
             lines.append(json.dumps(c.to_json(), ensure_ascii=False))
     target = out_root / "chunks.jsonl"
