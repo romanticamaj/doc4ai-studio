@@ -173,7 +173,12 @@ def cmd_chunk(args) -> int:
     if args.doc is not None and not (d / args.doc).is_dir():
         print(f"error: no document dir {args.doc!r} under {d}", file=sys.stderr)
         return 1
-    path, n = _chunk_dirs(d, args.max_tokens, args.doc, count_tokens)
+    from aidoc.chunk import TokenizerUnavailable
+    try:
+        path, n = _chunk_dirs(d, args.max_tokens, args.doc, count_tokens)
+    except TokenizerUnavailable as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     print(f"wrote {n} chunks to {_display_path(str(path))}")
     return 0
 

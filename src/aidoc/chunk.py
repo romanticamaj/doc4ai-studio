@@ -19,13 +19,23 @@ _FENCE = re.compile(r"^(`{3,}|~{3,})")
 _encoder = None
 
 
+class TokenizerUnavailable(RuntimeError):
+    """cl100k_base is not cached and cannot be downloaded (offline / proxy)."""
+
+
 def count_tokens(text: str) -> int:
     """tiktoken cl100k_base (BPE cached under data/tiktoken by `aidoc setup`)."""
     global _encoder
     if _encoder is None:
         os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(paths.data_dir() / "tiktoken"))
-        import tiktoken
-        _encoder = tiktoken.get_encoding("cl100k_base")
+        try:
+            import tiktoken
+            _encoder = tiktoken.get_encoding("cl100k_base")
+        except Exception as e:  # noqa: BLE001  requests.ProxyError, ConnectionError, ...
+            raise TokenizerUnavailable(
+                f"the cl100k_base tokenizer is not cached in {os.environ['TIKTOKEN_CACHE_DIR']} and could not be "
+                f"downloaded ({type(e).__name__}); run `aidoc setup markitdown` (or any engine) once with network "
+                f"access to cache it") from e
     return len(_encoder.encode(text, disallowed_special=()))
 
 
@@ -54,14 +64,31 @@ class _Block:
     page: int | None
     level: int = 0
     pages: list[int] = field(default_factory=list)
+    pre: bool = False               # before the first page marker of a paged document
 
 
 def _blocks(md: str) -> list[_Block]:
     """Split markdown into headings and atomic content blocks, tracking the page of each."""
     lines = md.replace("\r\n", "\n").split("\n")
     out: list[_Block] = []
-    page: int | None = None
     i, n = 0, len(lines)
+    first_marker = next((int(m.group(1)) for ln in lines if (m := _PAGE.match(ln.strip()))), None)
+    # text before the first marker: page 1 when only the page-1 marker is missing, otherwise unknown
+    page: int | None = 1 if first_marker == 2 else None
+    seen_marker = False
+
+    def close_at(start: int, closes, stop_blank: bool = False) -> int:
+        """Index of the block's last line. An unclosed block ends before the next heading (or blank line)
+        instead of swallowing the rest of the document."""
+        j = start
+        while j < n:
+            t = lines[j].strip()
+            if closes(t):
+                return j
+            if _HEADING.match(t) or (stop_blank and not t):
+                return j - 1
+            j += 1
+        return n - 1
 
     def add(block_lines: list[str], first_page: int | None) -> None:
         """A block spanning a page break (HTML table, math) covers the later pages too; markers are dropped."""
@@ -74,7 +101,8 @@ def _blocks(md: str) -> list[_Block]:
                 pages.append(page)
             else:
                 kept.append(ln)
-        out.append(_Block("text", "\n".join(kept), first_page, pages=[q for q in pages if q is not None]))
+        out.append(_Block("text", "\n".join(kept), first_page, pages=[q for q in pages if q is not None],
+                          pre=first_marker is not None and not seen_marker))
 
     while i < n:
         line = lines[i]
@@ -82,6 +110,7 @@ def _blocks(md: str) -> list[_Block]:
         m = _PAGE.match(s)
         if m:
             page = int(m.group(1))
+            seen_marker = True
             i += 1
             continue
         if not s:
@@ -89,34 +118,31 @@ def _blocks(md: str) -> list[_Block]:
             continue
         h = _HEADING.match(s)
         if h:
-            out.append(_Block("heading", h.group(2).strip(), page, level=len(h.group(1))))
+            out.append(_Block("heading", h.group(2).strip(), page, level=len(h.group(1)),
+                              pages=[page] if page is not None else [],
+                              pre=first_marker is not None and not seen_marker))
             i += 1
             continue
         start_page = page
         f = _FENCE.match(s)
         if f:                                            # fenced code: up to the closing fence
             fence = f.group(1)[0] * len(f.group(1))
-            j = i + 1
-            while j < n and not lines[j].strip().startswith(fence):
-                j += 1
-            out.append(_Block("text", "\n".join(lines[i:min(j + 1, n)]), start_page,
-                              pages=[start_page] if start_page is not None else []))
+            j = close_at(i + 1, lambda t: t.startswith(fence))
+            out.append(_Block("text", "\n".join(lines[i:j + 1]), start_page,
+                              pages=[start_page] if start_page is not None else [],
+                              pre=first_marker is not None and not seen_marker))
             i = j + 1
             continue
         if s.startswith("$$"):                           # display math
             j = i
             if not (len(s) > 2 and s.endswith("$$")):
-                j = i + 1
-                while j < n and "$$" not in lines[j]:
-                    j += 1
-            add(lines[i:min(j + 1, n)], start_page)
+                j = close_at(i + 1, lambda t: "$$" in t, stop_blank=True)
+            add(lines[i:j + 1], start_page)
             i = j + 1
             continue
         if s.lower().startswith("<table"):               # HTML table, may contain blank lines
-            j = i
-            while j < n and "</table>" not in lines[j].lower():
-                j += 1
-            add(lines[i:min(j + 1, n)], start_page)
+            j = close_at(i, lambda t: "</table>" in t.lower())
+            add(lines[i:j + 1], start_page)
             i = j + 1
             continue
         if s.startswith("|"):                            # GFM table: consecutive pipe rows
@@ -142,7 +168,7 @@ def chunk_markdown(md: str, source: str, max_tokens: int = 800, counter: Counter
                    stem: str | None = None) -> list[Chunk]:
     stem = stem or Path(source).stem
     chunks: list[Chunk] = []
-    path: list[tuple[int, str]] = []
+    path: list[list] = []            # [level, text, has_content, heading block]
     cur: list[_Block] = []
     cur_path: list[str] = []
 
@@ -158,15 +184,28 @@ def chunk_markdown(md: str, source: str, max_tokens: int = 800, counter: Counter
             emit(cur, cur_path)
             cur = []
 
+    def empty_leaf() -> None:
+        """A heading with nothing under it (not even sub-headings) still becomes a chunk of its own."""
+        level, text, has_content, hb = path[-1]
+        if not has_content:
+            flush()
+            emit([_Block("text", "#" * level + " " + text, hb.page, pages=hb.pages)], [e[1] for e in path])
+
     for b in _blocks(md):
         if b.kind == "heading":
             flush()
+            if path and path[-1][0] >= b.level:
+                empty_leaf()
             while path and path[-1][0] >= b.level:
                 path.pop()
-            path.append((b.level, b.text))
+            for entry in path:
+                entry[2] = True                          # a parent with a sub-heading is not empty
+            path.append([b.level, b.text, False, b])
             continue
-        heading_path = [t for _, t in path]
-        if heading_path != cur_path:
+        for entry in path:
+            entry[2] = True
+        heading_path = [e[1] for e in path]
+        if heading_path != cur_path or (cur and cur[-1].pre and not b.pre):
             flush()
             cur_path = heading_path
         if counter(b.text) > max_tokens:                 # a block never gets split: alone and flagged
@@ -177,6 +216,8 @@ def chunk_markdown(md: str, source: str, max_tokens: int = 800, counter: Counter
             flush()
         cur.append(b)
     flush()
+    if path:
+        empty_leaf()
     return chunks
 
 

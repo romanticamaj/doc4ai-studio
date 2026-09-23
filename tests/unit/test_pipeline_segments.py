@@ -81,7 +81,7 @@ def test_cancel_keeps_done_segments(env):
     threading.Thread(target=watch, daemon=True).start()
     assert run_task(env["store"], tid, env["engines"](), env["cfg"], cancel=ev) == TaskStatus.cancelled
     segs = env["store"].list_segments(tid)
-    assert segs[0]["status"] == "done" and segs[1]["status"] in ("queued", "converting")
+    assert segs[0]["status"] == "done" and segs[1]["status"] == "queued"       # _cancel requeues the in-flight one
     assert not (env["root"] / "out" / "big").exists()
 
 

@@ -108,3 +108,54 @@ def test_chunk_single_doc_keeps_other_documents(tmp_path):
     rows = [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines()]
     assert [r["id"] for r in rows if r["id"].startswith("a#")] == ["a#0000"]
     assert [r for r in rows if r["id"].startswith("b#")] == [json.loads(x) for x in before if x.startswith('{"id": "b#')]
+
+
+# ---- P2 verifier minors (3, 4)
+
+def test_headings_only_document_is_not_dropped():
+    cs = chunk_markdown("<!-- page: 1 -->\n# A\n## B\n## C\n", "h.pdf", max_tokens=50, counter=words)
+    assert [c.heading_path for c in cs] == [["A", "B"], ["A", "C"]]
+    assert [c.text for c in cs] == ["## B", "## C"] and cs[0].page_start == 1
+
+
+def test_parent_heading_with_children_gets_no_empty_chunk():
+    cs = chunk_markdown("# A\n## B\ntext b\n", "h.md", max_tokens=50, counter=words)
+    assert [(c.heading_path, c.text) for c in cs] == [(["A", "B"], "text b")]
+
+
+def test_unclosed_fence_stops_at_next_heading():
+    md = "# One\n```python\nx = 1\n# Two\ntext two\n"
+    cs = chunk_markdown(md, "f.md", max_tokens=50, counter=words)
+    assert cs[-1].heading_path == ["Two"] and cs[-1].text == "text two"
+    assert "x = 1" in cs[0].text
+
+
+def test_unclosed_math_stops_at_blank_line_or_heading():
+    md = "# One\n$$\nx = 1\n\npara after\n# Two\ntext two\n"
+    cs = chunk_markdown(md, "m.md", max_tokens=3, counter=words)
+    assert any(c.text == "para after" for c in cs) and cs[-1].heading_path == ["Two"]
+
+
+def test_text_before_first_marker_is_not_given_the_next_page():
+    cs = chunk_markdown("preface words\n<!-- page: 3 -->\nbody three\n", "p.pdf", max_tokens=50, counter=words)
+    assert (cs[0].text, cs[0].page_start, cs[0].page_end) == ("preface words", None, None)
+    assert (cs[1].page_start, cs[1].page_end) == (3, 3)
+    cs = chunk_markdown("page one text\n<!-- page: 2 -->\nbody two\n", "p.pdf", max_tokens=50, counter=words)
+    assert (cs[0].text, cs[0].page_start) == ("page one text", 1)       # marker for page 1 absent
+
+
+def test_offline_tokenizer_gives_clear_error(tmp_root, monkeypatch, capsys):
+    import aidoc.chunk as ch
+    from aidoc.cli import main
+
+    def boom(name):
+        raise ConnectionError("ProxyError: cannot reach openaipublic.blob.core.windows.net")
+    monkeypatch.setattr(ch, "_encoder", None)
+    import tiktoken
+    monkeypatch.setattr(tiktoken, "get_encoding", boom)
+    d = tmp_root / "out" / "doc"
+    d.mkdir(parents=True)
+    (d / "doc.md").write_text("# T\ntext\n", encoding="utf-8")
+    assert main(["chunk", str(tmp_root / "out")]) == 1
+    err = capsys.readouterr().err
+    assert "aidoc setup" in err and "Traceback" not in err

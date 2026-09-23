@@ -14,9 +14,17 @@ def test_force_with_open_handle_succeeds_after_backoff(tmp_root, fixtures, monke
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     src = tmp_root / "a.pdf"; shutil.copy(fixtures / "text.pdf", src); out = tmp_root / "out"
     assert main(["convert", str(src), "-o", str(out)]) == 0
+    import aidoc.fsops
+    real_sleep, slept = aidoc.fsops.time.sleep, []
+
+    def sleep(sec):                       # record the backoff waits, still really wait
+        slept.append(sec)
+        real_sleep(sec)
+    monkeypatch.setattr("aidoc.fsops.time.sleep", sleep)
     fh = open(out / "a" / "a.md")  # noqa: SIM115  closed by the timer
     threading.Timer(0.6, fh.close).start()
     assert main(["convert", str(src), "-o", str(out), "--force"]) == 0
+    assert slept and slept[0] == 0.2          # the replace hit the open handle and backed off (0.2 s x 5)
     assert not (out / ".trash").exists() or not any((out / ".trash").iterdir())
     assert (out / "a" / "a.md").exists()
 
