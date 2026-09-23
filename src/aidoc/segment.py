@@ -48,6 +48,7 @@ class SegmentPart:
     first_table: TableEdge | None = None
     last_table: TableEdge | None = None
     page_count: int | None = None
+    engine: str | None = None          # engine that produced this part (resume only reuses the same engine)
 
 
 def _cells(line: str) -> list[str]:

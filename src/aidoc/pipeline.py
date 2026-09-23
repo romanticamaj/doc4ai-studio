@@ -1,6 +1,8 @@
-"""Single-task conversion pipeline (P1: one segment, no transient retry). Spec §4, §5, §8.2."""
+"""Single-task conversion pipeline: segments, quick checks, fallback, resume. Spec §4, §5, §8.2, §8.3."""
 from __future__ import annotations
 
+import dataclasses
+import json
 import shutil
 import sqlite3
 import threading
@@ -10,9 +12,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aidoc import paths
+from aidoc import fsops, paths
 from aidoc.config import AidocConfig
-from aidoc.engines.base import EngineError
+from aidoc.engines.base import EngineCancelled, EngineError
 from aidoc.engines.host import compute_timeout
 from aidoc.fsops import FsBusyError
 from aidoc.models import (
@@ -24,6 +26,7 @@ from aidoc.models import (
     ProbeResult,
     QualityResult,
     SegmentStatus,
+    TableEdge,
     TaskStatus,
 )
 from aidoc.names import sanitize_stem
@@ -32,9 +35,11 @@ from aidoc.output import OutputWriter, build_sidecar, choose_output_dir, lookup_
 from aidoc.probe import probe_file
 from aidoc.quality import assess
 from aidoc.router import route
+from aidoc.segment import SegmentPart, merge_segments, plan_segments, segment_dir, split_pdf
 from aidoc.store import Store
 
 Emit = Callable[[str, dict], None]
+SEGMENT_FILES = ("normalized.md", "assets.json", "edges.json")
 
 
 def stage_paths(task_id: str) -> tuple[Path, Path]:
@@ -58,6 +63,12 @@ class PipelineContext:
     emit: Emit | None
     cancel: threading.Event | None
     started: float = field(default_factory=time.time)
+    # filled in by _run_task once known
+    opts: ConvertOptions | None = None
+    probe: ProbeResult | None = None
+    work_dir: Path | None = None
+    work_src: Path | None = None
+    attempt: int = 0
 
     def set(self, **fields) -> dict:
         self.store.update_task(self.task_id, **fields)
@@ -73,6 +84,22 @@ class PipelineContext:
     def cancelled(self) -> bool:
         return self.cancel is not None and self.cancel.is_set()
 
+    def segment_updated(self, seg_id: str) -> None:
+        if self.emit is not None:
+            self.emit("segment.updated", {**self.store.get_segment(seg_id), "task_id": self.task_id})
+
+    def progress(self) -> None:
+        if self.emit is None:
+            return
+        segs = self.store.list_segments(self.task_id)
+        total = sum((s["page_end"] - s["page_start"] + 1) for s in segs if s["page_start"] is not None)
+        done = sum((s["page_end"] - s["page_start"] + 1) for s in segs
+                   if s["page_start"] is not None and s["status"] == SegmentStatus.done.value)
+        if not total:
+            total, done = len(segs), sum(1 for s in segs if s["status"] == SegmentStatus.done.value)
+        self.emit("task.updated", {**self.store.get_task(self.task_id),
+                                   "progress": {"pages_done": done, "pages_total": total}})
+
 
 def _fail(ctx: PipelineContext, kind: ErrorKind, msg: str) -> TaskStatus:
     ctx.set(status=TaskStatus.failed, error_kind=kind, error_msg=msg, pid=None)
@@ -80,6 +107,10 @@ def _fail(ctx: PipelineContext, kind: ErrorKind, msg: str) -> TaskStatus:
 
 
 def _cancel(ctx: PipelineContext) -> TaskStatus:
+    for seg in ctx.store.list_segments(ctx.task_id):       # the interrupted segment goes back to the queue
+        if seg["status"] == SegmentStatus.converting.value:
+            ctx.store.update_segment(seg["id"], status=SegmentStatus.queued, output_path=None)
+            ctx.segment_updated(seg["id"])
     ctx.set(status=TaskStatus.cancelled, pid=None)
     return TaskStatus.cancelled
 
@@ -103,14 +134,146 @@ def _set_output_dir(store: Store, task: dict, output_dir: Path) -> None:
         store.update_task(task["id"], output_dir=str(output_dir))
 
 
-def _write_output(ctx: PipelineContext, task: dict, opts: ConvertOptions, probe: ProbeResult, cand: _Candidate,
-                  output_dir: Path, work_src: Path, segments: list[dict]) -> TaskStatus:
-    store = ctx.store
+# ---------------------------------------------------------------- segment files (data/work/<task>/seg_<idx>/)
+
+def save_segment_part(seg_dir: Path, part: SegmentPart) -> None:
+    """Write the three result files; the segment may be marked done only after this returns."""
+    seg_dir = Path(seg_dir)
+    fsops.atomic_write_text(seg_dir / "normalized.md", part.markdown)
+    fsops.atomic_write_json(seg_dir / "assets.json", [[str(src), name] for src, name in part.assets])
+    fsops.atomic_write_json(seg_dir / "edges.json", {
+        "engine": part.engine, "has_page_markers": part.has_page_markers, "page_count": part.page_count,
+        "first_table": part.first_table.to_json() if part.first_table else None,
+        "last_table": part.last_table.to_json() if part.last_table else None})
+
+
+def load_segment_part(seg_dir: Path, seg_row: dict) -> SegmentPart | None:
+    """The saved part of a done segment, or None when any file (or referenced asset) is missing/corrupt."""
+    seg_dir = Path(seg_dir)
+    try:
+        md = (seg_dir / "normalized.md").read_text(encoding="utf-8")
+        assets = [(Path(src), name) for src, name in json.loads((seg_dir / "assets.json").read_text(encoding="utf-8"))]
+        edges = json.loads((seg_dir / "edges.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    if not all(src.is_file() for src, _ in assets):
+        return None
+    ft, lt = edges.get("first_table"), edges.get("last_table")
+    return SegmentPart(idx=seg_row["idx"], page_start=seg_row["page_start"], page_end=seg_row["page_end"],
+                       markdown=md, assets=assets, has_page_markers=bool(edges.get("has_page_markers")),
+                       first_table=TableEdge.from_json(ft) if ft else None,
+                       last_table=TableEdge.from_json(lt) if lt else None,
+                       page_count=edges.get("page_count"), engine=edges.get("engine"))
+
+
+def _discard_segments(ctx: PipelineContext) -> None:
+    """Switching engine: completed segments are void (spec §4 — one engine per document)."""
+    ctx.store.reset_segments(ctx.task_id)
+    for seg in ctx.store.list_segments(ctx.task_id):
+        fsops.remove_tree(segment_dir(ctx.work_dir, seg["idx"]))
+
+
+def _segment_probe(probe: ProbeResult, page_start: int, page_end: int) -> ProbeResult:
+    # has_table_lines is a whole-document fact: a segment without tables must not fail the quick check for it
+    return dataclasses.replace(probe, pages=page_end - page_start + 1, has_table_lines=False,
+                               blank_pages=[p for p in probe.blank_pages if page_start <= p <= page_end])
+
+
+# ---------------------------------------------------------------- one engine attempt (one runner session)
+
+def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
+                       quick_check: bool = True) -> tuple[NormalizedResult, QualityResult, int | None]:
+    """Convert every unfinished segment with one runner session, merge, assess the whole document.
+
+    Raises EngineError / EngineCancelled. Done segments of the same engine are reused (resume)."""
+    store, opts, probe = ctx.store, ctx.opts, ctx.probe
+    segments = store.list_segments(ctx.task_id)
+    multi = len(segments) > 1
+    session = engine.open_session(opts, probe, engine_opts=engine_opts)
+    ctx.attempt += 1
+    ctx.set(status=TaskStatus.converting, engine=engine.name, attempt=ctx.attempt, pid=session.pid)
+    ctx.log(f"{engine.name} runner started pid={session.pid} (attempt {ctx.attempt})")
+    try:
+        parts: list[SegmentPart] = []
+        for seg in segments:
+            sd = segment_dir(ctx.work_dir, seg["idx"])
+            if seg["status"] == SegmentStatus.done.value:
+                part = load_segment_part(sd, seg)
+                if part is not None and part.engine == engine.name:
+                    parts.append(part)
+                    continue
+            if ctx.cancelled():
+                raise EngineCancelled("cancelled")
+            store.update_segment(seg["id"], status=SegmentStatus.converting, attempt=ctx.attempt, output_path=None)
+            ctx.segment_updated(seg["id"])
+            for name in SEGMENT_FILES:                     # stale results of an earlier attempt
+                (sd / name).unlink(missing_ok=True)
+            fsops.remove_tree(sd / "raw")
+            ps, pe = seg["page_start"], seg["page_end"]
+            if multi and ps is not None:
+                seg_src = sd / f"seg_{seg['idx']}.pdf"
+                if not seg_src.is_file():
+                    split_pdf(ctx.work_src, ps, pe, seg_src)
+                pages = (ps, pe)
+            else:
+                seg_src, pages = ctx.work_src, None        # a single segment is the whole document
+            seg_pages = (pe - ps + 1) if ps is not None else None
+            timeout = compute_timeout(seg_pages, probe.size, opts, ctx.config.limits)
+
+            def on_progress(frac: float, line: str) -> None:
+                if line:
+                    ctx.log(line)
+            raw = session.convert(seg_src, sd, pages, on_progress, timeout_s=timeout, segment_idx=seg["idx"],
+                                  cancel=ctx.cancel)
+            offset = (ps - 1) if (pages is not None and ps) else 0
+            norm = normalize(raw, offset, seg["idx"])
+            if multi and quick_check and ps is not None:
+                q = assess(norm.markdown, _segment_probe(probe, ps, pe), seg_pages)
+                if q.level == "low":
+                    raise EngineError(ErrorKind.engine, f"segment {seg['idx']} quick check failed: "
+                                                        f"{', '.join(q.reasons)}")
+            part = SegmentPart(idx=seg["idx"], page_start=ps, page_end=pe, markdown=norm.markdown, assets=norm.assets,
+                               has_page_markers=raw.has_page_markers, first_table=raw.first_table,
+                               last_table=raw.last_table, page_count=raw.page_count, engine=engine.name)
+            save_segment_part(sd, part)
+            store.update_segment(seg["id"], status=SegmentStatus.done, output_path=str(sd))
+            ctx.segment_updated(seg["id"])
+            ctx.progress()
+            parts.append(part)
+    finally:
+        session.close()
+        store.update_task(ctx.task_id, pid=None)
+    ctx.set(status=TaskStatus.checking)
+    if multi:
+        merged = merge_segments(parts)
+    else:
+        merged = NormalizedResult(markdown=parts[0].markdown, assets=parts[0].assets)
+    page_count = probe.pages if probe.pages is not None else parts[0].page_count
+    return merged, assess(merged.markdown, probe, probe.pages), page_count
+
+
+# ---------------------------------------------------------------- output
+
+def _keep_candidate(ctx: PipelineContext, cand: _Candidate) -> _Candidate:
+    """Copy a low candidate's assets out of the segment dirs (they are discarded when the next engine runs)."""
+    keep = ctx.work_dir / "best"
+    fsops.remove_tree(keep)
+    keep.mkdir(parents=True)
+    assets = []
+    for src, name in cand.norm.assets:
+        shutil.copy2(src, keep / name)
+        assets.append((keep / name, name))
+    return dataclasses.replace(cand, norm=NormalizedResult(markdown=cand.norm.markdown, assets=assets))
+
+
+def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir: Path) -> TaskStatus:
+    store, opts, probe = ctx.store, ctx.opts, ctx.probe
     tried = store.get_task(ctx.task_id)["tried"]
     stem = output_dir.name
+    n_segments = len(store.list_segments(ctx.task_id)) or 1
     sidecar = build_sidecar(source=task["source_path"], sha256=task["sha256"],
                             pages=probe.pages if probe.pages is not None else cand.page_count,
-                            engine=cand.engine, tried=tried, segments=len(segments) or 1, probe=probe.to_json(),
+                            engine=cand.engine, tried=tried, segments=n_segments, probe=probe.to_json(),
                             quality=cand.quality.to_json(), lang=opts.lang, elapsed_s=time.time() - ctx.started)
     writer = OutputWriter(opts.output_dir, ctx.task_id, stem)
     try:
@@ -124,10 +287,8 @@ def _write_output(ctx: PipelineContext, task: dict, opts: ConvertOptions, probe:
     store.upsert_document(sha256=task["sha256"], source_path=task["source_path"], output_dir=str(output_dir),
                           engine=cand.engine, quality=cand.quality.to_json(), pages=sidecar["pages"], lang=opts.lang,
                           aidoc_version=sidecar["aidoc_version"], status=cand.quality.level,
-                          work_copy_path=str(work_src), work_copy_expires_at=time.time() + retention * 86400,
+                          work_copy_path=str(ctx.work_src), work_copy_expires_at=time.time() + retention * 86400,
                           created_at=time.time())
-    for seg in segments:
-        store.update_segment(seg["id"], status=SegmentStatus.done, output_path=str(output_dir))
     ctx.set(status=status, engine=cand.engine, quality=cand.quality.to_json(), output_dir=str(output_dir),
             error_kind=None, error_msg=None, pid=None)
     return status
@@ -146,11 +307,36 @@ def run_task(store: Store, task_id: str, engines: dict, config: AidocConfig, emi
         return _fail(ctx, ErrorKind.engine, f"internal error: {type(e).__name__}: {e}")
 
 
+def _prepare_segments(ctx: PipelineContext, decision_engines: list[str]) -> list[str]:
+    """Create or keep segment rows; returns the engine order (a resumable engine's done work is continued)."""
+    store = ctx.store
+    ranges = plan_segments(ctx.probe.pages if ctx.probe.kind == "pdf" else None)
+    rows = store.list_segments(ctx.task_id)
+    if [(r["page_start"], r["page_end"]) for r in rows] != ranges:
+        if rows:
+            _discard_segments(ctx)
+            store.delete_segments(ctx.task_id)
+        store.create_segments(ctx.task_id, ranges)
+        return list(decision_engines)
+    done_engines = set()
+    for r in rows:
+        if r["status"] == SegmentStatus.done.value:
+            part = load_segment_part(segment_dir(ctx.work_dir, r["idx"]), r)
+            done_engines.add(part.engine if part is not None else None)
+    if len(done_engines) == 1 and (eng := next(iter(done_engines))) in decision_engines:
+        ctx.log(f"resuming with {eng}: {sum(r['status'] == 'done' for r in rows)} of {len(rows)} segments done")
+        return decision_engines[decision_engines.index(eng):]
+    if done_engines:
+        _discard_segments(ctx)
+    return list(decision_engines)
+
+
 def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
-    store, task_id, config = ctx.store, ctx.task_id, ctx.config
+    store, task_id = ctx.store, ctx.task_id
     task = store.get_task(task_id)
     job = store.get_job(task["job_id"])
-    opts = ConvertOptions.from_json(job["options"])
+    opts = ctx.opts = ConvertOptions.from_json(job["options"])
+    ctx.attempt = task["attempt"]
     if ctx.cancelled():
         return _cancel(ctx)
 
@@ -159,7 +345,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     src = Path(task["source_path"])
     if not src.is_file():
         return _fail(ctx, ErrorKind.input, f"source_missing: {src}")
-    probe = probe_file(src)
+    probe = ctx.probe = probe_file(src)
     if probe.error:
         return _fail(ctx, ErrorKind.input, probe.error)
     output_dir = choose_output_dir(store, opts.output_dir, sanitize_stem(src.stem), task["sha256"])
@@ -183,63 +369,48 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     if decision.missing:
         ctx.log(f"engines not installed, skipped: {', '.join(decision.missing)} (run aidoc setup <engine>)")
 
-    # 3. stage work copy + segment row
-    work_dir, seg_dir = stage_paths(task_id)
+    # 3. stage work copy + segment rows
+    work_dir, _ = stage_paths(task_id)
+    ctx.work_dir = work_dir
     work_dir.mkdir(parents=True, exist_ok=True)
-    work_src = work_dir / f"src{src.suffix.lower()}"
+    work_src = ctx.work_src = work_dir / f"src{src.suffix.lower()}"
     shutil.copy2(src, work_src)
     ctx.set(work_path=str(work_src))
-    segments = store.list_segments(task_id)
-    if segments:
-        store.reset_segments(task_id)
-    else:
-        store.create_segments(task_id, [(1, probe.pages) if probe.pages else (None, None)])
-    segments = store.list_segments(task_id)
+    order = _prepare_segments(ctx, decision.engines)
 
     # 4. engines in order
-    timeout = compute_timeout(probe.pages, probe.size, opts, config.limits)
     best: _Candidate | None = None
-    attempt_no = task["attempt"]
-    for name in decision.engines:
+    for i, name in enumerate(order):
         if ctx.cancelled():
             return _cancel(ctx)
         engine = engines[name]
-        attempt_no += 1
-        ctx.set(status=TaskStatus.converting, engine=name, attempt=attempt_no)
-        for seg in segments:
-            store.update_segment(seg["id"], status=SegmentStatus.converting, attempt=attempt_no)
-        eng_dir = seg_dir / f"{attempt_no}_{name}"
-
-        def on_progress(frac: float, line: str) -> None:
-            if line:
-                ctx.log(line)
-
+        eo = engine.engine_opts(opts, probe)
+        last = i == len(order) - 1
         try:
-            raw = engine.convert(work_src, eng_dir, opts, None, on_progress, timeout_s=timeout, probe=probe,
-                                 on_start=lambda pid: store.update_task(task_id, pid=pid))
+            norm, q, page_count = run_engine_attempt(ctx, engine, eo, quick_check=not last)
+        except EngineCancelled:
+            return _cancel(ctx)
         except EngineError as e:
-            store.update_task(task_id, pid=None)
-            store.append_attempt(task_id, Attempt(engine=name, attempt=attempt_no, score=None, reasons=[],
+            store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=None, reasons=[],
                                                   error_kind=e.kind.value, error_msg=e.message[:1000]))
             ctx.log(f"{name} failed ({e.kind.value}): {e.message[:300]}")
             if e.kind == ErrorKind.input:
                 return _fail(ctx, ErrorKind.input, f"{name}: {e.message[:500]}")
+            _discard_segments(ctx)
             continue
-        store.update_task(task_id, pid=None)
-        ctx.set(status=TaskStatus.checking)
-        norm = normalize(raw, 0, 0)
-        q = assess(norm.markdown, probe, probe.pages)
-        store.append_attempt(task_id, Attempt(engine=name, attempt=attempt_no, score=q.score, reasons=q.reasons))
-        cand = _Candidate(name, norm, q, raw.page_count)
+        store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=q.score, reasons=q.reasons))
+        cand = _Candidate(name, norm, q, page_count)
         if q.level == "ok":
-            return _write_output(ctx, task, opts, probe, cand, output_dir, work_src, segments)
+            return _write_output(ctx, task, cand, output_dir)
         ctx.log(f"{name} quality low ({q.score}): {', '.join(q.reasons)}")
         if best is None or q.score > best.quality.score:
-            best = cand
+            best = _keep_candidate(ctx, cand) if not last else cand
+        if not last:
+            _discard_segments(ctx)
 
     # 5. nothing passed
     if best is not None:
-        return _write_output(ctx, task, opts, probe, best, output_dir, work_src, segments)
-    for seg in segments:
+        return _write_output(ctx, task, best, output_dir)
+    for seg in store.list_segments(task_id):
         store.update_segment(seg["id"], status=SegmentStatus.failed)
     return _fail(ctx, ErrorKind.engine, "all engines failed")

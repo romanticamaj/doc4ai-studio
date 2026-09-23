@@ -86,7 +86,9 @@ class Store:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.con = sqlite3.connect(str(self.db_path), isolation_level=None)
+        # check_same_thread=False: watcher threads (cancel/progress) read the same Store; autocommit mode and
+        # SQLite's serialized threading keep single statements safe (P3 adds an RLock via threadsafe=True).
+        self.con = sqlite3.connect(str(self.db_path), isolation_level=None, check_same_thread=False)
         self.con.row_factory = sqlite3.Row
         self.con.execute("PRAGMA journal_mode=WAL")
         self.con.execute("PRAGMA busy_timeout=5000")
@@ -199,6 +201,12 @@ class Store:
 
     def update_segment(self, segment_id, **fields) -> None:
         self._update("segments", "id", segment_id, fields)
+
+    def delete_segments(self, task_id) -> None:
+        self.con.execute("DELETE FROM segments WHERE task_id=?", (task_id,))
+
+    def get_segment(self, segment_id) -> dict | None:
+        return _row(self._q1("SELECT * FROM segments WHERE id=?", (segment_id,)))
 
     def reset_segments(self, task_id) -> None:
         self.con.execute("UPDATE segments SET status='queued', attempt=0, output_path=NULL WHERE task_id=?", (task_id,))
