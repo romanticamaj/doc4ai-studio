@@ -33,3 +33,12 @@ def test_mineru4_structured_content_shape():
     items = mr.flatten_structured(sc)
     out = mr.insert_page_markers(MD, items)
     assert out.startswith("<!-- page: 1 -->\n# Title") and "<!-- page: 2 -->\nSecond page" in out
+
+
+def test_identical_pages_with_repeated_prefix():
+    """scanned_cht.pdf: both pages hold the same paragraph, whose 40-char prefix repeats inside itself."""
+    para = "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。" * 4
+    md = f"{para}\n\n{para}\n"
+    items = [{"page_idx": 0, "type": "text", "content": para}, {"page_idx": 1, "type": "text", "content": para}]
+    out = mr.insert_page_markers(md, items)
+    assert out == f"<!-- page: 1 -->\n{para}\n\n<!-- page: 2 -->\n{para}\n"

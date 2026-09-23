@@ -38,6 +38,14 @@ def _needles(item):
     return []
 
 
+def _full_text(item):
+    for key in ("text", "content"):
+        v = item.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
 def insert_page_markers(md, items):
     """Insert `<!-- page: N -->` before the first element of every page. None when a page cannot be located."""
     by_page: dict[int, list] = {}
@@ -55,25 +63,27 @@ def insert_page_markers(md, items):
     cursor = 0
     cuts: list[tuple[int, int]] = []
     for page in order:
-        found = None
+        first = None
         for it in by_page[page]:
+            # walk every item of the page so the cursor ends after the page's content: a short needle may
+            # otherwise re-match inside the same page (repeated paragraphs, identical pages)
             for needle in _needles(it):
                 pos = md.find(needle, cursor)
-                if pos >= 0:
-                    found = (pos, needle)
-                    break
-            if found:
+                if pos < 0:
+                    continue
+                full = _full_text(it)
+                cursor = pos + (len(full) if full and md.startswith(full, pos) else len(needle))
+                if first is None:
+                    first = pos
                 break
-        if found is None:
+        if first is None:
             if all(not _needles(it) for it in by_page[page]):
                 continue                         # page with nothing locatable (e.g. empty page): no marker
             return None
-        pos, needle = found
-        line_start = md.rfind("\n", 0, pos) + 1
+        line_start = md.rfind("\n", 0, first) + 1
         if cuts and line_start < cuts[-1][1]:
             line_start = cuts[-1][1]
         cuts.append((page, line_start))
-        cursor = pos + len(needle)
     if not cuts:
         return None
     out, prev = [], 0

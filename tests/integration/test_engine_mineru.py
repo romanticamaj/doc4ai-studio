@@ -17,6 +17,9 @@ def conv(tmp_root, fixtures, name, **kw):
 def test_scanned_cht(tmp_root, fixtures):
     r = conv(tmp_root, fixtures, "scanned_cht.pdf")
     assert "繁體中文" in r.markdown and r.has_page_markers and r.markdown.count("<!-- page: ") == 2
+    page1 = r.markdown.split("<!-- page: 1 -->", 1)[1].split("<!-- page: 2 -->", 1)[0]
+    page2 = r.markdown.split("<!-- page: 2 -->", 1)[1]
+    assert "繁體中文" in page1 and "繁體中文" in page2          # markers sit at real page boundaries
 
 
 def test_scanned_mixed(tmp_root, fixtures):
