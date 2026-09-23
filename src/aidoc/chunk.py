@@ -194,11 +194,23 @@ def _chunk_dirs(out_root: Path, max_tokens: int, only: str | None, counter: Coun
         for c in chunk_markdown(md.read_text(encoding="utf-8"), source, max_tokens, counter, stem=d.name):
             lines.append(json.dumps(c.to_json(), ensure_ascii=False))
     target = out_root / "chunks.jsonl"
+    written = len(lines)
+    if only is not None and target.is_file():       # refresh one document, keep every other document's chunks
+        kept = []
+        for line in target.read_text(encoding="utf-8").splitlines():
+            try:
+                cid = str(json.loads(line).get("id", ""))
+            except ValueError:
+                continue
+            if cid.rpartition("#")[0] != only:
+                kept.append(line)
+        lines = kept + lines
     fsops.atomic_write_lines(target, lines)
-    return target, len(lines)
+    return target, written
 
 
 def chunk_output_dir(out_root: Path, max_tokens: int = 800, only: str | None = None,
                      counter: Counter = count_tokens) -> Path:
-    """Chunk every converted document under out_root into out_root/chunks.jsonl (written atomically)."""
+    """Chunk every converted document under out_root into out_root/chunks.jsonl (written atomically).
+    With `only`, just that document's chunks are replaced; the other documents' lines are kept."""
     return _chunk_dirs(out_root, max_tokens, only, counter)[0]

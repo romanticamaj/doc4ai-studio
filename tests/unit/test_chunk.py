@@ -94,3 +94,17 @@ def test_cli_chunk(tmp_path, capsys):
     assert rows and all({"heading_path", "page_start", "page_end"} <= set(r) for r in rows)
     assert main(["chunk", str(tmp_path / "missing")]) == 1
     assert main(["chunk", str(tmp_path), "--doc", "nope"]) == 1
+
+
+def test_chunk_single_doc_keeps_other_documents(tmp_path):
+    """Final review (M3, re-graded): `--doc X` refreshes X's chunks and keeps everybody else's."""
+    for name in ("a", "b"):
+        d = tmp_path / name; d.mkdir(); (d / f"{name}.md").write_text(MD, encoding="utf-8")
+        (d / f"{name}.json").write_text(json.dumps({"source": f"{name}.pdf"}))
+    p = chunk_output_dir(tmp_path, max_tokens=8, counter=words)
+    before = p.read_text(encoding="utf-8").splitlines()
+    (tmp_path / "a" / "a.md").write_text("# New\nonly one chunk now", encoding="utf-8")
+    chunk_output_dir(tmp_path, max_tokens=8, only="a", counter=words)
+    rows = [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines()]
+    assert [r["id"] for r in rows if r["id"].startswith("a#")] == ["a#0000"]
+    assert [r for r in rows if r["id"].startswith("b#")] == [json.loads(x) for x in before if x.startswith('{"id": "b#')]
