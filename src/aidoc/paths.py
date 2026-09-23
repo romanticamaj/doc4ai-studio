@@ -20,11 +20,13 @@ def data_dir() -> Path:
 
 
 def envs_dir() -> Path:
-    return project_root() / "envs"
+    env = os.environ.get("AIDOC_ENVS")
+    return Path(env).resolve() if env else project_root() / "envs"
 
 
 def models_dir() -> Path:
-    return data_dir() / "models"
+    env = os.environ.get("AIDOC_MODELS")
+    return Path(env).resolve() if env else data_dir() / "models"
 
 
 def venv_dir(engine: str) -> Path:

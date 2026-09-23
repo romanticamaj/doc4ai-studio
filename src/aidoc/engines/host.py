@@ -19,7 +19,8 @@ _PREFIXES = ("AIDOC_READY", "AIDOC_PROGRESS", "AIDOC_DONE", "AIDOC_ERROR")
 
 
 def runner_env(data_dir: Path) -> dict[str, str]:
-    models = Path(data_dir) / "models"
+    env_models = os.environ.get("AIDOC_MODELS")
+    models = Path(env_models) if env_models else Path(data_dir) / "models"
     return {
         "PYTHONUTF8": "1",
         "PYTHONIOENCODING": "utf-8",
