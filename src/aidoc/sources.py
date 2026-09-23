@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import shutil
 import stat
-import sys
 from pathlib import Path
 
 from aidoc import fsops
@@ -17,15 +16,6 @@ class SourceError(Exception):
         self.code = code                      # "source_missing" | "source_changed"
 
 
-def _same_volume(a: Path, b: Path) -> bool:
-    if sys.platform == "win32":
-        return a.resolve().drive.lower() == b.resolve().drive.lower()
-    try:
-        return a.stat().st_dev == b.stat().st_dev
-    except OSError:
-        return False
-
-
 def _same_file(a: Path, b: Path) -> bool:
     try:
         return os.path.samefile(a, b)
@@ -34,7 +24,7 @@ def _same_file(a: Path, b: Path) -> bool:
 
 
 def stage_source(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
-    """Hardlink (same volume) or copy the source to work_dir/src<ext> and verify its sha256.
+    """Copy the source to work_dir/src<ext> and verify the copy's sha256.
 
     Idempotent: an already staged copy with the expected sha is reused even when the original has moved.
     Raises SourceError(source_missing | source_changed | source_unreadable)."""
@@ -69,20 +59,13 @@ def _stage(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
         if os.stat(dst).st_nlink == 1:
             os.chmod(dst, stat.S_IWRITE | stat.S_IREAD)
         dst.unlink()
-    linked = False
-    # hardlinks share NTFS attributes: a read-only source is copied so work-copy cleanup never has to touch it
-    writable = bool(source_path.stat().st_mode & stat.S_IWRITE)
-    if writable and _same_volume(source_path, work_dir):
-        try:
-            os.link(source_path, dst)
-            linked = True
-        except OSError:
-            linked = False
-    if not linked:
-        tmp = dst.with_name(f".{dst.name}.tmp")
-        shutil.copy2(source_path, tmp)
-        fsops.retry_fs(lambda: os.replace(tmp, dst))
+    # Always a real copy, never a hardlink (P2 verifier I1): a hardlink shares the data, so an in-place rewrite of
+    # the original during conversion would reach segments that are split later. The copy is verified below.
+    tmp = dst.with_name(f".{dst.name}.tmp")
+    shutil.copy2(source_path, tmp)
+    fsops.retry_fs(lambda: os.replace(tmp, dst))
     if file_sha256(dst) != expected_sha:
+        os.chmod(dst, stat.S_IWRITE | stat.S_IREAD)          # a copy of a read-only source is read-only too
         dst.unlink(missing_ok=True)
         raise SourceError("source_changed", str(source_path))
     return dst

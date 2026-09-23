@@ -15,11 +15,12 @@ from aidoc.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 
-def test_stage_hardlink_or_copy(tmp_path, fixtures):
+def test_stage_always_copies(tmp_path, fixtures):
+    """P2 verifier I1: never a hardlink — an in-place rewrite of the original must not reach the work copy."""
     src = tmp_path / "a.pdf"; shutil.copy(fixtures / "text.pdf", src)
     staged = stage_source(src, file_sha256(src), tmp_path / "work")
     assert staged.name == "src.pdf" and file_sha256(staged) == file_sha256(src)
-    assert os.stat(staged).st_nlink == 2 or staged.stat().st_size == src.stat().st_size
+    assert os.stat(staged).st_nlink == 1 and os.stat(src).st_nlink == 1
 
 
 def test_stage_is_idempotent_and_survives_moved_original(tmp_path, fixtures):
@@ -131,7 +132,6 @@ def test_unreadable_source_at_run_time_is_input_error(tmp_root, fixtures, monkey
     with pytest.raises(SourceError) as e:
         monkeypatch.setattr(aidoc.sources.shutil, "copy2", lambda *a, **k: (_ for _ in ()).throw(
             PermissionError(13, "used by another process")))
-        monkeypatch.setattr(aidoc.sources, "_same_volume", lambda a, b: False)
         stage_source(src, sha, tmp_path_w := tmp_root / "w")
     assert e.value.code == "source_unreadable" and not (tmp_path_w / ".src.pdf.tmp").exists()
     job = store.create_job(ConvertOptions(output_dir=tmp_root / "out"), "cli")

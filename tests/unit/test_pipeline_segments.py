@@ -119,3 +119,29 @@ def test_single_segment_pdf_is_not_split(env):
     assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.done
     c = calls(env["root"])
     assert len(c) == 1 and c[0]["pages"] is None and c[0]["source"].startswith("src")
+
+
+def test_source_modified_in_place_mid_conversion_never_mixes(env):
+    """P2 verifier I1: the work copy is a real copy; an in-place rewrite of the original during segment 0 must not
+    leak into segment 1 (it used to be a hardlink, so seg_1 was split from the new file)."""
+    write_scenario(env["sc"], rules=[{"match": {"segment_idx": 0}, "behavior": "slow_ok"}], slow_s=2)
+    tid = env["make"]()
+    src = env["root"] / "big.pdf"
+    sha = file_sha256(src)
+
+    def rewrite():
+        while not any(s["status"] == "converting" for s in env["store"].list_segments(tid)):
+            time.sleep(0.02)
+        from tests.conftest import FIXTURES
+        with open(src, "r+b") as f:                    # same inode: truncate + write another PDF
+            f.truncate(0)
+            f.write((FIXTURES / "twocol.pdf").read_bytes())
+    th = threading.Thread(target=rewrite, daemon=True)
+    th.start()
+    assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.done
+    th.join(5)
+    assert file_sha256(src) != sha                         # the original really changed
+    t = env["store"].get_task(tid)
+    assert file_sha256(t["work_path"]) == sha              # every segment came from the verified copy
+    md = (env["root"] / "out" / "big" / "big.md").read_text(encoding="utf-8")
+    assert md.count("<!-- page: ") == 45
