@@ -49,7 +49,7 @@ def test_setup_endpoint_streams_logs(client, ctx, monkeypatch):
     assert r.status_code == 202 and r.json()["engine"] == "docling" and r.json()["setup_id"]
     kinds = _wait_kinds(ctx, "setup.done")
     assert [p["line"] for k, p in kinds if k == "setup.log"] == ["syncing", "done"]
-    assert [p for k, p in kinds if k == "setup.done"][0] == {"engine": "docling", "ok": True}
+    assert next(p for k, p in kinds if k == "setup.done") == {"engine": "docling", "ok": True}
     _wait_kinds(ctx, "system.updated")
     assert client.post("/api/system/setup/nope").status_code == 404
 
@@ -67,7 +67,7 @@ def test_setup_conflict_and_failure(client, ctx, monkeypatch):
     assert r.status_code == 409 and r.json()["error"] == "setup_running"
     gate.set()
     kinds = _wait_kinds(ctx, "setup.done")
-    done = [p for k, p in kinds if k == "setup.done"][0]
+    done = next(p for k, p in kinds if k == "setup.done")
     assert done["ok"] is False and "uv exploded" in done["error"] and done["engine"] == "all"
 
 
