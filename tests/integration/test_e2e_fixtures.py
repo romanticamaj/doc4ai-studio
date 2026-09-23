@@ -29,12 +29,21 @@ def test_fixture_converts_ok(tmp_root, fixtures, name, engine, markers):
     assert (out / stem / "assets").is_dir()
 
 
-def test_scanned_en_routes_to_docling_with_lang_en(tmp_root, fixtures):
+def test_scanned_en_routes_to_docling_with_lang_en(tmp_root, fixtures, monkeypatch):
+    """§13.2 as revised in P2: Docling-first for English scans when Docling's OCR is EasyOCR (English model).
+    (With the default RapidOCR, lang=en routes like cht: tests/integration/test_lang_en_real.py.)"""
+    from pathlib import Path
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    cfg = (REPO_ROOT / "aidoc.toml").read_text(encoding="utf-8")
+    assert 'docling_ocr = "rapidocr"' in cfg
+    (tmp_root / "aidoc.toml").write_text(cfg.replace('docling_ocr = "rapidocr"', 'docling_ocr = "easyocr"'),
+                                         encoding="utf-8")
+    monkeypatch.setenv("AIDOC_CONFIG", str(tmp_root / "aidoc.toml"))
     src = tmp_root / "scanned_en.pdf"
     shutil.copy(fixtures / "scanned_en.pdf", src)
     assert main(["convert", str(src), "-o", str(tmp_root / "out"), "--lang", "en", "--json"]) == 0
     sc = json.loads((tmp_root / "out" / "scanned_en" / "scanned_en.json").read_text(encoding="utf-8"))
-    assert sc["engine"] == "docling" and sc["lang"] == "en"
+    assert sc["engine"] == "docling" and sc["lang"] == "en" and sc["quality"]["level"] == "ok"
 
 
 def test_big_pdf_whole_document_p1(tmp_root, fixtures):
