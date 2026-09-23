@@ -36,7 +36,7 @@ def test_ctrl_break_in_batch_exits_130_without_traceback(tmp_root, fixtures, wai
                  and big()["pid"], 60)
         runner = big()["pid"]
         os.kill(p.pid, signal.CTRL_BREAK_EVENT)
-        out, err = p.communicate(timeout=30)
+        _out, err = p.communicate(timeout=30)
     finally:
         if p.poll() is None:
             procs.kill_tree(p.pid)
