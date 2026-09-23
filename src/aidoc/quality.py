@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from aidoc.models import ProbeResult, QualityResult
 
@@ -14,8 +15,12 @@ _SEP_LINE = re.compile(r"(?m)^\s*\|?\s*:?-{3,}[\s|:-]*$")
 _MARKUP_CHARS = re.compile(r"[|#*_`$]")
 _TABLE_GFM = re.compile(r"(?m)^\s*\|.*\|\s*$\n\s*\|?\s*:?-{3,}")
 _TABLE_HTML = re.compile(r"<table", re.IGNORECASE)
-_GARBAGE_RUN = re.compile(
-    r"[^\w\s　-〿一-鿿＀-￯,.;:!?()\[\]{}'\"\-–—/|*#$%&+=<>@^_`~]{4,}")
+# Mojibake (UTF-8 bytes decoded as cp1252/latin-1): runs over this alphabet that contain at least one Latin-1
+# symbol/control. Letters-only runs ("ÄÖÜß") and common symbols (★ → ● … ━ ①) are never garbage.
+_MOJIBAKE_ALPHABET = (set(map(chr, range(0x80, 0x180)))
+                      | set("\u0192\u02c6\u02dc\u2013\u2014\u2018\u2019\u201a\u201c\u201d\u201e\u2020\u2021"
+                            "\u2022\u2026\u2030\u2039\u203a\u20ac\u2122"))
+_MOJIBAKE_MIN_RUN = 4
 
 
 def strip_markup(markdown: str) -> str:
@@ -30,10 +35,27 @@ def has_table(markdown: str) -> bool:
 
 
 def _is_garbage_char(c: str) -> bool:
-    o = ord(c)
-    if c == "�" or 0xE000 <= o <= 0xF8FF or o >= 0xF0000:
-        return True
-    return (o < 32 or 0x7F <= o < 0xA0) and c not in "\n\t\r"
+    """U+FFFD, private use, C0/C1 controls (except whitespace) and unassigned code points."""
+    if c in "\n\t\r":
+        return False
+    return c == "\ufffd" or unicodedata.category(c) in ("Co", "Cn", "Cs", "Cc")
+
+
+def _mojibake_spans(s: str):
+    i, n = 0, len(s)
+    while i < n:
+        if s[i] not in _MOJIBAKE_ALPHABET:
+            i += 1
+            continue
+        j = i
+        while j < n and s[j] in _MOJIBAKE_ALPHABET:
+            j += 1
+        run = s[i:j]
+        latin1 = [c for c in run if 0x80 <= ord(c) <= 0xFF]
+        if len(run) >= _MOJIBAKE_MIN_RUN and any(ord(c) >= 0xA0 for c in latin1) \
+                and any(unicodedata.category(c)[0] in "SPC" for c in latin1):
+            yield i, j
+        i = j
 
 
 def garbage_ratio(markdown: str) -> float:
@@ -41,12 +63,9 @@ def garbage_ratio(markdown: str) -> float:
     non_space = [c for c in s if not c.isspace()]
     if not non_space:
         return 0.0
-    flagged = [False] * len(s)
-    for i, c in enumerate(s):
-        if _is_garbage_char(c):
-            flagged[i] = True
-    for m in _GARBAGE_RUN.finditer(s):
-        for i in range(m.start(), m.end()):
+    flagged = [_is_garbage_char(c) for c in s]
+    for a, b in _mojibake_spans(s):
+        for i in range(a, b):
             if not s[i].isspace():
                 flagged[i] = True
     return sum(flagged) / len(non_space)

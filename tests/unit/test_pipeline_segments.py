@@ -90,7 +90,10 @@ def test_rerun_after_cancel_resumes_same_engine(env):
     tid = env["make"](); ev = threading.Event()
 
     def watch():                     # cancel once segment 0 is done and the slow segment-1 call has started
-        while env["store"].list_segments(tid) == [] or env["store"].list_segments(tid)[0]["status"] != "done"                 or [41, 45] not in [c["pages"] for c in calls(env["root"])]:
+        def started():
+            segs = env["store"].list_segments(tid)
+            return bool(segs) and segs[0]["status"] == "done" and [41, 45] in [c["pages"] for c in calls(env["root"])]
+        while not started():
             time.sleep(0.05)
         ev.set()
     threading.Thread(target=watch, daemon=True).start()
