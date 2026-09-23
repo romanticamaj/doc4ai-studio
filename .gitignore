@@ -5,3 +5,10 @@ envs/*/.venv/
 node_modules/
 web/dist/
 __pycache__/
+envs/*/.ready
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+tests/fixtures/_tmp/
+.superpowers/
+out_batch/

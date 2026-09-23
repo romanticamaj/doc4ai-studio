@@ -1,0 +1,21 @@
+[general]
+output_dir = "out"            # relative to project root
+lang = "cht"
+work_retention_days = 7
+enable_audio = false
+[engines]
+mineru_tier = "basic"         # "basic" | "standard"
+docling_ocr = "easyocr"       # "easyocr" | "rapidocr"
+docling_page_batch_size = 16
+[limits]
+upload_max_bytes = 2147483648
+timeout_per_page_s = 60
+timeout_min_s = 120
+timeout_per_mb_s = 30
+timeout_max_no_pages_s = 1800
+startup_timeout_s = 900
+disk_space_factor = 3
+[server]
+host = "127.0.0.1"
+port = 8765
+token = ""
