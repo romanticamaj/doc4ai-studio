@@ -5,7 +5,7 @@ work_retention_days = 7
 enable_audio = false
 [engines]
 mineru_tier = "basic"         # "basic" | "standard"
-docling_ocr = "easyocr"       # "easyocr" | "rapidocr"
+docling_ocr = "rapidocr"      # "easyocr" | "rapidocr" (spike B 2026-09: rapidocr)
 docling_page_batch_size = 16
 [limits]
 upload_max_bytes = 2147483648

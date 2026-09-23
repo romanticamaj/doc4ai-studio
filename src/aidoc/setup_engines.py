@@ -24,12 +24,13 @@ def _script(engine: str, name: str) -> Path:
 def plan_commands(engine: str, config: AidocConfig) -> list[list[str]]:
     cmds: list[list[str]] = [["uv", "sync", "--project", str(paths.envs_dir() / engine)]]
     if engine == "docling":
-        models = ["layout", "tableformer", "code_formula", "easyocr"]
-        if config.engines.docling_ocr == "rapidocr":
-            models.append("rapidocr")
+        # both OCR engines are fetched so docling_ocr can be switched in aidoc.toml without re-running setup
         cmds.append([str(_script("docling", "docling-tools")), "models", "download",
-                     "--output-dir", str(paths.models_dir() / "docling"), *models,
-                     "--easyocr-lang", "iso:zh-Hant", "--easyocr-lang", "en"])
+                     "--output-dir", str(paths.models_dir() / "docling"),
+                     "layout", "tableformer", "code_formula", "easyocr", "rapidocr",
+                     "--easyocr-lang", "iso:zh-Hant", "--easyocr-lang", "en",
+                     "--rapidocr-backend-lang", "onnxruntime:chinese_cht",
+                     "--rapidocr-backend-lang", "onnxruntime:en"])
     elif engine == "mineru":
         cmds.append([str(_script("mineru", "mineru-kit")), "models", "download",
                      "--tier", config.engines.mineru_tier, "--small-backend", "torch", "--source", "auto"])

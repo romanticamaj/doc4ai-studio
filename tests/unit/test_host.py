@@ -79,3 +79,13 @@ def test_runner_env(tmp_root):
     assert env["PYTHONUTF8"] == "1" and env["PYTHONIOENCODING"] == "utf-8"
     assert env["MINERU_HOME"].endswith("mineru") and env["MINERU_MODEL_SMALL_BACKEND"] == "torch"
     assert env["HF_HOME"].endswith("hf") and env["EASYOCR_MODULE_PATH"].endswith("easyocr")
+
+
+def test_relative_workdir(tmp_path, monkeypatch):
+    """Runner cwd is the workdir, so the host must hand it an absolute request path."""
+    monkeypatch.chdir(tmp_path)
+    h = make_host(tmp_path, monkeypatch)
+    h.start(Path("wd_rel"))
+    res = h.run(req(tmp_path), Path("wd_rel"), 30, lambda f, line: None)
+    h.close()
+    assert res["page_count"] == 3

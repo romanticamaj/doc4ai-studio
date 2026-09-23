@@ -25,7 +25,7 @@ class General:
 @dataclass
 class Engines:
     mineru_tier: str = "basic"
-    docling_ocr: str = "easyocr"
+    docling_ocr: str = "rapidocr"
     docling_page_batch_size: int = 16
 
 

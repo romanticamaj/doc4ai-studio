@@ -65,7 +65,8 @@ class RunnerHost:
         self.pid: int | None = None
 
     def start(self, cwd: Path) -> None:
-        Path(cwd).mkdir(parents=True, exist_ok=True)
+        cwd = Path(cwd).resolve()
+        cwd.mkdir(parents=True, exist_ok=True)
         env = {**os.environ, **runner_env(paths.data_dir()), **self.env_extra}
         self.proc = subprocess.Popen([str(self.python), str(self.script)], cwd=str(cwd), env=env,
                                      stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
@@ -127,7 +128,7 @@ class RunnerHost:
     def run(self, request: dict, workdir: Path, timeout_s: float, on_progress: ProgressCb) -> dict:
         if self.proc is None:
             raise RuntimeError("RunnerHost.start() not called")
-        workdir = Path(workdir)
+        workdir = Path(workdir).resolve()          # runner cwd is the workdir: never hand it a relative path
         workdir.mkdir(parents=True, exist_ok=True)
         req_path = workdir / "request.json"
         req_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")

@@ -3,13 +3,12 @@ name = "aidoc-env-docling"
 version = "0.0.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "docling[easyocr]>=2.60,<3",
+  "docling[easyocr,rapidocr]>=2.60,<3",
+  "onnxruntime-gpu>=1.23,<1.26",   # 1.26+ default wheels target CUDA 13; torch here is cu128 (spike B)
   "torch>=2.7,<2.12",
   "torchvision>=0.22",
 ]
 
-[project.optional-dependencies]
-rapidocr = ["docling[rapidocr]", "onnxruntime-gpu>=1.20"]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
@@ -22,3 +21,6 @@ torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32' or s
 
 [tool.uv]
 package = false
+# docling[rapidocr] pulls the CPU `onnxruntime`, which shadows `onnxruntime-gpu` (same import name) and forces
+# RapidOCR onto CPUExecutionProvider. Drop it; onnxruntime-gpu provides the module (spike B, 2026-09).
+override-dependencies = ["onnxruntime; sys_platform == 'never'"]

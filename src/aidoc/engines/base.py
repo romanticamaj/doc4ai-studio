@@ -85,7 +85,8 @@ class RunnerEngine:
                 engine_opts: dict | None = None, full_page_ocr: bool = False, segment_idx: int = 0,
                 on_start=None) -> RawResult:
         from aidoc.engines.host import RunnerHost
-        workdir = Path(workdir)
+        workdir = Path(workdir).resolve()
+        src = Path(src).resolve()
         workdir.mkdir(parents=True, exist_ok=True)
         eo = engine_opts if engine_opts is not None else self.engine_opts(opts, probe, full_page_ocr)
         req = self.build_request(src, workdir, opts, probe, pages, eo, segment_idx)

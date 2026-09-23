@@ -63,7 +63,7 @@ class ConvertOptions:
     timeout_s: int | None = None
     allow_online_audio: bool = False
     mineru_tier: str = "basic"         # "basic" | "standard"
-    docling_ocr: str = "easyocr"       # "easyocr" | "rapidocr" (decided by P1 spike)
+    docling_ocr: str = "rapidocr"      # "easyocr" | "rapidocr" (P1 spike B chose rapidocr)
 
     def to_json(self) -> dict:
         d = asdict(self)
