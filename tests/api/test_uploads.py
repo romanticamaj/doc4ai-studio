@@ -15,7 +15,7 @@ def start(client, data, name="big.bin"):
 
 def test_full_upload_in_chunks(client, ctx):
     data = os.urandom(CHUNK_SIZE + 12345)
-    uid, sha = start(client, data)
+    uid, _sha = start(client, data)
     for off in range(0, len(data), CHUNK_SIZE):
         r = client.put(f"/api/uploads/{uid}?offset={off}", content=data[off:off + CHUNK_SIZE])
         assert r.status_code == 200, r.text
