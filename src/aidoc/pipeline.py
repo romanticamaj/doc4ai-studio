@@ -37,6 +37,7 @@ from aidoc.quality import assess
 from aidoc.retry import RetryPolicy
 from aidoc.router import route
 from aidoc.segment import SegmentPart, merge_segments, plan_segments, segment_dir, split_pdf
+from aidoc.sources import SourceError, stage_source
 from aidoc.store import Store
 
 Emit = Callable[[str, dict], None]
@@ -289,11 +290,22 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
     store.upsert_document(sha256=task["sha256"], source_path=task["source_path"], output_dir=str(output_dir),
                           engine=cand.engine, quality=cand.quality.to_json(), pages=sidecar["pages"], lang=opts.lang,
                           aidoc_version=sidecar["aidoc_version"], status=cand.quality.level,
-                          work_copy_path=str(ctx.work_src), work_copy_expires_at=time.time() + retention * 86400,
+                          work_copy_path=str(ctx.work_dir), work_copy_expires_at=time.time() + retention * 86400,
                           created_at=time.time())
     ctx.set(status=status, engine=cand.engine, quality=cand.quality.to_json(), output_dir=str(output_dir),
             error_kind=None, error_msg=None, pid=None)
     return status
+
+
+def _drop_unused_work_dir(ctx: PipelineContext) -> None:
+    """A cache hit needs no work copy; keep it only if a document still references it."""
+    if any(d.get("work_copy_path") == str(ctx.work_dir) for d in ctx.store.list_documents()):
+        return
+    try:
+        fsops.remove_tree(ctx.work_dir)
+    except OSError:
+        pass
+    ctx.store.update_task(ctx.task_id, work_path=None)
 
 
 def run_task(store: Store, task_id: str, engines: dict, config: AidocConfig, emit: Emit | None = None,
@@ -342,12 +354,17 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     if ctx.cancelled():
         return _cancel(ctx)
 
-    # 1. probe + cache
+    # 1. stage the sha-verified work copy (spec §8.5), probe, cache
     ctx.set(status=TaskStatus.probing, error_kind=None, error_msg=None)
     src = Path(task["source_path"])
-    if not src.is_file():
-        return _fail(ctx, ErrorKind.input, f"source_missing: {src}")
-    probe = ctx.probe = probe_file(src)
+    work_dir, _ = stage_paths(task_id)
+    ctx.work_dir = work_dir
+    try:
+        work_src = ctx.work_src = stage_source(src, task["sha256"], work_dir)
+    except SourceError as e:
+        return _fail(ctx, ErrorKind.input, f"{e.code}: {src}")
+    ctx.set(work_path=str(work_src))
+    probe = ctx.probe = probe_file(work_src)
     if probe.error:
         return _fail(ctx, ErrorKind.input, probe.error)
     output_dir = choose_output_dir(store, opts.output_dir, sanitize_stem(src.stem), task["sha256"])
@@ -359,6 +376,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
             level = (hit.get("quality") or {}).get("level") or hit.get("status")
             if level == "ok" or not opts.retry_low:
                 ctx.set(status=TaskStatus.skipped, engine=hit.get("engine"), quality=hit.get("quality"))
+                _drop_unused_work_dir(ctx)
                 return TaskStatus.skipped
 
     # 2. route
@@ -371,13 +389,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     if decision.missing:
         ctx.log(f"engines not installed, skipped: {', '.join(decision.missing)} (run aidoc setup <engine>)")
 
-    # 3. stage work copy + segment rows
-    work_dir, _ = stage_paths(task_id)
-    ctx.work_dir = work_dir
-    work_dir.mkdir(parents=True, exist_ok=True)
-    work_src = ctx.work_src = work_dir / f"src{src.suffix.lower()}"
-    shutil.copy2(src, work_src)
-    ctx.set(work_path=str(work_src))
+    # 3. segment rows
     order = _prepare_segments(ctx, decision.engines)
 
     # 4. engines in order

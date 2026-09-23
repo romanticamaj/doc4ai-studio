@@ -250,6 +250,9 @@ class Store:
             args += [f"%{q}%", f"%{q}%"]
         return self._qa(sql + " ORDER BY created_at DESC", args)
 
+    def update_document(self, doc_id, **fields) -> None:
+        self._update("documents", "id", doc_id, fields)
+
     def set_document_status(self, doc_id, status) -> None:
         self.con.execute("UPDATE documents SET status=? WHERE id=?", (_val(status), doc_id))
 
