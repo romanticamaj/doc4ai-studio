@@ -34,12 +34,14 @@ from aidoc.normalize import normalize
 from aidoc.output import OutputWriter, build_sidecar, choose_output_dir, lookup_cached
 from aidoc.probe import probe_file
 from aidoc.quality import assess
+from aidoc.retry import RetryPolicy
 from aidoc.router import route
 from aidoc.segment import SegmentPart, merge_segments, plan_segments, segment_dir, split_pdf
 from aidoc.store import Store
 
 Emit = Callable[[str, dict], None]
 SEGMENT_FILES = ("normalized.md", "assets.json", "edges.json")
+RETRY_POLICY = RetryPolicy()
 
 
 def stage_paths(task_id: str) -> tuple[Path, Path]:
@@ -386,18 +388,41 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
         engine = engines[name]
         eo = engine.engine_opts(opts, probe)
         last = i == len(order) - 1
-        try:
-            norm, q, page_count = run_engine_attempt(ctx, engine, eo, quick_check=not last)
-        except EngineCancelled:
-            return _cancel(ctx)
-        except EngineError as e:
-            store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=None, reasons=[],
-                                                  error_kind=e.kind.value, error_msg=e.message[:1000]))
-            ctx.log(f"{name} failed ({e.kind.value}): {e.message[:300]}")
-            if e.kind == ErrorKind.input:
-                return _fail(ctx, ErrorKind.input, f"{name}: {e.message[:500]}")
-            _discard_segments(ctx)
+        transient_used = 0
+        result = None
+        while result is None:                              # retries of this engine (spec §8.2)
+            try:
+                result = run_engine_attempt(ctx, engine, eo, quick_check=not last)
+            except EngineCancelled:
+                return _cancel(ctx)
+            except EngineError as e:
+                d = RETRY_POLICY.decide(e, transient_used, engine, eo)
+                msg = e.message
+                if d.action == "retry" and d.note == "oom_downgrade":
+                    changed = {k: v for k, v in d.engine_opts.items() if eo.get(k) != v}
+                    msg = f"oom: retrying with {changed}; {e.message}"
+                store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=None, reasons=[],
+                                                      error_kind=e.kind.value, error_msg=msg[:1000]))
+                ctx.log(f"{name} failed ({e.kind.value}, {d.action}): {msg[:300]}")
+                if d.action == "fail":
+                    return _fail(ctx, ErrorKind.input, f"{name}: {e.message[:500]}")
+                if d.action == "fallback":
+                    _discard_segments(ctx)
+                    break
+                if d.note != "oom_downgrade":
+                    transient_used += 1
+                eo = d.engine_opts if d.engine_opts is not None else eo
+                if d.delay_s > 0:
+                    if ctx.cancel is not None:
+                        if ctx.cancel.wait(d.delay_s):
+                            return _cancel(ctx)
+                    else:
+                        time.sleep(d.delay_s)
+                if ctx.cancelled():
+                    return _cancel(ctx)
+        if result is None:                                 # fell back: next engine
             continue
+        norm, q, page_count = result
         store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=q.score, reasons=q.reasons))
         cand = _Candidate(name, norm, q, page_count)
         if q.level == "ok":
