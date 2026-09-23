@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from aidoc import __version__, fsops
-from aidoc.names import sanitize_stem, sha8
+from aidoc.names import output_stem, sha8
 from aidoc.store import Store
 
 IGNORED_ENTRIES = {".tmp", ".trash", "_manifest.jsonl", "chunks.jsonl"}
@@ -41,7 +41,7 @@ def choose_output_dir(store: Store, out_root: Path, stem: str, sha256: str) -> P
 
 def planned_output_dir(store: Store, out_root: Path, source: Path, sha256: str) -> Path:
     """The final output dir for a source; use it as the task's resume key (sha256, output_dir)."""
-    return choose_output_dir(store, out_root, sanitize_stem(Path(source).stem), sha256)
+    return choose_output_dir(store, out_root, output_stem(Path(source).stem, sha256), sha256)
 
 
 def lookup_cached(store: Store, sha256: str, output_dir: Path) -> dict | None:

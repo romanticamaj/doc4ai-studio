@@ -29,9 +29,8 @@ from aidoc.models import (
     TableEdge,
     TaskStatus,
 )
-from aidoc.names import sanitize_stem
 from aidoc.normalize import normalize
-from aidoc.output import OutputWriter, build_sidecar, choose_output_dir, lookup_cached
+from aidoc.output import OutputWriter, build_sidecar, lookup_cached, planned_output_dir
 from aidoc.probe import probe_file
 from aidoc.quality import assess
 from aidoc.retry import RetryPolicy
@@ -285,6 +284,9 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
     except FsBusyError as e:
         writer.discard()
         return _fail(ctx, ErrorKind.transient, f"output busy: {e}")
+    except OSError as e:                      # disk full, invalid name, ...: never leave out/.tmp/<task> behind
+        writer.discard()
+        return _fail(ctx, ErrorKind.transient, f"output write failed: {e}")
     status = TaskStatus.done if cand.quality.level == "ok" else TaskStatus.low
     retention = ctx.config.general.work_retention_days
     store.upsert_document(sha256=task["sha256"], source_path=task["source_path"], output_dir=str(output_dir),
@@ -367,7 +369,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     probe = ctx.probe = probe_file(work_src)
     if probe.error:
         return _fail(ctx, ErrorKind.input, probe.error)
-    output_dir = choose_output_dir(store, opts.output_dir, sanitize_stem(src.stem), task["sha256"])
+    output_dir = planned_output_dir(store, opts.output_dir, src, task["sha256"])
     _set_output_dir(store, task, output_dir)
     task = store.get_task(task_id)
     if not opts.force:

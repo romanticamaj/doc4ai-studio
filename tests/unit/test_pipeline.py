@@ -134,3 +134,27 @@ def test_unexpected_exception_marks_task_failed(env, monkeypatch):
     assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.failed
     t = env["store"].get_task(tid)
     assert t["status"] == "failed" and t["error_kind"] == "engine" and "normalize exploded" in t["error_msg"]
+
+
+def test_long_source_name_converts(env):
+    """P1 verifier 2: a 240-char stem used to overflow the 255-char NTFS component limit at finalize."""
+    name = "b" * 240 + ".docx"
+    tid = env["make"]("sample.docx", out_name=name)
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    out = Path(env["store"].get_task(tid)["output_dir"])
+    assert out.is_dir() and len(out.name) <= 150 and (out / f"{out.name}.md").is_file()
+    assert out.name.endswith("-" + env["store"].get_task(tid)["sha256"][:8])
+    assert not (env["root"] / "out" / ".tmp").exists()
+
+
+def test_any_finalize_error_discards_tmp_dir(env, monkeypatch):
+    """P1 verifier 2: only FsBusyError used to discard out/.tmp/<task_id>."""
+    tid = env["make"]("text.pdf")
+
+    def boom(*a, **k):
+        raise OSError(22, "Invalid argument")
+    monkeypatch.setattr("aidoc.output.fsops.replace_dir_three_step", boom)
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.failed
+    t = env["store"].get_task(tid)
+    assert t["error_kind"] == "transient" and "output" in t["error_msg"]
+    assert not (env["root"] / "out" / ".tmp" / tid).exists()
