@@ -1,0 +1,114 @@
+import json
+import os
+import time
+
+from fastapi.testclient import TestClient
+
+from aidoc import paths
+from aidoc.cli import main
+from aidoc.server.app import create_app
+
+
+def test_refuses_public_bind_without_token(tmp_root, capsys):
+    assert main(["serve", "--host", "0.0.0.0"]) == 2
+    assert "refusing to bind 0.0.0.0 without --token" in capsys.readouterr().err
+    assert not (paths.data_dir() / "aidoc.lock").exists()
+
+
+def test_serve_acquires_lock_and_recovers(tmp_root, monkeypatch, capsys):
+    calls = {}
+
+    def fake_run(app, host, port):
+        info = json.loads((paths.data_dir() / "aidoc.lock").read_text(encoding="utf-8"))
+        calls.update(host=host, port=port, lock=info, routes=set(app.openapi()["paths"]))
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", fake_run)
+    assert main(["serve", "--port", "8999"]) == 0
+    assert calls["host"] == "127.0.0.1" and calls["port"] == 8999
+    assert calls["lock"]["pid"] == os.getpid() and calls["lock"]["port"] == 8999
+    assert set(calls["lock"]) == {"pid", "started_at", "host", "port", "token"} and calls["lock"]["token"] is None
+    assert "/api/jobs" in calls["routes"]
+    assert not (paths.data_dir() / "aidoc.lock").exists()            # released on exit
+
+
+def test_serve_runs_recovery(tmp_root, monkeypatch, capsys):
+    from pathlib import Path
+
+    from aidoc.models import ConvertOptions
+    from aidoc.store import Store
+    s = Store(tmp_root / "data" / "aidoc.db")
+    job = s.create_job(ConvertOptions(output_dir=Path(tmp_root / "out")), "web")
+    tid, _ = s.create_task(job, str(tmp_root / "a.pdf"), "a" * 64, 1, 1.0, "cht", str(tmp_root / "out" / "a"))
+    s.update_task(tid, status="converting")
+    s.close()
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    assert main(["serve"]) == 0
+    assert "requeued 1 interrupted task" in capsys.readouterr().err
+    s = Store(tmp_root / "data" / "aidoc.db")
+    assert s.get_task(tid)["status"] in ("queued", "failed", "done")   # requeued (the queue may have run it)
+    s.close()
+
+
+def test_second_server_refused(tmp_root, monkeypatch, capsys):
+    from aidoc import lockfile as lf
+    lf.acquire_lock(paths.data_dir() / "aidoc.lock",
+                    {"pid": os.getpid(), "started_at": 0, "host": "127.0.0.1", "port": 1, "token": None})
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    assert main(["serve"]) == 3
+    assert "another aidoc server is running on 127.0.0.1:1" in capsys.readouterr().err
+
+
+def test_token_server_writes_token_to_lock(tmp_root, monkeypatch):
+    seen = {}
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: seen.update(
+        lock=json.loads((paths.data_dir() / "aidoc.lock").read_text(encoding="utf-8")), token=app.state.ctx.token))
+    assert main(["serve", "--host", "0.0.0.0", "--token", "abc"]) == 0
+    assert seen["lock"]["token"] == "abc" and seen["token"] == "abc" and seen["lock"]["host"] == "0.0.0.0"
+
+
+def test_static_fallback(client, ctx, tmp_root):
+    r = client.get("/")
+    assert r.status_code == 200 and "web UI not built" in r.text
+    dist = tmp_root / "web" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html>ui</html>")
+    (dist / "assets" / "app.js").write_text("console.log(1)")
+    with TestClient(create_app(ctx)) as c:
+        assert c.get("/").text == "<html>ui</html>" and c.get("/library").text == "<html>ui</html>"
+        assert c.get("/assets/app.js").text == "console.log(1)"
+        assert c.get("/api/nope").status_code == 404 and c.get("/api/nope").json()["error"] == "not_found"
+        assert c.get("/..%2F..%2Fdata%2Faidoc.db").text == "<html>ui</html>"       # never outside dist
+
+
+def test_maintenance_run_once(ctx, tmp_root):
+    from aidoc.server.maintenance import Maintenance
+    for _ in range(30):
+        ctx.store.append_event("x", None, {})
+    uid = ctx.uploads.create("a.pdf", 10, "0" * 64)["id"]
+    ctx.store.update_upload(uid, created_at=time.time() - 90000)
+    orphan = ctx.config.data_dir / "work" / "deadbeef"                  # a work dir no task knows about
+    orphan.mkdir(parents=True)
+    (orphan / "src.pdf").write_bytes(b"x")
+    old = time.time() - 30 * 86400
+    os.utime(orphan, (old, old))
+    m = Maintenance(ctx, interval_s=600, keep_events=10)
+    res = m.run_once()
+    assert res["uploads_purged"] == 1 and res["work_dirs_removed"] == 1 and not orphan.exists()
+    assert len(ctx.store.events_since(0)) <= 12
+    assert any(e["kind"] == "system.updated" for e in ctx.store.events_since(0))
+
+
+def test_maintenance_keeps_work_of_unfinished_tasks(client, ctx, tmp_root, fixtures):
+    import hashlib
+
+    from aidoc.server.maintenance import Maintenance
+    data = (fixtures / "text.pdf").read_bytes()
+    uid = client.post("/api/uploads", json={"filename": "t.pdf", "size": len(data),
+                                            "sha256": hashlib.sha256(data).hexdigest()}).json()["upload_id"]
+    client.put(f"/api/uploads/{uid}?offset=0", content=data)
+    job = client.post("/api/jobs", json={"inputs": [{"upload_id": uid}]}).json()["job"]
+    task = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]
+    work = ctx.config.data_dir / "work" / task["id"]
+    old = time.time() - 30 * 86400
+    os.utime(work, (old, old))
+    Maintenance(ctx).run_once()
+    assert (work / "src.pdf").exists()                                   # queued upload task: never purged

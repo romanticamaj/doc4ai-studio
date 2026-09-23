@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from aidoc.config import AidocConfig
@@ -114,5 +116,24 @@ def create_app(ctx: ServerContext) -> FastAPI:
     api.include_router(chunks.router)
     api.include_router(settings.router)
     app.include_router(api)
+    _mount_web(app, Path(ctx.config.root) / "web" / "dist")
     app.add_middleware(EnvelopeMiddleware)
     return app
+
+
+def _mount_web(app: FastAPI, dist: Path) -> None:
+    """Serve the built Web UI (P4) with an SPA fallback; /api/* never falls through to it."""
+    index = dist / "index.html"
+    root = dist.resolve()
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def web(full_path: str):
+        if full_path == "api" or full_path.startswith("api/"):
+            return error_response(404, "not_found")
+        if not index.is_file():
+            return {"message": "web UI not built; run pnpm --dir web build"}
+        if full_path:
+            target = (dist / full_path).resolve()
+            if os.path.commonpath([str(root), str(target)]) == str(root) and target.is_file():
+                return FileResponse(target)
+        return FileResponse(index, media_type="text/html")

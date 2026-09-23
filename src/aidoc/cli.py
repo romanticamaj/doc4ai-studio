@@ -40,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
     ch.add_argument("--doc", metavar="STEM", help="only this document dir")
     k = sub.add_parser("cancel", help="cancel a running job (needs a running server; P3)")
     k.add_argument("job_id")
+    sv = sub.add_parser("serve", help="run the server (Web UI + API) that owns the job queue")
+    sv.add_argument("--host", help="bind address (default: aidoc.toml server.host, 127.0.0.1)")
+    sv.add_argument("--port", type=int, help="port (default: aidoc.toml server.port, 8765)")
+    sv.add_argument("--token", help="API token; required when binding a non-loopback address")
+    sv.add_argument("--no-recover", action="store_true", help="skip startup recovery")
     s = sub.add_parser("setup", help="install an engine env, download models, self-check")
     s.add_argument("engine", choices=ENGINE_CHOICES + ["all"])
     return p
@@ -179,6 +184,53 @@ def cmd_batch(args) -> int:
     return 2 if counts.get("failed") else 0
 
 
+def _run_uvicorn(app, host: str, port: int) -> None:
+    import uvicorn
+    # open SSE streams must not hold a Ctrl+C shutdown for long
+    uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info",
+                                  timeout_graceful_shutdown=3)).run()
+
+
+def cmd_serve(args) -> int:
+    import time
+
+    from aidoc import lockfile
+    from aidoc.config import load_config
+    from aidoc.server.app import build_context, create_app
+    from aidoc.server.auth import is_loopback
+    from aidoc.server.maintenance import Maintenance
+    cfg = load_config()
+    host = args.host or cfg.server.host
+    port = args.port or cfg.server.port
+    token = args.token or cfg.server.token or None
+    if not is_loopback(host) and not token:
+        print(f"refusing to bind {host} without --token", file=sys.stderr)
+        return 2
+    cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    lock = cfg.data_dir / "aidoc.lock"
+    if not lockfile.acquire_lock(lock, {"pid": os.getpid(), "started_at": time.time(), "host": host, "port": port,
+                                        "token": token}):
+        other = lockfile.read_lock(lock) or {}
+        print(f"another aidoc server is running on {other.get('host')}:{other.get('port')}", file=sys.stderr)
+        return 3
+    ctx = None
+    try:
+        ctx = build_context(cfg, token=token, start_workers=False)
+        if not args.no_recover:
+            _recover(ctx.store, cfg)
+        ctx.uploads.reconcile()
+        ctx.queue.start()
+        m = ctx.extras["maintenance"] = Maintenance(ctx)
+        m.start()
+        print(f"aidoc serve: http://{host}:{port}  (data: {cfg.data_dir})", flush=True)
+        _run_uvicorn(create_app(ctx), host, port)
+    finally:
+        if ctx is not None:
+            ctx.close()
+        lockfile.release_lock(lock)
+    return 0
+
+
 def cmd_cancel(args) -> int:
     from aidoc import client as client_mod
     from aidoc.config import load_config
@@ -278,6 +330,8 @@ def _main(argv: list[str] | None) -> int:
         return cmd_chunk(args)
     if args.cmd == "cancel":
         return cmd_cancel(args)
+    if args.cmd == "serve":
+        return cmd_serve(args)
     return 0
 
 

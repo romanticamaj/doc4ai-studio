@@ -124,7 +124,7 @@ class JobQueue:
             with self._state:
                 if self.paused or self._stopping.is_set():
                     return None
-                task = store.next_queued_task()
+                task = self._pick()
                 if task is None:
                     return None
                 tid, job_id = task["id"], task["job_id"]
@@ -155,6 +155,19 @@ class JobQueue:
                 self.publish_job(job_id)
                 self.publish_queue()
             return tid
+
+    def _pick(self) -> dict | None:
+        """Oldest runnable queued task; one another process holds the liveness lock of (an in-process CLI run)
+        is skipped instead of being picked, refused by run_task and picked again in a tight loop."""
+        store = self.ctx.store
+        first = store.next_queued_task()
+        if first is None or not store.task_is_live(first["id"]):
+            return first
+        for t in store.list_tasks(status="queued"):
+            job = store.get_job(t["job_id"])
+            if job is not None and job["status"] != JobStatus.cancelled.value and not store.task_is_live(t["id"]):
+                return t
+        return None
 
     # ------------------------------------------------------------ commands
     def cancel_job(self, job_id: str) -> None:

@@ -172,3 +172,20 @@ def test_cancel_during_backoff(client, ctx, tmp_root, fixtures, monkeypatch):
     client.post(f"/api/jobs/{job['id']}/cancel")
     t.join(5)
     assert time.time() - t0 < 3 and client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]["status"] == "cancelled"
+
+
+def test_queue_skips_a_task_another_process_is_running(client, ctx, tmp_root, fixtures):
+    """A queued task whose liveness lock is held elsewhere (an in-process CLI) is skipped, not spun on."""
+    from aidoc.tasklock import TaskLock, lock_path
+    job = client.post("/api/jobs", json={"inputs": [{"path": make_src(tmp_root, fixtures)},
+                                                    {"path": make_src(tmp_root, fixtures, "sample.docx")}]}).json()["job"]
+    first, second = [t["id"] for t in ctx.store.list_tasks(job["id"])]
+    other = TaskLock(lock_path(ctx.config.data_dir, first))
+    assert other.acquire()
+    try:
+        assert ctx.queue.process_next() == second
+        assert ctx.queue.process_next() is None
+        assert ctx.store.get_task(first)["status"] == "queued"
+    finally:
+        other.release()
+    assert ctx.queue.process_next() == first
