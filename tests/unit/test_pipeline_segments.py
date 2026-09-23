@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import shutil
 import threading
 import time
@@ -193,3 +194,14 @@ def test_input_failure_leaves_no_segment_converting(env):
     tid = env["make"]()
     assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.failed
     assert [s["status"] for s in env["store"].list_segments(tid)] == ["done", "failed"]
+
+
+def test_finished_task_keeps_only_the_source_copy(env):
+    """P2 deferred M9: retention is for the staged source (Document view); engine intermediates go at finalize."""
+    tid = env["make"]()
+    assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.done
+    t = env["store"].get_task(tid)
+    work = Path(t["work_path"]).parent
+    assert sorted(p.name for p in work.iterdir()) == ["src.pdf"]
+    doc = env["store"].find_document(t["sha256"], t["output_dir"])
+    assert doc["work_copy_path"] == str(work) and (env["root"] / "out" / "big" / "assets" / "p45_1.png").exists()

@@ -322,7 +322,22 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
                           created_at=time.time())
     ctx.set(status=status, engine=cand.engine, quality=cand.quality.to_json(), output_dir=str(output_dir),
             error_kind=None, error_msg=None, pid=None)
+    _purge_intermediates(ctx)
     return status
+
+
+def _purge_intermediates(ctx: PipelineContext) -> None:
+    """After finalising, keep only the staged source (the Document view shows it for work_retention_days);
+    segment dirs, raw engine output and kept candidates are no longer needed (P2 deferred M9)."""
+    if ctx.work_dir is None or not ctx.work_dir.is_dir():
+        return
+    for child in ctx.work_dir.iterdir():
+        if ctx.work_src is not None and child.name == ctx.work_src.name:
+            continue
+        try:
+            fsops.remove_tree(child) if child.is_dir() else child.unlink()
+        except OSError:
+            pass                                  # best effort; maintenance removes the whole dir later
 
 
 def _drop_unused_work_dir(ctx: PipelineContext) -> None:
