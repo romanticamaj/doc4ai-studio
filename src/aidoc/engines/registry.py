@@ -4,32 +4,17 @@ import os
 
 from aidoc.config import AidocConfig
 from aidoc.engines.base import RunnerEngine
+from aidoc.engines.docling import DoclingEngine
+from aidoc.engines.markitdown import MarkitdownEngine
+from aidoc.engines.mineru import MineruEngine
 from aidoc.models import ENGINE_NAMES
 
-
-def _real_classes() -> dict[str, type[RunnerEngine]]:
-    classes: dict[str, type[RunnerEngine]] = {}
-    try:
-        from aidoc.engines.markitdown import MarkitdownEngine
-        classes["markitdown"] = MarkitdownEngine
-    except ImportError:
-        pass
-    try:
-        from aidoc.engines.docling import DoclingEngine
-        classes["docling"] = DoclingEngine
-    except ImportError:
-        pass
-    try:
-        from aidoc.engines.mineru import MineruEngine
-        classes["mineru"] = MineruEngine
-    except ImportError:
-        pass
-    return classes
+_CLASSES: dict[str, type[RunnerEngine]] = {"markitdown": MarkitdownEngine, "docling": DoclingEngine,
+                                           "mineru": MineruEngine}
 
 
 def get_engines(config: AidocConfig) -> dict[str, RunnerEngine]:
     if os.environ.get("AIDOC_FAKE_ENGINES") == "1":
         from aidoc.engines.fake import FakeEngine
         return {n: FakeEngine(n, config) for n in ENGINE_NAMES}
-    classes = _real_classes()
-    return {n: classes[n](config) for n in ENGINE_NAMES if n in classes}
+    return {n: _CLASSES[n](config) for n in ENGINE_NAMES}

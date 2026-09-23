@@ -112,14 +112,59 @@ def make_scanned_pdf(path, pages_texts):
     _save(doc, path)
 
 
+def _typeset(page, x, y, parts, size=18):
+    """Draw a display equation from (text, dy, scale) runs: baseline shifts for sub/superscripts."""
+    tw = fitz.TextWriter(page.rect)
+    font = _font(page)
+    for text, dy, scale in parts:
+        fs = size * scale
+        tw.append((x, y + dy * size), text, font=font, fontsize=fs)
+        x += font.text_length(text, fontsize=fs) + 1
+    tw.write_text(page)
+    return x
+
+
+def _fraction(page, x, y, num, den, size=18):
+    font = _font(page)
+    w = max(font.text_length(num, fontsize=size), font.text_length(den, fontsize=size)) + 6
+    tw = fitz.TextWriter(page.rect)
+    tw.append((x + (w - font.text_length(num, fontsize=size)) / 2, y - 0.55 * size), num, font=font, fontsize=size)
+    tw.append((x + (w - font.text_length(den, fontsize=size)) / 2, y + 0.75 * size), den, font=font, fontsize=size)
+    tw.write_text(page)
+    page.draw_line((x, y - 0.3 * size), (x + w, y - 0.3 * size), width=0.9)
+    return x + w + 2
+
+
+def _display_equations(page, y):
+    """Typeset display equations (integral with limits, fraction, summation, superscripts)."""
+    x = 150
+    x = _typeset(page, x, y, [("∫", 0.15, 1.6), ("1", -0.75, 0.6)])
+    _typeset(page, x - 14, y + 12, [("0", 0, 0.6)])
+    x = _typeset(page, x, y, [(" x", 0, 1), ("2", -0.45, 0.6), (" dx = ", 0, 1)])
+    _fraction(page, x, y, "1", "3")
+    y += 70
+    x = 150
+    x = _typeset(page, x, y, [("f(x) = ", 0, 1), ("Σ", 0.1, 1.5)])
+    _typeset(page, x - 22, y - 26, [("∞", 0, 0.6)])
+    _typeset(page, x - 26, y + 14, [("n=0", 0, 0.6)])
+    _typeset(page, x, y, [(" a", 0, 1), ("n", 0.3, 0.6), (" x", 0, 1), ("n", -0.45, 0.6)])
+    y += 60
+    x = _typeset(page, 150, y, [("E = mc", 0, 1), ("2", -0.45, 0.6), (",   a", 0, 1), ("2", -0.45, 0.6),
+                               (" + b", 0, 1), ("2", -0.45, 0.6), (" = c", 0, 1), ("2", -0.45, 0.6)])
+    y += 60
+    x = _typeset(page, 150, y, [("x = ", 0, 1)])
+    _fraction(page, x, y, "−b ± √(b² − 4ac)", "2a")
+
+
 def make_formula_pdf(path):
     doc = fitz.open()
     for n in range(2):
         page = doc.new_page()
         _write_paragraphs(page, [EN, ZH])
-        page.insert_text((72, 400), "abgdSyxw " * 20, fontname="symb", fontsize=12)
+        _display_equations(page, 230)
+        page.insert_text((72, 560), "abgdSyxw " * 8, fontname="symb", fontsize=12)
         tw = fitz.TextWriter(page.rect)
-        tw.append((72, 440), "∑ ∫ ∂ √ ∞ ≈ ≠ ≤ ≥ ± × ÷ ∈ ∀ ∃ α β γ " * 2, font=_font(page), fontsize=12)
+        tw.append((72, 600), "∑ ∫ ∂ √ ∞ ≈ ≠ ≤ ≥ ± × ÷ ∈ ∀ ∃ α β γ " * 2, font=_font(page), fontsize=12)
         tw.write_text(page)
     _save(doc, path)
 
