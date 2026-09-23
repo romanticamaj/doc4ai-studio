@@ -52,6 +52,13 @@ def sample_indices(n: int, k_max: int = MAX_SAMPLE_PAGES) -> list[int]:
     return sorted({round(i * (n - 1) / (k - 1)) for i in range(k)})
 
 
+def _is_blank(page) -> bool:
+    """Cheap exact check run on every page: no text, no image, no vector drawing."""
+    if len(page.get_text("text").strip()) >= 3:
+        return False
+    return not page.get_image_info() and not page.get_drawings()
+
+
 def _analyse_page(page) -> dict:
     rect = page.rect
     W, H = rect.width, rect.height
@@ -125,13 +132,8 @@ def probe_file(path: Path) -> ProbeResult:
         n = doc.page_count
         if n == 0:
             return ProbeResult(kind="pdf", ext=ext, size=size, pages=0, error="corrupt")
-        stats = []
-        blank_pages = []
-        for i in sample_indices(n):
-            m = _analyse_page(doc[i])
-            stats.append(m)
-            if m["blank"]:
-                blank_pages.append(i + 1)
+        stats = [_analyse_page(doc[i]) for i in sample_indices(n)]
+        blank_pages = [i + 1 for i in range(n) if _is_blank(doc[i])]   # every page: quality divides by pages
         non_blank = [m for m in stats if not m["blank"]]
         text_ratio = (sum(1 for m in non_blank if m["has_text"]) / len(non_blank)) if non_blank else 0.0
         image_cover = sum(m["image_cover"] for m in stats) / len(stats) if stats else 0.0

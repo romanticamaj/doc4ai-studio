@@ -46,3 +46,22 @@ def test_kinds(fixtures):
     assert probe_file(fixtures / "sample.html").kind == "html"
     assert probe_file(fixtures / "bad.exe").kind == "other"
     assert kind_for(".mp3") == "audio" and kind_for(".epub") == "other" and kind_for(".csv") == "other"
+
+
+def test_blank_pages_counted_on_every_page_not_just_the_sample(tmp_path):
+    """P1 verifier 3: blank pages from a <=20-page sample were subtracted from the full page count."""
+    import fitz
+
+    from aidoc.quality import assess
+    doc = fitz.open()
+    for i in range(45):
+        page = doc.new_page()
+        if i % 9 < 4:                                        # 20 text pages spread over the file, 25 blank
+            page.insert_text((72, 72), f"Page {i + 1} " + "lorem ipsum dolor sit amet " * 3)
+    p = tmp_path / "mixed.pdf"; doc.save(p); doc.close()
+    pr = probe_file(p)
+    assert pr.pages == 45 and len(pr.blank_pages) == 25
+    assert pr.blank_pages == [i + 1 for i in range(45) if i % 9 >= 4]
+    md = "\n".join(f"<!-- page: {i + 1} -->\nPage {i + 1} " + "lorem ipsum dolor sit amet " * 3
+                   for i in range(45) if i % 9 < 4)
+    assert assess(md, pr, 45).level == "ok"
