@@ -80,6 +80,9 @@ def _stage(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
     return dst
 
 
+_UNFINISHED = {"queued", "probing", "converting", "checking"}
+
+
 def purge_expired_work_copies(store, now: float) -> int:
     """Delete work copies whose retention ended (spec §8.5, work_retention_days); returns how many."""
     n = 0
@@ -88,6 +91,9 @@ def purge_expired_work_copies(store, now: float) -> int:
         if not path or exp is None or exp >= now:
             continue
         p = Path(path)
+        task = store.get_task(p.name)                 # data/work/<task_id>: a retried task reuses it
+        if task is not None and (task["status"] in _UNFINISHED or store.task_is_live(task["id"])):
+            continue                                  # queued / running again: the copy is its source
         try:
             if p.is_dir():
                 fsops.remove_tree(p)

@@ -189,3 +189,18 @@ def test_queue_skips_a_task_another_process_is_running(client, ctx, tmp_root, fi
     finally:
         other.release()
     assert ctx.queue.process_next() == first
+
+
+def test_shutdown_keeps_the_retry_force_flag(client, ctx, tmp_root, fixtures):
+    """Final review I2: a retry interrupted by server shutdown must still bypass the cache when it resumes."""
+    write_scenario(tmp_root / "sc.json", default="low")
+    job = client.post("/api/jobs", json={"inputs": [{"path": make_src(tmp_root, fixtures)}]}).json()["job"]
+    ctx.queue.process_next()
+    tid = ctx.store.list_tasks(job["id"])[0]["id"]
+    write_scenario(tmp_root / "sc.json", default="slow_ok", slow_s=30)
+    client.post(f"/api/tasks/{tid}/retry", json={"retry_low": True})
+    ctx.queue.start()
+    wait_until(lambda: ctx.queue.running_task_id == tid)
+    ctx.queue.stop()
+    t = ctx.store.get_task(tid)
+    assert t["status"] == "queued" and t["flags"] == {"force": True}

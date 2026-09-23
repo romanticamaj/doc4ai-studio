@@ -145,3 +145,24 @@ def test_ctrl_c_stops_the_server_cleanly(tmp_root, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "server stopped" in err and "conversion was cancelled" not in err
     assert not (paths.data_dir() / "aidoc.lock").exists()
+
+
+def test_expired_work_copy_of_a_queued_retry_is_kept(client, ctx, tmp_root, fixtures):
+    """Final review I5: retention must not delete the only copy of an upload whose task was retried."""
+    import hashlib
+
+    from aidoc.sources import purge_expired_work_copies
+    data = (fixtures / "text.pdf").read_bytes()
+    uid = client.post("/api/uploads", json={"filename": "t.pdf", "size": len(data),
+                                            "sha256": hashlib.sha256(data).hexdigest()}).json()["upload_id"]
+    client.put(f"/api/uploads/{uid}?offset=0", content=data)
+    job = client.post("/api/jobs", json={"inputs": [{"upload_id": uid}]}).json()["job"]
+    ctx.queue.process_next()
+    task = ctx.store.list_tasks(job["id"])[0]
+    doc = ctx.store.find_document(task["sha256"], task["output_dir"])
+    client.post(f"/api/tasks/{task['id']}/retry", json={})                  # queued again, same work dir
+    ctx.store.update_document(doc["id"], work_copy_expires_at=time.time() - 1)
+    assert purge_expired_work_copies(ctx.store, time.time()) == 0
+    assert (ctx.config.data_dir / "work" / task["id"] / "src.pdf").exists()
+    ctx.queue.process_next()
+    assert ctx.store.get_task(task["id"])["status"] == "done"

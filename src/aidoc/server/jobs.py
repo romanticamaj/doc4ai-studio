@@ -128,6 +128,7 @@ class JobQueue:
                 if task is None:
                     return None
                 tid, job_id = task["id"], task["job_id"]
+                flags_before = dict(task.get("flags") or {})
                 self._cancel = threading.Event()
                 self._shutdown_requeue = False
                 self.running_task_id, self._running_job = tid, job_id
@@ -150,6 +151,8 @@ class JobQueue:
                     self._cancel = None
                 if shutdown and status == TaskStatus.cancelled:
                     store.requeue_task(tid, reset_segments=False)      # resumes with its done segments
+                    if flags_before:                                   # the run never finished: keep e.g. force
+                        store.set_task_flags(tid, flags_before)
                     self.publish_task(tid)
                 store.refresh_job_status(job_id)
                 self.publish_job(job_id)
