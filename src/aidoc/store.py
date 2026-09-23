@@ -1,4 +1,4 @@
-"""SQLite store (index §4). One connection per Store; not thread-safe by itself."""
+"""SQLite store (index §4). One connection per Store; every statement runs under one RLock (thread-safe)."""
 from __future__ import annotations
 
 import json
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from aidoc.models import TERMINAL_TASK, Attempt, ConvertOptions, JobStatus, TaskStatus
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS tasks(
   source_path TEXT NOT NULL, work_path TEXT, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mtime REAL NOT NULL,
   lang TEXT NOT NULL, engine TEXT, tried_json TEXT NOT NULL DEFAULT '[]', attempt INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL, error_kind TEXT, error_msg TEXT, quality_json TEXT, output_dir TEXT NOT NULL,
-  pid INTEGER, created_at REAL NOT NULL, updated_at REAL NOT NULL,
+  pid INTEGER, created_at REAL NOT NULL, updated_at REAL NOT NULL, flags_json TEXT NOT NULL DEFAULT '{}',
   UNIQUE(sha256, output_dir));
 CREATE TABLE IF NOT EXISTS segments(
   id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), idx INTEGER NOT NULL,
@@ -134,7 +134,8 @@ class _LockedConnection:
 
 
 class Store:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, threadsafe: bool = False):
+        # `threadsafe` is accepted for the P3 interface (index §4); the lock below is always on since P2.
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # Watcher threads (cancel / progress / tests) share this Store: the connection allows other threads and
@@ -147,8 +148,11 @@ class Store:
         self.con.execute("PRAGMA busy_timeout=5000")
         self.con.execute("PRAGMA foreign_keys=ON")
         self.con.executescript(_DDL)
-        if self._q1("SELECT value FROM meta WHERE key='schema_version'") is None:
-            self.con.execute("INSERT INTO meta(key, value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
+        cols = {r[1] for r in self.con.execute("PRAGMA table_info(tasks)")}
+        if "flags_json" not in cols:                     # schema v1 -> v2 (index §4, A18)
+            self.con.execute("ALTER TABLE tasks ADD COLUMN flags_json TEXT NOT NULL DEFAULT '{}'")
+        self.con.execute("INSERT INTO meta(key, value) VALUES('schema_version', ?) "
+                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
 
     def close(self) -> None:
         self.con.close()
@@ -257,6 +261,22 @@ class Store:
             sql += " AND status=?"
             args.append(_val(status))
         return self._qa(sql + " ORDER BY created_at, rowid", args)
+
+    def next_queued_task(self) -> dict | None:
+        """The oldest queued task whose job is not cancelled."""
+        return _row(self._q1("SELECT t.* FROM tasks t JOIN jobs j ON j.id = t.job_id WHERE t.status='queued' "
+                             "AND j.status != 'cancelled' ORDER BY t.created_at, t.rowid LIMIT 1"))
+
+    def cancel_queued_tasks(self, job_id) -> list[str]:
+        with self.con.lock:
+            ids = [r[0] for r in self.con.execute("SELECT id FROM tasks WHERE job_id=? AND status='queued'",
+                                                  (job_id,))]
+            for tid in ids:
+                self.update_task(tid, status=TaskStatus.cancelled)
+        return ids
+
+    def set_task_flags(self, task_id, flags: dict) -> None:
+        self.update_task(task_id, flags=flags)
 
     def tasks_with_pid(self) -> list[dict]:
         return self._qa("SELECT * FROM tasks WHERE pid IS NOT NULL ORDER BY created_at, rowid")

@@ -22,3 +22,35 @@ def tmp_root(tmp_path, monkeypatch):
 @pytest.fixture
 def fixtures() -> Path:
     return FIXTURES
+
+
+# ---- P3 server fixtures (shared by tests/api and tests/unit/test_client.py)
+
+@pytest.fixture
+def ctx(tmp_root, monkeypatch):
+    from aidoc.config import load_config
+    from aidoc.server.app import build_context
+    from tests.fakes.scenario import fake_env, write_scenario
+    fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
+    c = build_context(load_config(), token=None, start_workers=False)
+    yield c
+    c.close()
+
+
+@pytest.fixture
+def client(ctx):
+    from fastapi.testclient import TestClient
+    from aidoc.server.app import create_app
+    with TestClient(create_app(ctx)) as c:
+        yield c
+
+
+@pytest.fixture
+def token_ctx(tmp_root, monkeypatch):
+    from aidoc.config import load_config
+    from aidoc.server.app import build_context
+    from tests.fakes.scenario import fake_env, write_scenario
+    fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
+    c = build_context(load_config(), token="s3cret", start_workers=False)
+    yield c
+    c.close()
