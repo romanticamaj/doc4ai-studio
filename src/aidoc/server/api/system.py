@@ -52,6 +52,9 @@ def run_setup(engine: str, request: Request) -> dict:
     ctx = request.app.state.ctx
     if engine not in (*ENGINE_NAMES, "all"):
         raise ApiError(404, "unknown_engine", engine=engine)
+    busy = ctx.queue.busy_engine(engine)
+    if busy is not None:                        # never rebuild an env a runner is using (P3 final review)
+        raise ApiError(409, "engine_busy", engine=busy, task_id=ctx.queue.running_task_id)
     runner = ctx.extras.get("setup")
     if runner is None:
         runner = ctx.extras.setdefault("setup", SetupRunner(ctx))

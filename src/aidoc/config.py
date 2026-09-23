@@ -5,7 +5,7 @@ import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-import tomli_w
+import tomlkit
 
 from aidoc import paths
 
@@ -96,8 +96,21 @@ def load_config(path: Path | None = None) -> AidocConfig:
 
 
 def save_config(cfg: AidocConfig, path: Path | None = None) -> None:
+    """Write `cfg` to aidoc.toml, keeping the existing file's comments and layout (tomlkit): only values that
+    changed are replaced, missing sections/keys are appended."""
     p = Path(path) if path else config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        doc = tomlkit.parse(p.read_text(encoding="utf-8")) if p.exists() else tomlkit.document()
+    except (OSError, tomlkit.exceptions.ParseError):
+        doc = tomlkit.document()
+    for section, values in cfg.to_dict().items():
+        if section not in doc:
+            doc[section] = tomlkit.table()
+        table = doc[section]
+        for key, val in values.items():
+            if key not in table or table[key] != val:
+                table[key] = val
     tmp = p.with_name(f".{p.name}.tmp")
-    tmp.write_text(tomli_w.dumps(cfg.to_dict()), encoding="utf-8")
+    tmp.write_text(tomlkit.dumps(doc), encoding="utf-8")
     os.replace(tmp, p)

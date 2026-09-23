@@ -247,6 +247,8 @@ def _run_uvicorn(app, host: str, port: int) -> None:
     # open SSE streams must not hold a Ctrl+C shutdown for long
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info",
                                            timeout_graceful_shutdown=3))
+    from aidoc.server.logfilter import install_access_log_redaction
+    install_access_log_redaction()           # after Config(): it (re)configures the uvicorn loggers
     try:
         server.run()
     except SystemExit as e:                  # uvicorn exits (code 3) when it cannot bind

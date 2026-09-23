@@ -174,8 +174,13 @@ class JobQueue:
 
     # ------------------------------------------------------------ commands
     def cancel_job(self, job_id: str) -> None:
+        """Cancel a queued or running job. A job that already finished (`done`) or was cancelled is left as it
+        is: cancelling it is a no-op (the API returns the unchanged job)."""
         store = self.ctx.store
         with self._state:
+            job = store.get_job(job_id)
+            if job is None or job["status"] in (JobStatus.done.value, JobStatus.cancelled.value):
+                return
             store.set_job_status(job_id, JobStatus.cancelled)
             cancelled = store.cancel_queued_tasks(job_id)
             running_here = self._running_job == job_id and self._cancel is not None
@@ -185,6 +190,20 @@ class JobQueue:
             self.publish_task(tid)
         self.publish_job(job_id)
         self.publish_queue()
+
+    def busy_engine(self, engine: str) -> str | None:
+        """The engine of the running task if setting up `engine` ("all" or a name) would rebuild it; a task that
+        has not chosen its engine yet (probing) blocks every setup. None when nothing conflicts."""
+        tid = self.running_task_id
+        if tid is None:
+            return None
+        task = self.ctx.store.get_task(tid)
+        if task is None:
+            return None
+        running = task.get("engine")
+        if running is None:
+            return "unknown"
+        return running if engine in ("all", running) else None
 
     def retry_task(self, task_id: str, use_new_version: bool = False, retry_low: bool = False) -> dict:
         store = self.ctx.store

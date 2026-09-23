@@ -63,6 +63,12 @@ def create_job(body: JobIn, request: Request) -> dict:
     ctx = _ctx(request)
     store = ctx.store
     paths = [Path(i.path) for i in body.inputs if i.path is not None]
+    seen: set[str] = set()
+    for i in body.inputs:                      # an upload is consumed by its task: it can back only one input
+        if i.upload_id is not None:
+            if i.upload_id in seen:
+                raise ApiError(400, "duplicate_input", upload_id=i.upload_id)
+            seen.add(i.upload_id)
     if (paths or body.output_dir) and not allow_local_paths(request, ctx):
         raise ApiError(403, "local_path_forbidden")
     for p in paths:
