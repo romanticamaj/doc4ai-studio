@@ -37,8 +37,24 @@ def stage_source(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
     """Hardlink (same volume) or copy the source to work_dir/src<ext> and verify its sha256.
 
     Idempotent: an already staged copy with the expected sha is reused even when the original has moved.
-    Raises SourceError(source_missing | source_changed)."""
+    Raises SourceError(source_missing | source_changed | source_unreadable)."""
     source_path, work_dir = Path(source_path), Path(work_dir)
+    try:
+        return _stage(source_path, expected_sha, work_dir)
+    except SourceError:
+        raise
+    except FileNotFoundError as e:
+        raise SourceError("source_missing", f"{source_path}: {e}") from e
+    except OSError as e:                      # locked by another program, no permission, ...
+        tmp = work_dir / f".src{source_path.suffix.lower()}.tmp"
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise SourceError("source_unreadable", f"{source_path}: {e}") from e
+
+
+def _stage(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
     dst = work_dir / f"src{source_path.suffix.lower()}"
     if dst.is_file() and not _same_file(dst, source_path) and file_sha256(dst) == expected_sha:
         return dst
@@ -49,7 +65,9 @@ def stage_source(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
         if file_sha256(dst) != expected_sha:
             raise SourceError("source_changed", str(source_path))
         return dst
-    if dst.exists():
+    if dst.exists():                          # stale copy (wrong sha); a copied read-only source stays read-only
+        if os.stat(dst).st_nlink == 1:
+            os.chmod(dst, stat.S_IWRITE | stat.S_IREAD)
         dst.unlink()
     linked = False
     # hardlinks share NTFS attributes: a read-only source is copied so work-copy cleanup never has to touch it

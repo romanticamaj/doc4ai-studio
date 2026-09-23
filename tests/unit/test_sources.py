@@ -120,3 +120,22 @@ def test_read_only_source_is_never_made_writable(tmp_path, fixtures):
         for p in (src, tmp_path / "rw.pdf"):
             if p.exists():
                 os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+
+
+def test_unreadable_source_at_run_time_is_input_error(tmp_root, fixtures, monkeypatch):
+    """Final review (M7, re-graded): a source locked when the task runs is failed(input), not an internal error."""
+    import aidoc.sources
+    fake_env(monkeypatch, write_scenario(tmp_root / "sc.json")); cfg = load_config()
+    store = Store(tmp_root / "data" / "aidoc.db")
+    src = tmp_root / "a.pdf"; shutil.copy(fixtures / "text.pdf", src); sha = file_sha256(src)
+    with pytest.raises(SourceError) as e:
+        monkeypatch.setattr(aidoc.sources.shutil, "copy2", lambda *a, **k: (_ for _ in ()).throw(
+            PermissionError(13, "used by another process")))
+        monkeypatch.setattr(aidoc.sources, "_same_volume", lambda a, b: False)
+        stage_source(src, sha, tmp_path_w := tmp_root / "w")
+    assert e.value.code == "source_unreadable" and not (tmp_path_w / ".src.pdf.tmp").exists()
+    job = store.create_job(ConvertOptions(output_dir=tmp_root / "out"), "cli")
+    tid, _ = store.create_task(job, str(src), sha, 1, 1.0, "cht", str(tmp_root / "out" / "a"))
+    assert run_task(store, tid, get_engines(cfg), cfg) == TaskStatus.failed
+    t = store.get_task(tid)
+    assert t["error_kind"] == "input" and t["error_msg"].startswith("source_unreadable")
