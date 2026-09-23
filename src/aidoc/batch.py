@@ -1,16 +1,16 @@
 """Batch conversion (spec §5): in-process queue (index A10), cache via DB, atomic manifest."""
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import traceback
 from collections.abc import Callable
 from pathlib import Path
 
-from aidoc import fsops
+from aidoc import fsops, names
 from aidoc.config import AidocConfig
-from aidoc.models import ConvertOptions, ErrorKind, TaskStatus
-from aidoc.names import file_sha256
+from aidoc.models import ConvertOptions, ErrorKind, JobStatus, TaskStatus
 from aidoc.output import planned_output_dir
 from aidoc.pipeline import run_task
 from aidoc.store import Store
@@ -71,6 +71,28 @@ def write_manifest(store: Store, job_id: str, out_root: Path, input_root: Path |
     fsops.atomic_write_lines(Path(out_root) / "_manifest.jsonl", [json.dumps(r, ensure_ascii=False) for r in rows])
 
 
+def register_source(store: Store, job_id: str, src: Path, opts: ConvertOptions) -> tuple[str, bool]:
+    """Create (or reuse) the task for one input. An input that vanished or cannot be read (locked, no permission)
+    still gets a row, ending as failed(input: source_missing | source_unreadable), so one bad file never aborts
+    the batch. Such rows use a path-derived placeholder key ("!" + 63 hex) instead of a content sha256."""
+    src = Path(src)
+    try:
+        st = src.stat()
+        sha = names.file_sha256(src)
+    except FileNotFoundError as e:
+        code, err = "source_missing", e
+    except OSError as e:
+        code, err = "source_unreadable", e
+    else:
+        out_dir = planned_output_dir(store, opts.output_dir, src, sha)
+        return store.create_task(job_id, str(src), sha, st.st_size, st.st_mtime, opts.lang, str(out_dir))
+    key = "!" + hashlib.sha256(str(src).encode("utf-8")).hexdigest()[1:]
+    out_dir = Path(opts.output_dir) / names.sanitize_stem(src.stem)
+    tid, reused = store.create_task(job_id, str(src), key, 0, 0.0, opts.lang, str(out_dir))
+    store.update_task(tid, status=TaskStatus.failed, error_kind=ErrorKind.input, error_msg=f"{code}: {err}", pid=None)
+    return tid, reused
+
+
 def run_batch(store: Store, config: AidocConfig, engines: dict, inputs: list[Path], opts: ConvertOptions,
               emit: Callable[[str, dict], None] | None = None, cancel: threading.Event | None = None,
               input_root: Path | None = None) -> str:
@@ -78,18 +100,24 @@ def run_batch(store: Store, config: AidocConfig, engines: dict, inputs: list[Pat
     task_ids: list[str] = []
     duplicates: list[tuple[Path, str]] = []             # identical content that maps to the same output dir
     first_source: dict[str, Path] = {}
-    for src in inputs:                                  # create every task first (resume key: sha256, output_dir)
-        src = Path(src).resolve()
-        st = src.stat()
-        sha = file_sha256(src)
-        out_dir = planned_output_dir(store, opts.output_dir, src, sha)
-        tid, _ = store.create_task(job, str(src), sha, st.st_size, st.st_mtime, opts.lang, str(out_dir))
-        if tid in first_source:                         # create_task re-parented our own row to this copy:
-            store.update_task(tid, source_path=str(first_source[tid]))   # keep the first source on the row
-            duplicates.append((src, tid))
-            continue
-        first_source[tid] = src
-        task_ids.append(tid)
+    try:
+        for src in inputs:                              # create every task first (resume key: sha256, output_dir)
+            src = Path(src).resolve()
+            tid, _ = register_source(store, job, src, opts)
+            if tid in first_source:                     # create_task re-parented our own row to this copy:
+                store.update_task(tid, source_path=str(first_source[tid]))   # keep the first source on the row
+                duplicates.append((src, tid))
+                continue
+            first_source[tid] = src
+            if store.get_task(tid)["status"] != TaskStatus.failed.value:
+                task_ids.append(tid)
+    except BaseException as e:                          # never leave a job (or its tasks) queued forever
+        for tid in first_source:
+            if store.get_task(tid)["status"] == TaskStatus.queued.value:
+                store.update_task(tid, status=TaskStatus.failed, error_kind=ErrorKind.engine,
+                                  error_msg=f"batch aborted while collecting inputs: {type(e).__name__}: {e}")
+        store.set_job_status(job, JobStatus.done)
+        raise
     store.refresh_job_status(job)
     write_manifest(store, job, opts.output_dir, input_root, duplicates)
     for tid in task_ids:

@@ -121,3 +121,45 @@ def test_rerun_reuses_unfinished_row_for_sanitised_stem(tmp_root, fixtures, monk
     assert [t["id"] for t in store.list_tasks(j2)] == [tid] and store.get_task(tid)["status"] == "done"
     assert (out / "CON_" / "CON_.md").exists()
     store.close()
+
+
+def test_batch_unreadable_and_vanished_inputs_do_not_abort(tmp_root, fixtures, monkeypatch, capsys):
+    """P1 verifier 1/10: an I/O error on one input fails that input only; the batch goes on and exits 2."""
+    import aidoc.names
+    fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
+    d = tmp_root / "in"; d.mkdir()
+    for n in ("a_locked.docx", "b_ok.docx"):
+        shutil.copy(fixtures / "sample.docx", d / n)
+    real = aidoc.names.file_sha256
+
+    def sha(p):
+        if "a_locked" in str(p):
+            raise PermissionError(13, "being used by another process")
+        return real(p)
+    monkeypatch.setattr(aidoc.names, "file_sha256", sha)
+    out = tmp_root / "out"
+    assert main(["batch", str(d), "-o", str(out)]) == 2
+    rows = {r["source"]: r for r in map(json.loads, (out / "_manifest.jsonl").read_text(encoding="utf-8").splitlines())}
+    assert rows["a_locked.docx"]["status"] == "failed" and rows["a_locked.docx"]["error"].startswith("input: source_unreadable")
+    assert rows["b_ok.docx"]["status"] == "done"
+    store = Store(tmp_root / "data" / "aidoc.db")
+    assert store.list_jobs()[0]["status"] == "done"
+    # vanished between listing and hashing
+    cfg = load_config(); opts = ConvertOptions(output_dir=tmp_root / "out2")
+    job = run_batch(store, cfg, get_engines(cfg), [d / "gone.docx", d / "b_ok.docx"], opts, input_root=d)
+    st = {r["source"]: r for r in manifest_rows(store, job, d)}
+    assert st["gone.docx"]["status"] == "failed" and "source_missing" in st["gone.docx"]["error"]
+    assert st["b_ok.docx"]["status"] == "done" and store.get_job(job)["status"] == "done"
+
+
+def test_batch_job_never_left_queued_when_collection_crashes(tmp_root, fixtures, monkeypatch):
+    import pytest
+
+    import aidoc.batch
+    fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
+    d = tmp_root / "in"; d.mkdir(); shutil.copy(fixtures / "sample.docx", d / "a.docx")
+    monkeypatch.setattr(aidoc.batch, "planned_output_dir", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    store = Store(tmp_root / "data" / "aidoc.db"); cfg = load_config()
+    with pytest.raises(RuntimeError):
+        run_batch(store, cfg, get_engines(cfg), [d / "a.docx"], ConvertOptions(output_dir=tmp_root / "out"))
+    assert store.list_jobs()[0]["status"] == "done"

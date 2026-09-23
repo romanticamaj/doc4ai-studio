@@ -72,10 +72,11 @@ def _emit_verbose(enabled: bool):
 
 
 def cmd_convert(args) -> int:
+    from aidoc.batch import register_source
     from aidoc.config import load_config
     from aidoc.engines.registry import get_engines
-    from aidoc.names import file_sha256
-    from aidoc.output import planned_output_dir, read_sidecar
+    from aidoc.models import TaskStatus
+    from aidoc.output import read_sidecar
     from aidoc.pipeline import run_task
 
     src = Path(args.file)
@@ -88,11 +89,11 @@ def cmd_convert(args) -> int:
     store = open_store(cfg)
     try:
         job = store.create_job(opts, "cli")
-        st = src.stat()
-        sha = file_sha256(src)
-        tid, _ = store.create_task(job, str(src), sha, st.st_size, st.st_mtime, opts.lang,
-                                   str(planned_output_dir(store, opts.output_dir, src, sha)))
-        status = run_task(store, tid, get_engines(cfg), cfg, emit=_emit_verbose(args.verbose))
+        tid, _ = register_source(store, job, src, opts)
+        if store.get_task(tid)["status"] == TaskStatus.failed.value:      # vanished / unreadable
+            status = TaskStatus.failed
+        else:
+            status = run_task(store, tid, get_engines(cfg), cfg, emit=_emit_verbose(args.verbose))
         store.refresh_job_status(job)
         task = store.get_task(tid)
     finally:
