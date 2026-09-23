@@ -132,3 +132,7 @@ class RunnerSession:
 
     def close(self) -> None:
         self.host.close()
+
+    def kill(self) -> None:
+        """Kill the runner tree now (Ctrl+C in the CLI: do not wait for the in-flight request)."""
+        self.host.kill()

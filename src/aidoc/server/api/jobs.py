@@ -38,6 +38,7 @@ class JobIn(BaseModel):
     allow_online_audio: bool = False
     origin: Literal["web", "cli"] = "web"
     output_dir: str | None = None          # CLI forwarding (-o); local paths rule applies
+    timeout_s: int | None = Field(default=None, ge=1)     # CLI --timeout
 
 
 class RetryIn(BaseModel):
@@ -52,7 +53,7 @@ def _ctx(request: Request):
 def build_options(cfg, body: JobIn) -> ConvertOptions:
     out = Path(body.output_dir) if body.output_dir else cfg.output_root()
     return ConvertOptions(output_dir=out, engine=body.engine, lang=body.lang or cfg.general.lang, force=body.force,
-                          retry_low=body.retry_low,
+                          retry_low=body.retry_low, timeout_s=body.timeout_s,
                           allow_online_audio=bool(body.allow_online_audio or cfg.general.enable_audio),
                           mineru_tier=cfg.engines.mineru_tier, docling_ocr=cfg.engines.docling_ocr)
 

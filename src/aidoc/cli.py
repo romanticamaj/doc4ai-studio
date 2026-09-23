@@ -103,11 +103,13 @@ def cmd_convert(args) -> int:
         _recover(store, cfg)
         job = store.create_job(opts, "cli")
         tid, _ = register_source(store, job, src, opts)
-        if store.get_task(tid)["status"] == TaskStatus.failed.value:      # vanished / unreadable
-            status = TaskStatus.failed
-        else:
-            status = run_task(store, tid, get_engines(cfg), cfg, emit=_emit_verbose(args.verbose))
-        store.refresh_job_status(job)
+        try:
+            if store.get_task(tid)["status"] == TaskStatus.failed.value:      # vanished / unreadable
+                status = TaskStatus.failed
+            else:
+                status = run_task(store, tid, get_engines(cfg), cfg, emit=_emit_verbose(args.verbose))
+        finally:
+            store.refresh_job_status(job)
         task = store.get_task(tid)
     finally:
         store.close()
@@ -143,6 +145,19 @@ def cmd_batch(args) -> int:
         return 1
     cfg = load_config()
     opts = options_from_args(args, cfg)
+    from aidoc import client as client_mod
+    server = client_mod.find_server(cfg)
+    if server is not None:                   # spec §8.1: the server owns the queue; forward and follow
+        from aidoc.batch import run_batch_via_server
+        inputs = collect_inputs(d.resolve(), exclude=opts.output_dir)
+        try:
+            return run_batch_via_server(server, inputs, opts, lambda line: print(line, flush=True),
+                                        input_root=d.resolve(), store_factory=lambda: open_store(cfg))
+        except client_mod.ServerError as e:
+            print(f"error: {e} {e.body}", file=sys.stderr)
+            return 1
+        finally:
+            server.close()
     store = open_store(cfg)
     try:
         _recover(store, cfg)
@@ -162,6 +177,24 @@ def cmd_batch(args) -> int:
     print("summary: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) +
           f"  manifest: {_display_path(str(opts.output_dir / '_manifest.jsonl'))}")
     return 2 if counts.get("failed") else 0
+
+
+def cmd_cancel(args) -> int:
+    from aidoc import client as client_mod
+    from aidoc.config import load_config
+    server = client_mod.find_server(load_config())
+    if server is None:
+        print("no server running; use Ctrl+C in the terminal running the batch", file=sys.stderr)
+        return 1
+    try:
+        job = server.cancel_job(args.job_id)
+    except client_mod.ServerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        server.close()
+    print(f"job {job['id']} {job['status']}")
+    return 0
 
 
 def cmd_chunk(args) -> int:
@@ -205,7 +238,30 @@ def _fix_stdio() -> None:
             pass
 
 
+def _break_as_interrupt() -> None:
+    """Windows Ctrl+Break normally kills the process outright; treat it like Ctrl+C (clean shutdown)."""
+    import signal
+    if hasattr(signal, "SIGBREAK"):
+        def handler(signum, frame):
+            raise KeyboardInterrupt
+        try:
+            signal.signal(signal.SIGBREAK, handler)
+        except ValueError:                    # not the main thread
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:                          # the real console entry point (not a test calling main([...]))
+        _break_as_interrupt()
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        print("\ninterrupted; the running conversion was cancelled (re-run the same command to resume)",
+              file=sys.stderr, flush=True)
+        return 130
+
+
+def _main(argv: list[str] | None) -> int:
     _fix_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -221,9 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "chunk":
         return cmd_chunk(args)
     if args.cmd == "cancel":
-        # P2: batches run in-process (index A10); P3 forwards this to the server
-        print("no server running; use Ctrl+C in the terminal running the batch", file=sys.stderr)
-        return 1
+        return cmd_cancel(args)
     return 0
 
 

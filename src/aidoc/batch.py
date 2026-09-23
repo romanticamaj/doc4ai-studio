@@ -133,6 +133,12 @@ def run_batch(store: Store, config: AidocConfig, engines: dict, inputs: list[Pat
             continue
         try:
             run_task(store, tid, engines, config, emit=emit, cancel=cancel)
+        except KeyboardInterrupt:                       # Ctrl+C: the rest of the job is cancelled, not left queued
+            for rest in store.list_tasks(job, status=TaskStatus.queued):
+                store.update_task(rest["id"], status=TaskStatus.cancelled)
+            store.set_job_status(job, JobStatus.cancelled)
+            write_manifest(store, job, opts.output_dir, input_root, duplicates)
+            raise
         except Exception as e:  # noqa: BLE001  a crashing task must never stop the batch
             store.update_task(tid, status=TaskStatus.failed, error_kind=ErrorKind.engine,
                               error_msg=f"internal error: {type(e).__name__}: {e}", pid=None)
@@ -142,3 +148,40 @@ def run_batch(store: Store, config: AidocConfig, engines: dict, inputs: list[Pat
         write_manifest(store, job, opts.output_dir, input_root, duplicates)
     store.refresh_job_status(job)
     return job
+
+
+def run_batch_via_server(client, inputs: list[Path], opts: ConvertOptions, print_fn: Callable[[str], None] = print,
+                         input_root: Path | None = None, store_factory: Callable[[], Store] | None = None) -> int:
+    """Forward a batch to the running server (spec §8.1) and follow it. One line per task status change.
+    Ctrl+C detaches (the server keeps the job). Exit code: 2 when any task failed, else 0."""
+    print_fn(f"forwarding to server {client.base_url}")
+    job = client.create_job(list(inputs), opts)
+    job_id = job["id"]
+    seen: dict[str, str] = {}
+
+    def on_event(kind: str, p: dict) -> None:
+        if kind != "task.updated" or seen.get(p["id"]) == p["status"]:
+            return
+        seen[p["id"]] = p["status"]
+        extra = f"  {p.get('error_kind')}: {p.get('error_msg')}" if p["status"] == TaskStatus.failed.value else ""
+        print_fn(f"{p['status']:10} {_source_label(p['source_path'], input_root)} {p.get('engine') or ''}{extra}"
+                 .rstrip())
+    try:
+        final = client.follow_job(job_id, on_event, threading.Event())
+    except KeyboardInterrupt:
+        print_fn(f"detached; job {job_id} keeps running (aidoc cancel {job_id} to cancel)")
+        return 0
+    detail = client.get_job(job_id)
+    for t in detail["tasks"]:                           # anything the stream did not show (e.g. already cached)
+        on_event("task.updated", t)
+    if store_factory is not None:
+        store = store_factory()
+        try:
+            write_manifest(store, job_id, opts.output_dir, input_root)
+        finally:
+            store.close()
+    counts: dict[str, int] = {}
+    for t in detail["tasks"]:
+        counts[t["status"]] = counts.get(t["status"], 0) + 1
+    print_fn(f"job {job_id} {final}: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    return 2 if counts.get(TaskStatus.failed.value) else 0

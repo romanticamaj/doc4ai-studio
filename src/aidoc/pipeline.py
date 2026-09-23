@@ -250,8 +250,12 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
             def on_progress(frac: float, line: str) -> None:
                 if line:
                     ctx.log(line)
-            raw = session.convert(seg_src, sd, pages, on_progress, timeout_s=timeout, segment_idx=seg["idx"],
-                                  cancel=ctx.cancel)
+            try:
+                raw = session.convert(seg_src, sd, pages, on_progress, timeout_s=timeout, segment_idx=seg["idx"],
+                                      cancel=ctx.cancel)
+            except KeyboardInterrupt:
+                session.kill()                     # Ctrl+C: the runner (own process group) must not outlive us
+                raise
             offset = (ps - 1) if (pages is not None and ps) else 0
             norm = normalize(raw, offset, seg["idx"])
             if multi and quick_check and ps is not None:
@@ -366,6 +370,13 @@ def run_task(store: Store, task_id: str, engines: dict, config: AidocConfig, emi
     try:
         status = _run_task(ctx, engines)
         return status
+    except KeyboardInterrupt:
+        # Ctrl+C in the CLI: like a cancel (done segments kept, task resumable), then let the CLI exit
+        try:
+            status = _cancel(ctx)
+        except Exception:  # noqa: BLE001, S110  best effort while exiting
+            pass
+        raise
     except Exception as e:  # noqa: BLE001  never leave a task stuck in probing/converting/checking
         ctx.log(traceback.format_exc())
         status = _fail(ctx, ErrorKind.engine, f"internal error: {type(e).__name__}: {e}")
