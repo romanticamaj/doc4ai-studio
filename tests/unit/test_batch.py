@@ -81,3 +81,43 @@ def test_manifest_source_relative_to_input_dir(tmp_root, fixtures, monkeypatch):
     assert main(["batch", str(d), "-o", str(tmp_root / "out")]) == 2
     lines = [json.loads(line) for line in (tmp_root / "out" / "_manifest.jsonl").read_text(encoding="utf-8").splitlines()]
     assert {line["source"] for line in lines} == {"text.pdf", "sub/bad.exe"}
+
+
+def test_identical_duplicates_both_in_manifest(tmp_root, fixtures, monkeypatch):
+    """Same content under two names/folders: converted once, the second is recorded as a duplicate."""
+    sc = write_scenario(tmp_root / "sc.json")
+    fake_env(monkeypatch, sc)
+    d = tmp_root / "in"
+    (d / "a").mkdir(parents=True)
+    (d / "b").mkdir()
+    shutil.copy(fixtures / "text.pdf", d / "a" / "report.pdf")
+    shutil.copy(fixtures / "text.pdf", d / "b" / "report.pdf")
+    assert main(["batch", str(d), "-o", str(tmp_root / "out")]) == 0
+    lines = {json.loads(x)["source"]: json.loads(x)
+             for x in (tmp_root / "out" / "_manifest.jsonl").read_text(encoding="utf-8").splitlines()}
+    assert set(lines) == {"a/report.pdf", "b/report.pdf"}
+    assert lines["a/report.pdf"]["status"] == "done"
+    assert lines["b/report.pdf"]["status"] == "skipped" and lines["b/report.pdf"]["duplicate_of"] == "a/report.pdf"
+    calls = (tmp_root / "calls.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 1                                  # converted once
+
+
+def test_rerun_reuses_unfinished_row_for_sanitised_stem(tmp_root, fixtures, monkeypatch):
+    """The resume key (sha256, output_dir) must use the final (sanitised) dir, so a re-run reuses the row (A14)."""
+    fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
+    d = tmp_root / "in"
+    d.mkdir()
+    src = d / "CON.pdf"
+    shutil.copy(fixtures / "text.pdf", src)
+    cfg = load_config()
+    store = Store(tmp_root / "data" / "aidoc.db")
+    out = tmp_root / "out"
+    from aidoc.names import file_sha256
+    j1 = store.create_job(ConvertOptions(output_dir=out), "cli")
+    tid, _ = store.create_task(j1, str(src), file_sha256(src), src.stat().st_size, src.stat().st_mtime, "cht",
+                               str(out / "CON_"))
+    store.update_task(tid, status="converting")            # e.g. the previous process died mid-conversion
+    j2 = run_batch(store, cfg, get_engines(cfg), collect_inputs(d), ConvertOptions(output_dir=out))
+    assert [t["id"] for t in store.list_tasks(j2)] == [tid] and store.get_task(tid)["status"] == "done"
+    assert (out / "CON_" / "CON_.md").exists()
+    store.close()

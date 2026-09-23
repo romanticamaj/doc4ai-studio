@@ -75,7 +75,7 @@ def cmd_convert(args) -> int:
     from aidoc.config import load_config
     from aidoc.engines.registry import get_engines
     from aidoc.names import file_sha256
-    from aidoc.output import read_sidecar
+    from aidoc.output import planned_output_dir, read_sidecar
     from aidoc.pipeline import run_task
 
     src = Path(args.file)
@@ -89,8 +89,9 @@ def cmd_convert(args) -> int:
     try:
         job = store.create_job(opts, "cli")
         st = src.stat()
-        tid, _ = store.create_task(job, str(src), file_sha256(src), st.st_size, st.st_mtime, opts.lang,
-                                   str(opts.output_dir / src.stem))
+        sha = file_sha256(src)
+        tid, _ = store.create_task(job, str(src), sha, st.st_size, st.st_mtime, opts.lang,
+                                   str(planned_output_dir(store, opts.output_dir, src, sha)))
         status = run_task(store, tid, get_engines(cfg), cfg, emit=_emit_verbose(args.verbose))
         store.refresh_job_status(job)
         task = store.get_task(tid)
@@ -118,7 +119,7 @@ def cmd_convert(args) -> int:
 
 
 def cmd_batch(args) -> int:
-    from aidoc.batch import collect_inputs, manifest_rows, run_batch
+    from aidoc.batch import collect_inputs, run_batch
     from aidoc.config import load_config
     from aidoc.engines.registry import get_engines
 
@@ -133,9 +134,11 @@ def cmd_batch(args) -> int:
         inputs = collect_inputs(d.resolve(), exclude=opts.output_dir)
         job = run_batch(store, cfg, get_engines(cfg), inputs, opts, emit=_emit_verbose(args.verbose),
                         input_root=d.resolve())
-        rows = manifest_rows(store, job, input_root=d.resolve())
+        store.refresh_job_status(job)
     finally:
         store.close()
+    manifest = opts.output_dir / "_manifest.jsonl"
+    rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1

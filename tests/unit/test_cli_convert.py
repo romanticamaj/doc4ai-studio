@@ -25,3 +25,13 @@ def test_convert_json_and_failed_exit(tmp_root, fixtures, monkeypatch, capsys):
 def test_convert_missing_file(tmp_root, capsys):
     assert main(["convert", str(tmp_root / "nope.pdf")]) == 1
     assert "not found" in capsys.readouterr().err.lower()
+
+
+def test_convert_internal_error_exits_1_without_traceback(tmp_root, fixtures, monkeypatch, capsys):
+    import aidoc.pipeline as pl
+    fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
+    monkeypatch.setattr(pl, "normalize", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("kaboom")))
+    src = tmp_root / "text.pdf"
+    shutil.copy(fixtures / "text.pdf", src)
+    assert main(["convert", str(src), "-o", str(tmp_root / "out")]) == 1
+    assert "kaboom" in capsys.readouterr().out

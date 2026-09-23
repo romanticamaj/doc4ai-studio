@@ -122,3 +122,15 @@ def test_no_engine_available(env, monkeypatch):
     tid = env["make"]("text.pdf")
     assert run_task(env["store"], tid, engines, env["cfg"]) == TaskStatus.failed
     assert "aidoc setup" in env["store"].get_task(tid)["error_msg"]
+
+
+def test_unexpected_exception_marks_task_failed(env, monkeypatch):
+    import aidoc.pipeline as pl
+
+    def boom(*a, **k):
+        raise RuntimeError("normalize exploded")
+    monkeypatch.setattr(pl, "normalize", boom)
+    tid = env["make"]("text.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.failed
+    t = env["store"].get_task(tid)
+    assert t["status"] == "failed" and t["error_kind"] == "engine" and "normalize exploded" in t["error_msg"]

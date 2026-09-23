@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import threading
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,7 @@ from aidoc.engines.base import EngineError
 from aidoc.engines.host import compute_timeout
 from aidoc.fsops import FsBusyError
 from aidoc.models import (
+    TERMINAL_TASK,
     Attempt,
     ConvertOptions,
     ErrorKind,
@@ -88,8 +90,13 @@ def _set_output_dir(store: Store, task: dict, output_dir: Path) -> None:
     try:
         store.update_task(task["id"], output_dir=str(output_dir))
     except sqlite3.IntegrityError:
-        # an older row already owns (sha256, output_dir): P1 keeps only the newest attempt for that key
+        # an older row owns (sha256, output_dir). Callers normally create tasks with the final dir
+        # (output.planned_output_dir), so this only happens for hand-made provisional keys. A terminal row is
+        # replaced (same rule as Store.create_task); an unfinished one is never deleted.
         other = [t for t in store.list_tasks() if t["sha256"] == task["sha256"] and t["output_dir"] == str(output_dir)]
+        active = [t for t in other if t["status"] not in {s.value for s in TERMINAL_TASK}]
+        if active:
+            raise RuntimeError(f"output dir {output_dir} is owned by unfinished task {active[0]['id']}") from None
         for t in other:
             store.con.execute("DELETE FROM segments WHERE task_id=?", (t["id"],))
             store.con.execute("DELETE FROM tasks WHERE id=?", (t["id"],))
@@ -128,10 +135,20 @@ def _write_output(ctx: PipelineContext, task: dict, opts: ConvertOptions, probe:
 
 def run_task(store: Store, task_id: str, engines: dict, config: AidocConfig, emit: Emit | None = None,
              cancel: threading.Event | None = None) -> TaskStatus:
-    ctx = PipelineContext(store, task_id, config, emit, cancel)
-    task = store.get_task(task_id)
-    if task is None:
+    """Run one task to a terminal status. Unexpected exceptions end as failed(engine: internal error)."""
+    if store.get_task(task_id) is None:
         raise KeyError(task_id)
+    ctx = PipelineContext(store, task_id, config, emit, cancel)
+    try:
+        return _run_task(ctx, engines)
+    except Exception as e:  # noqa: BLE001  never leave a task stuck in probing/converting/checking
+        ctx.log(traceback.format_exc())
+        return _fail(ctx, ErrorKind.engine, f"internal error: {type(e).__name__}: {e}")
+
+
+def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
+    store, task_id, config = ctx.store, ctx.task_id, ctx.config
+    task = store.get_task(task_id)
     job = store.get_job(task["job_id"])
     opts = ConvertOptions.from_json(job["options"])
     if ctx.cancelled():
