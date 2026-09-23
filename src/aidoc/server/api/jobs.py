@@ -13,6 +13,7 @@ from aidoc.models import ConvertOptions
 from aidoc.server.auth import ApiError, allow_local_paths
 from aidoc.server.jobs import RetryError
 from aidoc.server.serialize import serialize_job, serialize_task
+from aidoc.server.uploads import UploadError
 
 router = APIRouter()
 
@@ -86,7 +87,10 @@ def create_job(body: JobIn, request: Request) -> dict:
         if ref.path is not None:
             tid, _ = register_source(store, job_id, Path(ref.path).resolve(), opts)
         else:
-            tid = ctx.uploads.create_task_from_upload(job_id, ref.upload_id, opts)
+            try:
+                tid = ctx.uploads.create_task_from_upload(job_id, ref.upload_id, opts)
+            except UploadError as e:
+                raise ApiError(e.status, e.error, **e.extra) from None
         if tid not in task_ids:
             task_ids.append(tid)
     store.refresh_job_status(job_id)

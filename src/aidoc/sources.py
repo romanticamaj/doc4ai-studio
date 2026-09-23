@@ -23,12 +23,21 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
-def stage_source(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
+def stage_source(source_path: Path, expected_sha: str, work_dir: Path, preferred: Path | None = None) -> Path:
     """Copy the source to work_dir/src<ext> and verify the copy's sha256.
 
     Idempotent: an already staged copy with the expected sha is reused even when the original has moved.
+    `preferred` = a file already in the work dir (an upload): it is only verified, never re-staged from
+    `source_path` (which is then just a display name).
     Raises SourceError(source_missing | source_changed | source_unreadable)."""
     source_path, work_dir = Path(source_path), Path(work_dir)
+    if preferred is not None:
+        preferred = Path(preferred)
+        if not preferred.is_file():
+            raise SourceError("source_missing", str(preferred))
+        if file_sha256(preferred) != expected_sha:
+            raise SourceError("source_changed", str(preferred))
+        return preferred
     try:
         return _stage(source_path, expected_sha, work_dir)
     except SourceError:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import threading
 import traceback
+from pathlib import Path
 
 from aidoc.engines.registry import get_engines
 from aidoc.models import TERMINAL_TASK, ErrorKind, JobStatus, TaskStatus
@@ -178,6 +179,8 @@ class JobQueue:
             raise RetryError(409, "task_running")
         new_sha = None
         if use_new_version:
+            if not Path(task["source_path"]).is_absolute():          # an upload: there is no "new version" on disk
+                raise RetryError(409, "not_a_local_source")
             try:
                 new_sha = file_sha256(task["source_path"])
             except OSError:

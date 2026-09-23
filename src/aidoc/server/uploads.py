@@ -143,7 +143,22 @@ class UploadManager:
         return dest
 
     def create_task_from_upload(self, job_id: str, upload_id: str, opts) -> str:
-        raise NotImplementedError        # Task 6
+        """Task for a finished upload: source_path = the display name (never a path), the file is moved to
+        data/work/<task_id>/src<ext> (the pipeline only verifies it there)."""
+        from aidoc.output import planned_output_dir
+        from aidoc.store import TaskBusyError
+        store = self.ctx.store
+        row = store.get_upload(upload_id)
+        name = row["filename"]
+        out_dir = planned_output_dir(store, opts.output_dir, Path(name), row["sha256"])
+        try:
+            tid, _ = store.create_task(job_id, name, row["sha256"], row["size"], time.time(), opts.lang, str(out_dir))
+        except TaskBusyError as e:
+            raise UploadError(409, "already_converting", task_id=e.task_id) from None
+        dest = self.ctx.config.data_dir / "work" / tid / f"src{Path(name).suffix.lower()}"
+        self.consume(upload_id, dest)
+        store.update_task(tid, work_path=str(dest))
+        return tid
 
     # ------------------------------------------------------------------ maintenance
     def reconcile(self) -> int:
