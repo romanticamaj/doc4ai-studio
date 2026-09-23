@@ -1,0 +1,24 @@
+import importlib.util
+import sys
+from aidoc import paths
+
+sys.path.insert(0, str(paths.runner_dir()))
+spec = importlib.util.spec_from_file_location("markitdown_runner", paths.runner_script("markitdown"))
+mr = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mr)
+
+
+def test_docx_media_in_order(fixtures):
+    media = mr.docx_media_in_order(fixtures / "sample.docx")
+    assert len(media) == 1 and media[0][0].endswith(".png") and media[0][1][:4] == b"\x89PNG"
+
+
+def test_replace_nth_images():
+    md = "a ![x](data:image/png;base64,AAAA) b ![](data:image/png;base64,BBBB)"
+    out = mr.replace_nth_images(md, ["images/i1.png", "images/i2.png"])
+    assert out == "a ![x](images/i1.png) b ![](images/i2.png)"
+
+
+def test_slide_markers():
+    assert mr.slide_markers_to_pages("<!-- Slide number: 1 -->\nx\n<!-- Slide number: 2 -->") == \
+        "<!-- page: 1 -->\nx\n<!-- page: 2 -->"
