@@ -54,6 +54,12 @@ def open_store(cfg):
     return Store(cfg.data_dir / "aidoc.db")
 
 
+def _recover(store, cfg) -> None:
+    """Spec §8.4: clean up after an interrupted run before doing new work (logs to stderr only if it acted)."""
+    from aidoc.recovery import recover_on_startup
+    recover_on_startup(store, cfg, log=lambda line: print(f"recovery: {line}", file=sys.stderr, flush=True))
+
+
 def _display_path(p: str | None) -> str:
     if not p:
         return ""
@@ -88,6 +94,7 @@ def cmd_convert(args) -> int:
     opts = options_from_args(args, cfg)
     store = open_store(cfg)
     try:
+        _recover(store, cfg)
         job = store.create_job(opts, "cli")
         tid, _ = register_source(store, job, src, opts)
         if store.get_task(tid)["status"] == TaskStatus.failed.value:      # vanished / unreadable
@@ -132,6 +139,7 @@ def cmd_batch(args) -> int:
     opts = options_from_args(args, cfg)
     store = open_store(cfg)
     try:
+        _recover(store, cfg)
         inputs = collect_inputs(d.resolve(), exclude=opts.output_dir)
         job = run_batch(store, cfg, get_engines(cfg), inputs, opts, emit=_emit_verbose(args.verbose),
                         input_root=d.resolve())

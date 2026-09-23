@@ -185,8 +185,12 @@ class Store:
     def get_task(self, task_id) -> dict | None:
         return _row(self._q1("SELECT * FROM tasks WHERE id=?", (task_id,)))
 
-    def list_tasks(self, job_id=None, status=None) -> list[dict]:
+    def list_tasks(self, job_id=None, status=None, status_in: list[str] | None = None) -> list[dict]:
         sql, args = "SELECT * FROM tasks WHERE 1=1", []
+        if status_in is not None:
+            vals = [_val(v) for v in status_in] or [""]
+            sql += f" AND status IN ({', '.join('?' * len(vals))})"
+            args += vals
         if job_id is not None:
             sql += " AND job_id=?"
             args.append(job_id)
@@ -194,6 +198,9 @@ class Store:
             sql += " AND status=?"
             args.append(_val(status))
         return self._qa(sql + " ORDER BY created_at, rowid", args)
+
+    def tasks_with_pid(self) -> list[dict]:
+        return self._qa("SELECT * FROM tasks WHERE pid IS NOT NULL ORDER BY created_at, rowid")
 
     def update_task(self, task_id, **fields) -> None:
         fields["updated_at"] = time.time()
