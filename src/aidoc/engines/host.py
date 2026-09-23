@@ -19,6 +19,12 @@ from aidoc.models import ConvertOptions, ErrorKind, ProgressCb
 _PREFIXES = ("AIDOC_READY", "AIDOC_PROGRESS", "AIDOC_DONE", "AIDOC_ERROR")
 
 
+def _is_oom_text(text: str) -> bool:
+    """Same markers as runner/_proto.py (runners cannot import aidoc, so the list is duplicated there)."""
+    low = text.lower()
+    return any(m in low for m in ("cuda out of memory", "outofmemoryerror", "out of memory"))
+
+
 def runner_env(data_dir: Path) -> dict[str, str]:
     env_models = os.environ.get("AIDOC_MODELS")
     models = Path(env_models) if env_models else Path(data_dir) / "models"
@@ -103,7 +109,7 @@ class RunnerHost:
             except subprocess.TimeoutExpired:
                 pass
         tail = "".join(self._tail)
-        oom = ("CUDA out of memory" in tail) or ("OutOfMemoryError" in tail)
+        oom = _is_oom_text(tail)
         code = self.proc.returncode if self.proc else None
         raise EngineError(ErrorKind.transient, f"{why} (code {code}): {tail[-500:]}", oom=oom)
 
@@ -173,7 +179,8 @@ class RunnerHost:
                     kind_e = ErrorKind(kind_s)
                 except ValueError:                   # unknown kind from a runner: treat as an engine failure
                     kind_e, msg = ErrorKind.engine, f"[runner error kind {kind_s!r}] {msg}"
-                raise EngineError(kind_e, msg)
+                oom = kind_e == ErrorKind.transient and _is_oom_text(msg)
+                raise EngineError(kind_e, msg, oom=oom)
             elif kind is None:
                 on_progress(-1.0, line.rstrip("\r\n"))   # log line, fraction -1 means "no progress info"
 

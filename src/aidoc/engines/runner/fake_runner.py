@@ -12,6 +12,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 import _proto
 
 
+class OutOfMemoryError(RuntimeError):                  # stands in for torch.OutOfMemoryError
+    pass
+
+
 def _load_scenario():
     p = os.environ.get("AIDOC_FAKE_SCENARIO")
     return json.loads(Path(p).read_text(encoding="utf-8")) if p else {"default": "ok"}
@@ -101,6 +105,8 @@ def handle(req):
     if b == "oom":
         _proto.log("torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 GiB")
         sys.exit(1)
+    if b == "oom_raise":                                # OOM raised inside the engine; the runner survives
+        raise OutOfMemoryError("CUDA out of memory. Tried to allocate 2.00 GiB")
     if b == "timeout":
         time.sleep(3600)
     if b == "crash":

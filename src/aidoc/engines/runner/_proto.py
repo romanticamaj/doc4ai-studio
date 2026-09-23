@@ -31,6 +31,13 @@ class RunnerError(Exception):
         self.kind = kind
 
 
+OOM_MARKERS = ("CUDA out of memory", "OutOfMemoryError", "out of memory")
+
+
+def is_oom_text(text: str) -> bool:
+    return any(m.lower() in text.lower() for m in OOM_MARKERS)
+
+
 def _result_path(req_path: str) -> str:
     if req_path.endswith("request.json"):
         return req_path[: -len("request.json")] + "result.json"
@@ -56,4 +63,8 @@ def serve(handle: Callable[[dict], dict]) -> None:
             _emit("AIDOC_ERROR", {"request": req_path, "kind": e.kind, "message": str(e)})
         except Exception as e:  # noqa: BLE001
             log(traceback.format_exc())
-            _emit("AIDOC_ERROR", {"request": req_path, "kind": "engine", "message": f"{type(e).__name__}: {e}"})
+            msg = f"{type(e).__name__}: {e}"
+            # a CUDA OOM raised inside the engine leaves the runner alive: report it as transient so the host can
+            # apply the OOM downgrade (index §0 retry policy); the message keeps the OOM marker the host looks for
+            kind = "transient" if is_oom_text(msg) else "engine"
+            _emit("AIDOC_ERROR", {"request": req_path, "kind": kind, "message": msg})
