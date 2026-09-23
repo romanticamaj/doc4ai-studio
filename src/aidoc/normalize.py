@@ -1,5 +1,6 @@
 """Unify engine output: absolute page markers, asset names, GFM tables, whitespace (spec §3, §5)."""
 from __future__ import annotations
+
 import re
 from html.parser import HTMLParser
 from pathlib import Path
@@ -9,7 +10,7 @@ from aidoc.models import NormalizedResult, RawResult
 
 PAGE_RE = re.compile(r"<!-- page: (\d+) -->")
 IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
-TABLE_RE = re.compile(r"<table\b.*?</table>", re.S | re.I)
+TABLE_RE = re.compile(r"<table\b.*?</table>", re.DOTALL | re.IGNORECASE)
 
 
 class _TableParser(HTMLParser):
@@ -68,7 +69,7 @@ def html_table_to_gfm(html: str) -> str | None:
     try:
         p.feed(html)
         p.close()
-    except Exception:
+    except Exception:  # noqa: BLE001  malformed HTML of any kind -> keep the table as HTML
         return None
     rows = p.rows
     if p.bad or not rows:

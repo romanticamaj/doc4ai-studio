@@ -1,20 +1,29 @@
 """Single-task conversion pipeline (P1: one segment, no transient retry). Spec §4, §5, §8.2."""
 from __future__ import annotations
+
 import shutil
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from aidoc import paths
 from aidoc.config import AidocConfig
 from aidoc.engines.base import EngineError
 from aidoc.engines.host import compute_timeout
 from aidoc.fsops import FsBusyError
-from aidoc.models import (Attempt, ConvertOptions, ErrorKind, NormalizedResult, ProbeResult, QualityResult,
-                          SegmentStatus, TaskStatus)
+from aidoc.models import (
+    Attempt,
+    ConvertOptions,
+    ErrorKind,
+    NormalizedResult,
+    ProbeResult,
+    QualityResult,
+    SegmentStatus,
+    TaskStatus,
+)
 from aidoc.names import sanitize_stem
 from aidoc.normalize import normalize
 from aidoc.output import OutputWriter, build_sidecar, choose_output_dir, lookup_cached

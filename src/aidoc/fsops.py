@@ -1,12 +1,14 @@
 from __future__ import annotations
+
 import errno
 import json
 import os
 import shutil
 import stat
 import time
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Callable, Iterable, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
 _RETRY_ERRNOS = {errno.EACCES, errno.EBUSY, errno.EPERM}

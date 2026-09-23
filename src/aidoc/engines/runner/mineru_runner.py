@@ -6,13 +6,15 @@ writes markdown.md, middle_json.json, structured_content.json, model_output.json
 There is no language parameter (spec §4): `lang` is ignored.
 """
 from __future__ import annotations
+
 import json
 import os
 import re
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
-import _proto  # noqa: E402
+import _proto
 
 _IMG_LINK = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
 
@@ -100,8 +102,8 @@ def flatten_structured(sc):
 def _html_cols(html):
     if not html:
         return 0
-    first_row = re.search(r"<tr[^>]*>(.*?)</tr>", html, re.S | re.I)
-    return len(re.findall(r"<t[dh]\b", first_row.group(1) if first_row else html, re.I))
+    first_row = re.search(r"<tr[^>]*>(.*?)</tr>", html, re.DOTALL | re.IGNORECASE)
+    return len(re.findall(r"<t[dh]\b", first_row.group(1) if first_row else html, re.IGNORECASE))
 
 
 def _block_html(blk):
@@ -135,7 +137,7 @@ def table_edges(middle):
             for blk in blocks:
                 if blk.get("type") != "table" or not blk.get("bbox"):
                     continue
-                x0, y0, x1, y1 = blk["bbox"]
+                _x0, y0, _x1, y1 = blk["bbox"]
                 if size and max(y0, y1) > 1.5:          # absolute coordinates (older layouts)
                     y0, y1 = y0 / size[1], y1 / size[1]
                 html = _block_html(blk)

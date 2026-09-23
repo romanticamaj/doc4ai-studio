@@ -1,12 +1,14 @@
 import sys
 import time
 from pathlib import Path
+
 import pytest
-from aidoc.engines.host import RunnerHost, compute_timeout, runner_env
-from aidoc.engines.base import EngineError
-from aidoc.models import ConvertOptions
-from aidoc.config import load_config
+
 from aidoc import paths
+from aidoc.config import load_config
+from aidoc.engines.base import EngineError
+from aidoc.engines.host import RunnerHost, compute_timeout, runner_env
+from aidoc.models import ConvertOptions
 from tests.fakes.scenario import write_scenario
 
 

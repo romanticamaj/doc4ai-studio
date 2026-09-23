@@ -1,5 +1,6 @@
 """Slow tests use the real engine envs and downloaded models, but an isolated root/data dir (DB, output)."""
 from __future__ import annotations
+
 import pytest
 
 from aidoc import paths as _paths

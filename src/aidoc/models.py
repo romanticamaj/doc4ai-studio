@@ -1,8 +1,10 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict, fields
+
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Callable
+from typing import Literal
 
 Lang = Literal["cht", "en"]
 ENGINE_NAMES = ("markitdown", "docling", "mineru")
@@ -71,7 +73,7 @@ class ConvertOptions:
         return d
 
     @classmethod
-    def from_json(cls, d: dict) -> "ConvertOptions":
+    def from_json(cls, d: dict) -> ConvertOptions:
         known = {f.name for f in fields(cls)}
         kw = {k: v for k, v in d.items() if k in known}
         kw["output_dir"] = Path(kw["output_dir"])
@@ -114,7 +116,7 @@ class TableEdge:
         return asdict(self)
 
     @classmethod
-    def from_json(cls, d: dict) -> "TableEdge":
+    def from_json(cls, d: dict) -> TableEdge:
         return cls(**d)
 
 
@@ -159,7 +161,7 @@ class Attempt:                         # one entry of tasks.tried_json
         return asdict(self)
 
     @classmethod
-    def from_json(cls, d: dict) -> "Attempt":
+    def from_json(cls, d: dict) -> Attempt:
         return cls(**d)
 
 

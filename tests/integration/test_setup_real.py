@@ -1,5 +1,7 @@
 import json
+
 import pytest
+
 from aidoc import paths
 
 pytestmark = pytest.mark.slow

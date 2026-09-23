@@ -1,9 +1,11 @@
 """Regenerate all test fixtures. Run: uv run python tests/fixtures/make_fixtures.py"""
 from __future__ import annotations
+
 import random
 import re
 import shutil
 from pathlib import Path
+
 import fitz  # PyMuPDF
 
 HERE = Path(__file__).parent
@@ -77,7 +79,7 @@ def _draw_table(page, y, rows=4, cols=3, w=450, rh=22):
 def _save(doc, path):
     try:
         doc.subset_fonts()          # keep committed fixtures small (msjh.ttc is ~20 MB)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110  subsetting is an optimisation only
         pass
     doc.save(path, garbage=4, deflate=True)
     doc.close()

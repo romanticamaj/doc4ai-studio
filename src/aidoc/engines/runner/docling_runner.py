@@ -1,19 +1,25 @@
 """Docling runner. STDLIB + docling only; never import aidoc."""
 from __future__ import annotations
+
 import os
 import re
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
-import _proto  # noqa: E402
+import _proto
 
 _converter_cache: dict = {}
 
 
 def build_converter(opts):
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import (AcceleratorOptions, EasyOcrOptions, OcrMode,
-                                                    PdfPipelineOptions)
+    from docling.datamodel.pipeline_options import (
+        AcceleratorOptions,
+        EasyOcrOptions,
+        OcrMode,
+        PdfPipelineOptions,
+    )
     from docling.datamodel.settings import settings
     from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
     models = Path(os.environ["AIDOC_MODELS_DIR"]) / "docling"

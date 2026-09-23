@@ -1,12 +1,13 @@
 import json
 import shutil
-from aidoc.batch import collect_inputs, run_batch, manifest_rows
+
+from aidoc.batch import collect_inputs, manifest_rows, run_batch
 from aidoc.cli import main
 from aidoc.config import load_config
 from aidoc.engines.registry import get_engines
 from aidoc.models import ConvertOptions
 from aidoc.store import Store
-from tests.fakes.scenario import write_scenario, fake_env
+from tests.fakes.scenario import fake_env, write_scenario
 
 
 def setup_inputs(tmp_root, fixtures, names):

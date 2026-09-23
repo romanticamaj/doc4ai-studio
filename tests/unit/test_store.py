@@ -1,8 +1,10 @@
 import sqlite3
 import time
 from pathlib import Path
+
 import pytest
-from aidoc.models import ConvertOptions, TaskStatus, JobStatus, Attempt
+
+from aidoc.models import Attempt, ConvertOptions, JobStatus, TaskStatus
 from aidoc.store import Store
 
 

@@ -1,12 +1,14 @@
 """MarkItDown runner. STDLIB + markitdown (+ python-pptx) only; never import aidoc."""
 from __future__ import annotations
+
 import re
 import sys
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
-import _proto  # noqa: E402
+import _proto
 
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
       "a": "http://schemas.openxmlformats.org/drawingml/2006/main",

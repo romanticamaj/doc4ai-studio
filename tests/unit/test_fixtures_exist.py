@@ -1,4 +1,5 @@
 import fitz
+
 from tests.conftest import FIXTURES
 
 

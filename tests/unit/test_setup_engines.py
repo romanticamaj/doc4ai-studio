@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
+
+from aidoc import paths
+from aidoc import setup_engines as se
 from aidoc.config import load_config
-from aidoc import setup_engines as se, paths
 
 
 def test_plan_commands_mineru(tmp_root):

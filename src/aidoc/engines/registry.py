@@ -1,5 +1,6 @@
 """Engine registry. AIDOC_FAKE_ENGINES=1 swaps in the fake engine for all three names (index A9)."""
 from __future__ import annotations
+
 import os
 
 from aidoc.config import AidocConfig

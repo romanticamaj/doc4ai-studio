@@ -1,4 +1,4 @@
-from aidoc.probe import probe_file, kind_for
+from aidoc.probe import kind_for, probe_file
 
 
 def test_text_pdf(fixtures):

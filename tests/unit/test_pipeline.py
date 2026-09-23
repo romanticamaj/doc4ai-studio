@@ -1,14 +1,16 @@
 import json
 import shutil
 from pathlib import Path
+
 import pytest
+
 from aidoc.config import load_config
 from aidoc.engines.registry import get_engines
 from aidoc.models import ConvertOptions, TaskStatus
 from aidoc.names import file_sha256
 from aidoc.pipeline import run_task
 from aidoc.store import Store
-from tests.fakes.scenario import write_scenario, fake_env
+from tests.fakes.scenario import fake_env, write_scenario
 
 
 @pytest.fixture
@@ -26,7 +28,7 @@ def env(tmp_root, monkeypatch, fixtures):
         tid, _ = store.create_task(job, str(src), file_sha256(src), src.stat().st_size, src.stat().st_mtime, opts.lang,
                                    str(tmp_root / "out" / Path(src).stem))
         return tid
-    yield dict(cfg=cfg, store=store, sc=sc, make=make_task, root=tmp_root)
+    yield {"cfg": cfg, "store": store, "sc": sc, "make": make_task, "root": tmp_root}
     store.close()
 
 

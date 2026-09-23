@@ -1,7 +1,8 @@
 import json
 import shutil
+
 from aidoc.cli import main
-from tests.fakes.scenario import write_scenario, fake_env
+from tests.fakes.scenario import fake_env, write_scenario
 
 
 def test_convert_text_output(tmp_root, fixtures, monkeypatch, capsys):

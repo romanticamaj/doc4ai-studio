@@ -1,9 +1,10 @@
 """Shared by all runners. STDLIB ONLY. Never import aidoc here."""
 from __future__ import annotations
+
 import json
 import sys
 import traceback
-from typing import Callable
+from collections.abc import Callable
 
 
 def _emit(prefix: str, obj: dict) -> None:

@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 import os
 import sys
-from dataclasses import dataclass, field, fields, asdict
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 import tomli_w

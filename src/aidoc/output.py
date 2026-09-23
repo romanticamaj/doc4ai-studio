@@ -1,5 +1,6 @@
 """Output directory choice, sidecar JSON, atomic finalisation and cache lookup (spec §5, §8.6)."""
 from __future__ import annotations
+
 import json
 import shutil
 from pathlib import Path

@@ -1,5 +1,13 @@
 import json
-from aidoc.output import choose_output_dir, OutputWriter, lookup_cached, read_sidecar, build_sidecar, list_output_dirs
+
+from aidoc.output import (
+    OutputWriter,
+    build_sidecar,
+    choose_output_dir,
+    list_output_dirs,
+    lookup_cached,
+    read_sidecar,
+)
 from aidoc.store import Store
 
 

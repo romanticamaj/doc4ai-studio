@@ -7,6 +7,7 @@ Final thresholds (validated on tests/fixtures):
 - math: math font names, or >= 15 math symbols and >= 1 % of non-space chars
 """
 from __future__ import annotations
+
 from pathlib import Path
 
 import pymupdf as fitz
@@ -116,7 +117,7 @@ def probe_file(path: Path) -> ProbeResult:
         return ProbeResult(kind=kind, ext=ext, size=size)
     try:
         doc = fitz.open(path)
-    except Exception:
+    except Exception:  # noqa: BLE001  PyMuPDF raises many types for broken files
         return ProbeResult(kind="pdf", ext=ext, size=size, error="corrupt")
     try:
         if doc.is_encrypted and not doc.authenticate(""):
@@ -139,7 +140,7 @@ def probe_file(path: Path) -> ProbeResult:
                            image_cover=image_cover, math_hint=any(m["math"] for m in stats),
                            layout_hint=layout, has_table_lines=any(m["table_lines"] for m in stats),
                            blank_pages=blank_pages)
-    except Exception:
+    except Exception:  # noqa: BLE001  PyMuPDF raises many types for broken files
         return ProbeResult(kind="pdf", ext=ext, size=size, error="corrupt")
     finally:
         doc.close()

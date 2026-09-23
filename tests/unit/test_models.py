@@ -1,6 +1,16 @@
 from pathlib import Path
-from aidoc.models import (ConvertOptions, ProbeResult, QualityResult, Attempt, TableEdge,
-                          TaskStatus, TERMINAL_TASK, SEGMENT_PAGES, ENGINE_NAMES)
+
+from aidoc.models import (
+    ENGINE_NAMES,
+    SEGMENT_PAGES,
+    TERMINAL_TASK,
+    Attempt,
+    ConvertOptions,
+    ProbeResult,
+    QualityResult,
+    TableEdge,
+    TaskStatus,
+)
 
 
 def test_convert_options_roundtrip():

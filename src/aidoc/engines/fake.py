@@ -1,5 +1,6 @@
 """FakeEngine (index A9/§6): a real subprocess running fake_runner.py with the host's Python."""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 

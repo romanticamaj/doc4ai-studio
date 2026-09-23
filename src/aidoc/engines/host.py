@@ -1,5 +1,6 @@
 """RunnerHost: spawn an engine runner and speak the index §5 protocol over stdin/stderr."""
 from __future__ import annotations
+
 import collections
 import io
 import json

@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+
 from aidoc import paths
 
 sys.path.insert(0, str(paths.runner_dir()))

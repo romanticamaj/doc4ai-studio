@@ -2,7 +2,9 @@ import json
 import sys
 import threading
 import time
+
 import pytest
+
 from aidoc import fsops
 
 
@@ -71,7 +73,7 @@ def test_three_step_waits_for_open_handle(tmp_path, monkeypatch):
     tmp = tmp_path / ".tmp" / "t3"
     tmp.mkdir(parents=True)
     (tmp / "new").write_text("n")
-    fh = open(final / "held.md", "r")
+    fh = open(final / "held.md")  # noqa: SIM115  closed by the timer below
     threading.Timer(0.12, fh.close).start()
     fsops.replace_dir_three_step(tmp, final, tmp_path / ".trash" / "t3")
     assert (final / "new").exists() and not (tmp_path / ".trash").exists() or not any((tmp_path / ".trash").iterdir())
@@ -86,7 +88,6 @@ def test_three_step_busy_raises_and_leaves_final_untouched(tmp_path, monkeypatch
     tmp = tmp_path / ".tmp" / "t4"
     tmp.mkdir(parents=True)
     (tmp / "new").write_text("n")
-    with open(final / "held.md", "r"):
-        with pytest.raises(fsops.FsBusyError):
-            fsops.replace_dir_three_step(tmp, final, tmp_path / ".trash" / "t4")
+    with open(final / "held.md", "r"), pytest.raises(fsops.FsBusyError):
+        fsops.replace_dir_three_step(tmp, final, tmp_path / ".trash" / "t4")
     assert (final / "held.md").exists() and not (tmp_path / ".trash" / "t4").exists() and tmp.exists()

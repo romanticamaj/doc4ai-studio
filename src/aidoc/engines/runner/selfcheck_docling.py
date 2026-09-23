@@ -1,16 +1,23 @@
 """Self-check for the docling env: GPU facts + OCR of the bundled 繁中 sample. Prints one JSON line."""
 from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
 
 
 def main() -> None:
-    import torch
     from importlib.metadata import version
+
+    import torch
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import (AcceleratorOptions, EasyOcrOptions, OcrMode,
-                                                    PdfPipelineOptions, RapidOcrOptions)
+    from docling.datamodel.pipeline_options import (
+        AcceleratorOptions,
+        EasyOcrOptions,
+        OcrMode,
+        PdfPipelineOptions,
+        RapidOcrOptions,
+    )
     from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
 
     models = Path(os.environ["AIDOC_MODELS_DIR"]) / "docling"

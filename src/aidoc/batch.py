@@ -1,10 +1,11 @@
 """Batch conversion (spec §5): in-process queue (index A10), cache via DB, atomic manifest."""
 from __future__ import annotations
+
 import json
 import threading
 import traceback
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from aidoc import fsops
 from aidoc.config import AidocConfig

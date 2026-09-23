@@ -1,13 +1,15 @@
 """Self-check for the mineru env: GPU facts + parse of the bundled 繁中 sample. Prints one JSON line."""
 from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
 
 
 def main() -> None:
-    import torch
     from importlib.metadata import version
+
+    import torch
     from mineru.parser import parse
     sample = Path(__file__).parent / "samples" / "selfcheck_cht.png"
     result = parse(str(sample), tier=os.environ.get("AIDOC_MINERU_TIER", "basic"))

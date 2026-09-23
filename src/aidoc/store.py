@@ -1,5 +1,6 @@
 """SQLite store (index §4). One connection per Store; not thread-safe by itself."""
 from __future__ import annotations
+
 import json
 import sqlite3
 import time
@@ -51,7 +52,7 @@ def _row(r: sqlite3.Row | None) -> dict | None:
     if r is None:
         return None
     d = {}
-    for k in r.keys():
+    for k in r.keys():  # noqa: SIM118  sqlite3.Row iterates values, not keys
         v = r[k]
         if k in _JSON_COLS:
             d[k[: -len("_json")]] = json.loads(v) if v is not None else None

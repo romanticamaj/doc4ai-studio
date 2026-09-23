@@ -1,5 +1,6 @@
 import hashlib
-from aidoc.names import sanitize_stem, file_sha256, sha8
+
+from aidoc.names import file_sha256, sanitize_stem, sha8
 
 
 def test_reserved_names():

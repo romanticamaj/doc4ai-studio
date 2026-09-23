@@ -1,12 +1,13 @@
 """`aidoc setup <engine>` (spec §9): uv sync, model download, self-check, .ready marker."""
 from __future__ import annotations
+
 import json
 import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from aidoc import paths
 from aidoc.config import AidocConfig

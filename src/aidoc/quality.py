@@ -1,5 +1,6 @@
 """Quality assessment (spec §4 品質檢查). Thresholds are initial; tune on fixtures."""
 from __future__ import annotations
+
 import re
 
 from aidoc.models import ProbeResult, QualityResult
@@ -7,12 +8,12 @@ from aidoc.models import ProbeResult, QualityResult
 MIN_CHARS_PER_PAGE = 50
 MAX_GARBAGE_RATIO = 0.05
 
-_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _SEP_LINE = re.compile(r"(?m)^\s*\|?\s*:?-{3,}[\s|:-]*$")
 _MARKUP_CHARS = re.compile(r"[|#*_`$]")
 _TABLE_GFM = re.compile(r"(?m)^\s*\|.*\|\s*$\n\s*\|?\s*:?-{3,}")
-_TABLE_HTML = re.compile(r"<table", re.I)
+_TABLE_HTML = re.compile(r"<table", re.IGNORECASE)
 _GARBAGE_RUN = re.compile(
     r"[^\w\s　-〿一-鿿＀-￯,.;:!?()\[\]{}'\"\-–—/|*#$%&+=<>@^_`~]{4,}")
 

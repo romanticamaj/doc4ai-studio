@@ -1,6 +1,7 @@
 from pathlib import Path
+
 from aidoc.models import RawResult
-from aidoc.normalize import normalize, html_table_to_gfm
+from aidoc.normalize import html_table_to_gfm, normalize
 
 
 def raw(md, images=(), markers=True, tmp=Path(".")):

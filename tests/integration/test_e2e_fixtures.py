@@ -1,6 +1,8 @@
 import json
 import shutil
+
 import pytest
+
 from aidoc.cli import main
 
 pytestmark = pytest.mark.slow

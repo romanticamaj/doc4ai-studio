@@ -1,5 +1,6 @@
 """Engine interface (index §3) and the concrete RunnerEngine base used by all engines."""
 from __future__ import annotations
+
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -44,7 +45,7 @@ class RunnerEngine:
     """Engine backed by a runner script in envs/<name>/.venv (one-shot runner per convert in P1)."""
     name: str = ""
 
-    def __init__(self, config: "AidocConfig | None" = None):
+    def __init__(self, config: AidocConfig | None = None):
         if config is None:
             from aidoc.config import load_config
             config = load_config()
