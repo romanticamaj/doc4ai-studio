@@ -81,6 +81,7 @@ def handle(req):
         raise _proto.RunnerError("engine", f"docling conversion failed: {getattr(res, 'errors', '')}")
     doc = res.document
     n = _page_count(doc)
+    paged = req.get("kind", "pdf") == "pdf"          # images are a single unnumbered page: no markers
     parts, images = [], []
     for p in range(1, n + 1):
         md = doc.export_to_markdown(page_no=p)
@@ -95,12 +96,12 @@ def handle(req):
             images.append(str(f))
             links.append(f"images/{f.name}")
         md = _replace_placeholders(md, links)
-        parts.append(f"<!-- page: {p} -->\n{md.strip()}\n")
+        parts.append(f"<!-- page: {p} -->\n{md.strip()}\n" if paged else f"{md.strip()}\n")
         _proto.progress(p, n)
     first, last = table_edges(doc)
     md_path = out / "out.md"
     md_path.write_text("\n".join(parts), encoding="utf-8")
-    return {"markdown_path": str(md_path), "images": images, "has_page_markers": True, "page_count": n,
+    return {"markdown_path": str(md_path), "images": images, "has_page_markers": paged, "page_count": n,
             "first_table": first, "last_table": last}
 
 

@@ -162,7 +162,8 @@ def handle(req):
     md = (base / "markdown.md").read_text(encoding="utf-8")
     sc = json.loads((base / "structured_content.json").read_text(encoding="utf-8"))
     items = flatten_structured(sc)
-    marked = insert_page_markers(md, items)
+    # page markers only make sense for paged input (PDF); an image is a single unnumbered page
+    marked = insert_page_markers(md, items) if req.get("kind", "pdf") == "pdf" else None
     has_pages = marked is not None
     md = marked or md
     referenced = {os.path.basename(m.group(1)) for m in _IMG_LINK.finditer(md)}

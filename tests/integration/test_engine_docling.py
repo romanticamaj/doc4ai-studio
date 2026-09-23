@@ -38,3 +38,8 @@ def test_no_duplicate_lines_per_page(tmp_root, fixtures):
     for page in re.split(r"<!-- page: \d+ -->", r.markdown):
         lines = [line for line in page.splitlines() if len(line) > 30]
         assert len(lines) == len(set(lines))
+
+
+def test_png_has_no_page_markers(tmp_root, fixtures):
+    r = conv(tmp_root, fixtures, "page.png")
+    assert "中文" in r.markdown and not r.has_page_markers and "<!-- page: " not in r.markdown
