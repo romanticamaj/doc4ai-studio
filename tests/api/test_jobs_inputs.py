@@ -59,7 +59,7 @@ def test_incomplete_upload_rejected(client, fixtures):
 
 def test_local_path_forbidden_for_remote_without_token(ctx, tmp_root, fixtures):
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
-    with TestClient(create_app(ctx), client=("10.0.0.7", 5555)) as c:
+    with TestClient(create_app(ctx), client=("10.0.0.7", 5555), base_url="http://127.0.0.1:8765") as c:
         r = c.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]})
         assert r.status_code == 403 and r.json()["error"] == "local_path_forbidden"
         r = c.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "nope.pdf")}]})
@@ -67,7 +67,7 @@ def test_local_path_forbidden_for_remote_without_token(ctx, tmp_root, fixtures):
 
 
 def test_remote_upload_job_cannot_choose_output_dir(ctx, tmp_root, fixtures):
-    with TestClient(create_app(ctx), client=("10.0.0.7", 5555)) as c:
+    with TestClient(create_app(ctx), client=("10.0.0.7", 5555), base_url="http://127.0.0.1:8765") as c:
         uid = upload(c, fixtures / "text.pdf")
         r = c.post("/api/jobs", json={"inputs": [{"upload_id": uid}], "output_dir": str(tmp_root / "elsewhere")})
         assert r.status_code == 403

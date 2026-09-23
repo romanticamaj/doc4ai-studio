@@ -230,6 +230,7 @@ def cmd_serve(args) -> int:
     ctx = None
     try:
         ctx = build_context(cfg, token=token, start_workers=False)
+        ctx.extras["bind_host"] = host
         if not args.no_recover:
             _recover(ctx.store, cfg)
         ctx.uploads.reconcile()

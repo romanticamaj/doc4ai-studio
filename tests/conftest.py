@@ -43,7 +43,8 @@ def client(ctx):
     from fastapi.testclient import TestClient
 
     from aidoc.server.app import create_app
-    with TestClient(create_app(ctx), client=("127.0.0.1", 50000)) as c:     # a loopback client
+    with TestClient(create_app(ctx), client=("127.0.0.1", 50000),            # a loopback client
+                    base_url="http://127.0.0.1:8765") as c:
         yield c
 
 

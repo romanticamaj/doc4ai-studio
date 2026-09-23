@@ -80,7 +80,7 @@ def test_static_fallback(client, ctx, tmp_root):
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text("<html>ui</html>")
     (dist / "assets" / "app.js").write_text("console.log(1)")
-    with TestClient(create_app(ctx)) as c:
+    with TestClient(create_app(ctx), base_url="http://127.0.0.1:8765") as c:
         assert c.get("/").text == "<html>ui</html>" and c.get("/library").text == "<html>ui</html>"
         assert c.get("/assets/app.js").text == "console.log(1)"
         assert c.get("/api/nope").status_code == 404 and c.get("/api/nope").json()["error"] == "not_found"
