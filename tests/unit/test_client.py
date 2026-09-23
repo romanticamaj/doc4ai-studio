@@ -9,12 +9,31 @@ from aidoc.config import load_config
 from aidoc.models import ConvertOptions
 
 
-def test_find_server_reads_lock(tmp_root):
+def test_find_server_reads_lock(tmp_root, monkeypatch):
+    monkeypatch.delenv("AIDOC_TOKEN", raising=False)
     assert find_server(load_config()) is None
     lf.acquire_lock(paths.data_dir() / "aidoc.lock",
-                    {"pid": os.getpid(), "started_at": 0, "host": "0.0.0.0", "port": 8123, "token": "t"})
+                    {"pid": os.getpid(), "started_at": 0, "host": "0.0.0.0", "port": 8123, "auth": True})
     c = find_server(load_config())
-    assert c.base_url == "http://127.0.0.1:8123" and c.token == "t"       # a wildcard bind is reached on loopback
+    assert c.base_url == "http://127.0.0.1:8123" and c.token is None      # a wildcard bind is reached on loopback
+    monkeypatch.setenv("AIDOC_TOKEN", "fromenv")                          # the token never comes from the lock
+    assert find_server(load_config()).token == "fromenv"
+    assert find_server(load_config(), token="explicit").token == "explicit"
+
+
+def test_batch_to_token_server_without_token_explains(tmp_root, monkeypatch, capsys):
+    import httpx
+
+    from aidoc.cli import main
+
+    def reply(request):
+        return httpx.Response(401, json={"error": "unauthorized", "workspace": "default"})
+    monkeypatch.setattr("aidoc.client.find_server",
+                        lambda cfg, token=None: ServerClient("http://x", None, transport=httpx.MockTransport(reply)))
+    (tmp_root / "in").mkdir()
+    (tmp_root / "in" / "a.md").write_text("# a")
+    assert main(["batch", str(tmp_root / "in")]) == 1
+    assert "--token" in capsys.readouterr().err
 
 
 def test_find_server_ignores_stale_lock(tmp_root):
@@ -51,7 +70,7 @@ def test_batch_forwards_to_running_server(live_server, ctx, tmp_root, fixtures, 
     inp.mkdir()
     for n in ("text.pdf", "sample.docx", "corrupt.pdf"):
         shutil.copy(fixtures / n, inp / n)
-    monkeypatch.setattr("aidoc.client.find_server", lambda cfg: ServerClient(live_server, None))
+    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
     ctx.queue.start()
     assert main(["batch", str(inp), "-o", str(tmp_root / "o2")]) == 2      # corrupt.pdf fails
     out = capsys.readouterr().out
@@ -82,10 +101,10 @@ def test_cancel_command(live_server, ctx, tmp_root, fixtures, monkeypatch, capsy
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
     c = ServerClient(live_server, None)
     job = c.create_job([tmp_root / "t.pdf"], ConvertOptions(output_dir=tmp_root / "out"))
-    monkeypatch.setattr("aidoc.client.find_server", lambda cfg: ServerClient(live_server, None))
+    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
     assert main(["cancel", job["id"]]) == 0
     assert ctx.store.get_job(job["id"])["status"] == "cancelled"
     assert main(["cancel", "nope"]) == 1
-    monkeypatch.setattr("aidoc.client.find_server", lambda cfg: None)
+    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: None)
     assert main(["cancel", job["id"]]) == 1
     assert "no server running" in capsys.readouterr().err

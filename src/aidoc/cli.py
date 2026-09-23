@@ -34,16 +34,19 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("batch", help="convert every file under a directory (recursive)")
     b.add_argument("dir")
     _add_convert_options(b)
+    b.add_argument("--token", help="API token of a running server (default: AIDOC_TOKEN, aidoc.toml server.token)")
     ch = sub.add_parser("chunk", help="split converted documents into RAG chunks (chunks.jsonl)")
     ch.add_argument("dir", help="output root that holds the converted document dirs")
     ch.add_argument("--max-tokens", type=int, default=800, help="chunk size limit in cl100k_base tokens")
     ch.add_argument("--doc", metavar="STEM", help="only this document dir")
-    k = sub.add_parser("cancel", help="cancel a running job (needs a running server; P3)")
+    k = sub.add_parser("cancel", help="cancel a job on the running server")
     k.add_argument("job_id")
+    k.add_argument("--token", help="API token of the server (default: AIDOC_TOKEN, aidoc.toml server.token)")
     sv = sub.add_parser("serve", help="run the server (Web UI + API) that owns the job queue")
     sv.add_argument("--host", help="bind address (default: aidoc.toml server.host, 127.0.0.1)")
     sv.add_argument("--port", type=int, help="port (default: aidoc.toml server.port, 8765)")
-    sv.add_argument("--token", help="API token; required when binding a non-loopback address")
+    sv.add_argument("--token", help="API token (default: AIDOC_TOKEN, aidoc.toml server.token); "
+                                    "required when binding a non-loopback address")
     sv.add_argument("--no-recover", action="store_true", help="skip startup recovery")
     s = sub.add_parser("setup", help="install an engine env, download models, self-check")
     s.add_argument("engine", choices=ENGINE_CHOICES + ["all"])
@@ -151,7 +154,7 @@ def cmd_batch(args) -> int:
     cfg = load_config()
     opts = options_from_args(args, cfg)
     from aidoc import client as client_mod
-    server = client_mod.find_server(cfg)
+    server = client_mod.find_server(cfg, getattr(args, "token", None))
     if server is not None:                   # spec §8.1: the server owns the queue; forward and follow
         from aidoc.batch import run_batch_via_server
         inputs = collect_inputs(d.resolve(), exclude=opts.output_dir)
@@ -159,7 +162,7 @@ def cmd_batch(args) -> int:
             return run_batch_via_server(server, inputs, opts, lambda line: print(line, flush=True),
                                         input_root=d.resolve(), store_factory=lambda: open_store(cfg))
         except client_mod.ServerError as e:
-            print(f"error: {e} {e.body}", file=sys.stderr)
+            print(_server_error_text(e), file=sys.stderr)
             return 1
         finally:
             server.close()
@@ -202,14 +205,15 @@ def cmd_serve(args) -> int:
     cfg = load_config()
     host = args.host or cfg.server.host
     port = args.port or cfg.server.port
-    token = args.token or cfg.server.token or None
+    token = args.token or os.environ.get("AIDOC_TOKEN") or cfg.server.token or None
     if not is_loopback(host) and not token:
         print(f"refusing to bind {host} without --token", file=sys.stderr)
         return 2
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     lock = cfg.data_dir / "aidoc.lock"
+    # the lock is readable by any local process: it says whether a token is needed, never the token itself
     if not lockfile.acquire_lock(lock, {"pid": os.getpid(), "started_at": time.time(), "host": host, "port": port,
-                                        "token": token}):
+                                        "auth": bool(token)}):
         other = lockfile.read_lock(lock) or {}
         print(f"another aidoc server is running on {other.get('host')}:{other.get('port')}", file=sys.stderr)
         return 3
@@ -231,17 +235,24 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def _server_error_text(e) -> str:
+    if e.status == 401:
+        return ("error: the running server requires a token; pass --token or set AIDOC_TOKEN "
+                "(or aidoc.toml server.token)")
+    return f"error: {e} {e.body if isinstance(e.body, dict) else ''}".rstrip()
+
+
 def cmd_cancel(args) -> int:
     from aidoc import client as client_mod
     from aidoc.config import load_config
-    server = client_mod.find_server(load_config())
+    server = client_mod.find_server(load_config(), args.token)
     if server is None:
         print("no server running; use Ctrl+C in the terminal running the batch", file=sys.stderr)
         return 1
     try:
         job = server.cancel_job(args.job_id)
     except client_mod.ServerError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(_server_error_text(e), file=sys.stderr)
         return 1
     finally:
         server.close()

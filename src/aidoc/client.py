@@ -3,6 +3,7 @@ them over `/api/events` instead of converting in-process."""
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -129,7 +130,12 @@ class ServerClient:
         return "detached"
 
 
-def find_server(config) -> ServerClient | None:
+def cli_token(config, explicit: str | None = None) -> str | None:
+    """The API token the CLI presents: --token, else AIDOC_TOKEN, else aidoc.toml server.token (never the lock)."""
+    return explicit or os.environ.get("AIDOC_TOKEN") or config.server.token or None
+
+
+def find_server(config, token: str | None = None) -> ServerClient | None:
     """A client for the live server that owns data/aidoc.lock, or None."""
     info = lockfile.read_lock(Path(config.data_dir) / "aidoc.lock")
     if not lockfile.is_live(info) or not info.get("port"):
@@ -139,4 +145,4 @@ def find_server(config) -> ServerClient | None:
         host = "127.0.0.1"
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
-    return ServerClient(f"http://{host}:{info['port']}", info.get("token"))
+    return ServerClient(f"http://{host}:{info['port']}", cli_token(config, token))

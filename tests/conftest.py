@@ -16,6 +16,7 @@ def tmp_root(tmp_path, monkeypatch):
     monkeypatch.setenv("AIDOC_ROOT", str(root))
     monkeypatch.setenv("AIDOC_DATA", str(root / "data"))
     monkeypatch.delenv("AIDOC_CONFIG", raising=False)
+    monkeypatch.delenv("AIDOC_TOKEN", raising=False)
     return root
 
 

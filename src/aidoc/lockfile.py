@@ -1,5 +1,8 @@
-"""`data/aidoc.lock`: one queue owner (spec §8.1). A server writes {pid, started_at, host, port, token}; the CLI
-reads it to forward work. A lock whose pid is dead, or reused by a process that is not aidoc, is stale."""
+"""`data/aidoc.lock`: one queue owner (spec §8.1). A server writes {pid, started_at, host, port, auth}; the CLI
+reads it to forward work. A lock whose pid is dead, or reused by a process that is not aidoc, is stale.
+
+Security review (P3): the file is readable by any local process, so it never holds the API token — `auth` only
+says whether one is required; the CLI takes the token from --token, AIDOC_TOKEN or aidoc.toml server.token."""
 from __future__ import annotations
 
 import json
@@ -43,6 +46,7 @@ def is_live(info: dict | None) -> bool:
 
 
 def _write_new(path: Path, info: dict) -> bool:
+    info = {k: v for k, v in info.items() if k != "token"}      # never persist a secret here
     try:
         fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:

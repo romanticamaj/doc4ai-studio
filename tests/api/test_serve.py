@@ -25,7 +25,7 @@ def test_serve_acquires_lock_and_recovers(tmp_root, monkeypatch, capsys):
     assert main(["serve", "--port", "8999"]) == 0
     assert calls["host"] == "127.0.0.1" and calls["port"] == 8999
     assert calls["lock"]["pid"] == os.getpid() and calls["lock"]["port"] == 8999
-    assert set(calls["lock"]) == {"pid", "started_at", "host", "port", "token"} and calls["lock"]["token"] is None
+    assert set(calls["lock"]) == {"pid", "started_at", "host", "port", "auth"} and calls["lock"]["auth"] is False
     assert "/api/jobs" in calls["routes"]
     assert not (paths.data_dir() / "aidoc.lock").exists()            # released on exit
 
@@ -57,12 +57,20 @@ def test_second_server_refused(tmp_root, monkeypatch, capsys):
     assert "another aidoc server is running on 127.0.0.1:1" in capsys.readouterr().err
 
 
-def test_token_server_writes_token_to_lock(tmp_root, monkeypatch):
+def test_token_server_keeps_token_out_of_lock(tmp_root, monkeypatch):
     seen = {}
     monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: seen.update(
         lock=json.loads((paths.data_dir() / "aidoc.lock").read_text(encoding="utf-8")), token=app.state.ctx.token))
     assert main(["serve", "--host", "0.0.0.0", "--token", "abc"]) == 0
-    assert seen["lock"]["token"] == "abc" and seen["token"] == "abc" and seen["lock"]["host"] == "0.0.0.0"
+    assert "token" not in seen["lock"] and seen["lock"]["auth"] is True and seen["token"] == "abc"
+    assert seen["lock"]["host"] == "0.0.0.0"
+
+
+def test_serve_token_from_env(tmp_root, monkeypatch):
+    seen = {}
+    monkeypatch.setenv("AIDOC_TOKEN", "fromenv")
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: seen.update(token=app.state.ctx.token))
+    assert main(["serve", "--host", "0.0.0.0"]) == 0 and seen["token"] == "fromenv"
 
 
 def test_static_fallback(client, ctx, tmp_root):

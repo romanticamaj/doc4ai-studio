@@ -46,3 +46,11 @@ def test_unparseable_lock_is_none_and_stale(tmp_path):
     assert lf.read_lock(p) is None
     assert lf.acquire_lock(p, {"pid": os.getpid(), "started_at": 1, "host": "h", "port": 4, "token": None})
     assert lf.read_lock(p)["port"] == 4
+
+
+def test_lock_never_stores_a_token(tmp_path):
+    """Security review: the lock file is readable by any local process; the token must not be in it."""
+    p = tmp_path / "aidoc.lock"
+    assert lf.acquire_lock(p, {"pid": os.getpid(), "started_at": 1, "host": "h", "port": 5, "token": "s3cret"})
+    raw = json.loads(p.read_text())
+    assert "token" not in raw and "s3cret" not in p.read_text()
