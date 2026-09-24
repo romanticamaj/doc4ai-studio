@@ -76,3 +76,10 @@ test("job with 0 tasks renders 0 %, never NaN", () => {
   expect(jobPercent({ progress: { done: 1, total: 4 } } as any)).toBe(25);
   expect(jobPercent({} as any)).toBe(0);
 });
+
+test("a duplicate input says which input it duplicates (M2)", () => {
+  const t = { ...base, status: "skipped", engine: null, quality: null, tried: [], error_msg: "duplicate_of: D:\in\a\text.pdf" };
+  const fin = buildTimeline(t).at(-1)!;
+  expect(fin.detail).toContain("D:\in\a\text.pdf");
+  expect(fin.detail).toContain("內容相同");
+});

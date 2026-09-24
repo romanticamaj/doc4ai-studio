@@ -87,7 +87,12 @@ export function buildTimeline(task: Task): TimelineStep[] {
 
   const fin = FINAL[status];
   if (fin) {
-    const detail = status === "failed" ? [task.error_kind, task.error_msg].filter(Boolean).join(": ") || undefined : fin.detail;
+    const dup = status === "skipped" && (task.error_msg ?? "").startsWith("duplicate_of:");
+    const detail = dup
+      ? `與同一工作中的 ${(task.error_msg ?? "").slice("duplicate_of:".length).trim()} 內容相同，只轉換一次`
+      : status === "failed"
+        ? [task.error_kind, task.error_msg].filter(Boolean).join(": ") || undefined
+        : fin.detail;
     steps.push({ key: "final", title: fin.title, detail, state: fin.state });
   } else {
     steps.push({ key: "final", title: "完成", state: "pending" });

@@ -1,6 +1,7 @@
 """Jobs / tasks / queue endpoints (index §8)."""
 from __future__ import annotations
 
+import hashlib
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -9,7 +10,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field, model_validator
 
 from aidoc.batch import collect_inputs, register_source
-from aidoc.models import ConvertOptions
+from aidoc.models import ConvertOptions, TaskStatus
 from aidoc.output import planned_output_dir
 from aidoc.server.auth import ApiError, allow_local_paths
 from aidoc.server.jobs import RetryError
@@ -109,19 +110,27 @@ def create_job(body: JobIn, request: Request) -> dict:
         raise ApiError(507, "insufficient_disk", needed=needed, free=free)
     job_id = store.create_job(opts, body.origin)
     task_ids: list[str] = []
+    first_source: dict[str, str] = {}                # task id -> the input that created it
+
+    def add(tid: str, label: str) -> None:
+        if tid in first_source:                      # identical content into the same output dir (M2): say so
+            store.update_task(tid, source_path=first_source[tid])      # the reused row took the later name
+            task_ids.append(_duplicate_task(store, job_id, label, first_source[tid], opts))
+            return
+        first_source[tid] = label
+        task_ids.append(tid)
+
     for n, ref in enumerate(body.inputs):
         if ref.path is not None:
             for f in files_of[n]:
                 tid, _ = register_source(store, job_id, f.resolve(), opts)
-                if tid not in task_ids:
-                    task_ids.append(tid)
+                add(tid, str(f.resolve()))
             continue
         try:
             tid = ctx.uploads.create_task_from_upload(job_id, ref.upload_id, opts)
         except UploadError as e:
             raise ApiError(e.status, e.error, **e.extra) from None
-        if tid not in task_ids:
-            task_ids.append(tid)
+        add(tid, store.get_task(tid)["source_path"])
     store.refresh_job_status(job_id)
     for tid in task_ids:
         ctx.queue.publish_task(tid)
@@ -129,6 +138,15 @@ def create_job(body: JobIn, request: Request) -> dict:
     ctx.queue.publish_queue()
     ctx.queue.wake()
     return {"job": serialize_job(store, store.get_job(job_id))}
+
+
+def _duplicate_task(store, job_id: str, label: str, first: str, opts) -> str:
+    """A `skipped` row for an input whose content is already converted by another input of the same job."""
+    key = "!" + hashlib.sha256(f"{label}|{job_id}|duplicate".encode()).hexdigest()[1:]
+    out_dir = Path(opts.output_dir) / f".duplicate-{key[1:9]}"
+    tid, _ = store.create_task(job_id, label, key, 0, 0.0, opts.lang, str(out_dir))
+    store.update_task(tid, status=TaskStatus.skipped, error_msg=f"duplicate_of: {first}", pid=None)
+    return tid
 
 
 @router.get("/jobs")
