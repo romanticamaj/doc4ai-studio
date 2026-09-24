@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field, model_validator
 
-from aidoc.batch import register_source
+from aidoc.batch import collect_inputs, register_source
 from aidoc.models import ConvertOptions
 from aidoc.server.auth import ApiError, allow_local_paths
 from aidoc.server.jobs import RetryError
@@ -71,13 +71,23 @@ def create_job(body: JobIn, request: Request) -> dict:
             seen.add(i.upload_id)
     if (paths or body.output_dir) and not allow_local_paths(request, ctx):
         raise ApiError(403, "local_path_forbidden")
-    for p in paths:
+    opts = build_options(ctx.config, body)
+    files_of: dict[int, list[Path]] = {}            # input index -> the files it stands for
+    for n, ref in enumerate(body.inputs):
+        if ref.path is None:
+            continue
+        p = Path(ref.path)
         if not p.is_absolute():                     # a relative path would depend on the server's cwd
             raise ApiError(400, "path_not_absolute", path=str(p))
-        if not p.is_file():
+        if p.is_dir():                              # spec §6 page 1: a local folder (recursive, like aidoc batch)
+            files_of[n] = collect_inputs(p, exclude=opts.output_dir)
+            if not files_of[n]:
+                raise ApiError(400, "no_inputs", path=str(p))
+        elif p.is_file():
+            files_of[n] = [p]
+        else:
             raise ApiError(400, "input_not_found", path=str(p))
-    opts = build_options(ctx.config, body)
-    sizes = [p.stat().st_size for p in paths]
+    sizes = [f.stat().st_size for fs in files_of.values() for f in fs]
     uploads = [store.get_upload(i.upload_id) for i in body.inputs if i.upload_id is not None]
     for i, up in zip([i for i in body.inputs if i.upload_id is not None], uploads):
         if up is None:
@@ -92,14 +102,17 @@ def create_job(body: JobIn, request: Request) -> dict:
         raise ApiError(507, "insufficient_disk", needed=needed, free=free)
     job_id = store.create_job(opts, body.origin)
     task_ids: list[str] = []
-    for ref in body.inputs:
+    for n, ref in enumerate(body.inputs):
         if ref.path is not None:
-            tid, _ = register_source(store, job_id, Path(ref.path).resolve(), opts)
-        else:
-            try:
-                tid = ctx.uploads.create_task_from_upload(job_id, ref.upload_id, opts)
-            except UploadError as e:
-                raise ApiError(e.status, e.error, **e.extra) from None
+            for f in files_of[n]:
+                tid, _ = register_source(store, job_id, f.resolve(), opts)
+                if tid not in task_ids:
+                    task_ids.append(tid)
+            continue
+        try:
+            tid = ctx.uploads.create_task_from_upload(job_id, ref.upload_id, opts)
+        except UploadError as e:
+            raise ApiError(e.status, e.error, **e.extra) from None
         if tid not in task_ids:
             task_ids.append(tid)
     store.refresh_job_status(job_id)

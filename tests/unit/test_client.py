@@ -1,6 +1,7 @@
 import os
 import shutil
 import threading
+import time
 
 from aidoc import lockfile as lf
 from aidoc import paths
@@ -162,3 +163,23 @@ def test_follow_stops_when_the_server_is_gone(tmp_root, capsys):
     (tmp_root / "a.md").write_text("# a")
     rc = run_batch_via_server(c, [tmp_root / "a.md"], ConvertOptions(output_dir=tmp_root / "out"), print)
     assert rc == 1 and "server stopped; job j1" in capsys.readouterr().out
+
+
+def test_follow_reports_tasks_that_changed_before_the_stream_opened(live_server, ctx, tmp_root, fixtures):
+    """P3 verifier: a forwarded batch lost the first status line of a task that started before `follow_job`
+    connected (live mode starts after it). The current task states are reported when the stream opens."""
+    c = ServerClient(live_server, None)
+    shutil.copy(fixtures / "text.pdf", tmp_root / "a.pdf")
+    shutil.copy(fixtures / "twocol.pdf", tmp_root / "b.pdf")
+    job = c.create_job([tmp_root / "a.pdf", tmp_root / "b.pdf"], ConvertOptions(output_dir=tmp_root / "out"))
+    ctx.queue.process_next()                                   # task a finishes before anyone follows
+    seen, result = [], []
+    th = threading.Thread(target=lambda: result.append(c.follow_job(
+        job["id"], lambda k, p: seen.append((k, p.get("source_path"), p.get("status"))), threading.Event())),
+        daemon=True)
+    th.start()
+    time.sleep(1.0)
+    ctx.queue.process_next()
+    th.join(15)
+    assert result == ["done"]
+    assert any(k == "task.updated" and str(src).endswith("a.pdf") and st == "done" for k, src, st in seen)

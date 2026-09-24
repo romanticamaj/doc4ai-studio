@@ -238,3 +238,22 @@ def test_lock_owner_answering_http_is_live_even_with_an_unusual_cmdline(live_ser
     import os
     assert lockfile.is_live({"pid": os.getpid(), "host": "127.0.0.1", "port": port}) is True
     assert lockfile.is_live({"pid": os.getpid(), "host": "127.0.0.1", "port": 1}) is False
+
+
+# ---------------------------------------------------------------- spec §6 page 1: a local *folder* path
+def test_a_folder_path_expands_to_its_files(client, ctx, fixtures, tmp_root):
+    d = tmp_root / "in"
+    (d / "sub").mkdir(parents=True)
+    shutil.copy(fixtures / "text.pdf", d / "a.pdf")
+    shutil.copy(fixtures / "sample.docx", d / "sub" / "b.docx")
+    (d / ".hidden.pdf").write_bytes(b"x")
+    r = client.post("/api/jobs", json={"inputs": [{"path": str(d)}]})
+    assert r.status_code == 201
+    names = sorted(pathlib.Path(t["source_path"]).name for t in ctx.store.list_tasks(r.json()["job"]["id"]))
+    assert names == ["a.pdf", "b.docx"]
+
+
+def test_an_empty_folder_is_400(client, tmp_root):
+    (tmp_root / "empty").mkdir()
+    r = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "empty")}]})
+    assert r.status_code == 400 and r.json()["error"] == "no_inputs"

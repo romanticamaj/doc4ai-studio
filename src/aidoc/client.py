@@ -108,6 +108,7 @@ class ServerClient:
         def check_job() -> None:
             d = self.get_job(job_id)
             state["status"] = d["job"]["status"]
+            state["tasks"] = d.get("tasks") or []
 
         while not stop.is_set():
             try:
@@ -118,6 +119,12 @@ class ServerClient:
                         return "detached"
                     if seq is not None:
                         last_id = seq
+                    if kind == "_open" and last_id is None:
+                        # live mode starts now: report the state tasks reached before the stream opened
+                        # (P3 verifier: a forwarded batch lost the first status line of an early task)
+                        for t in state.pop("tasks", []):
+                            on_event("task.updated", {k: v for k, v in t.items() if k != "segments"})
+                        continue
                     if kind == "resync":
                         last_id = None
                         check_job()
