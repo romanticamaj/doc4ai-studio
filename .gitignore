@@ -19,3 +19,5 @@ web/test-results/
 web/playwright-report/
 web/e2e/.data/
 .playwright-mcp/
+.claude/
+.playwright-mcp/
