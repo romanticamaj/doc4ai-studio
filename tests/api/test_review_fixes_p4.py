@@ -40,6 +40,7 @@ def test_setup_refused_while_that_engine_converts(client, ctx, fixtures, monkeyp
         assert r.json()["error"] == "engine_busy" and r.json()["engine"] == "docling"
     assert client.post("/api/system/setup/markitdown").status_code == 202   # another engine is fine
     ctx.queue.running_task_id = None
+    _join_setup(ctx)
 
 
 def test_setup_refused_while_a_task_is_still_probing(client, ctx, fixtures, monkeypatch):
@@ -48,6 +49,16 @@ def test_setup_refused_while_a_task_is_still_probing(client, ctx, fixtures, monk
     r = client.post("/api/system/setup/mineru")
     assert r.status_code == 409 and r.json()["error"] == "engine_busy"
     ctx.queue.running_task_id = None
+    _join_setup(ctx)
+
+
+def _join_setup(ctx):
+    """No setup thread may outlive the test: it would publish into a closed database."""
+    runner = ctx.extras.get("setup")
+    th = getattr(runner, "_thread", None)
+    if th is not None:
+        th.join(10)
+        assert not th.is_alive()
 
 
 def test_access_log_redacts_query_token(caplog):

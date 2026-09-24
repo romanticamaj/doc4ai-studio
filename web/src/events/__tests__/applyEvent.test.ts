@@ -138,3 +138,16 @@ test("log store is bounded", () => {
   expect(s.get("t1").length).toBe(500);
   expect(s.get("t1")[0].line).toBe("line 100");
 });
+
+test("log lines lose ANSI escapes, keep only the last \r state, and a tqdm bar updates in place (Q2)", () => {
+  const s = new LogStore(500);
+  s.append("t", "\u001b[32mINFO\u001b[0m model loaded \u001b]0;title\u0007", 1);
+  s.append("t", "Downloading:  10%|█         | 1/10\rDownloading:  50%|█████     | 5/10\r", 2);
+  s.append("t", "Downloading:  90%|█████████ | 9/10", 3);
+  s.append("t", "Predict: 100%|██████████| 3/3 [00:01<00:00]", 4);
+  expect(s.get("t").map((l) => l.line)).toEqual([
+    "INFO model loaded",
+    "Downloading:  90%|█████████ | 9/10",
+    "Predict: 100%|██████████| 3/3 [00:01<00:00]",
+  ]);
+});

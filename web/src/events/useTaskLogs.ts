@@ -4,6 +4,18 @@ export type LogLine = { line: string; ts: number; gap?: boolean };
 
 const EMPTY: LogLine[] = [];
 
+// CSI (colours, cursor moves) and OSC (window titles) escape sequences
+const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g;
+// a tqdm-style bar: "<label>:  45%|###   | 9/20 ..."; the label identifies the bar
+const BAR = /^(.*?)\s*\d{1,3}%\|/;
+
+/** A runner line as a person reads it: no escape codes, only the last state of a line redrawn with \r. */
+export function cleanLogLine(raw: string): string {
+  const parts = raw.replace(ANSI, "").split("\r").map((p) => p.trimEnd());
+  for (let i = parts.length - 1; i >= 0; i--) if (parts[i].trim()) return parts[i];
+  return "";
+}
+
 /**
  * Live log lines per task (and per engine setup under "setup:<engine>"), bounded per key.
  * `stale` is true while the event stream is disconnected: lines may be missing until the stream is back.
@@ -19,8 +31,20 @@ export class LogStore {
     this.max = max;
   }
 
-  append(key: string, line: string, ts: number, gap = false): void {
+  append(key: string, raw: string, ts: number, gap = false): void {
+    const line = gap ? raw : cleanLogLine(raw);
+    if (!line) return;
     const cur = this.buffers.get(key) ?? EMPTY;
+    const prev = cur[cur.length - 1];
+    const bar = BAR.exec(line);
+    if (bar && prev && !prev.gap && BAR.exec(prev.line)?.[1] === bar[1]) {
+      // the same progress bar again: update it in place instead of adding a line per redraw
+      const next = cur.slice(0, -1);
+      next.push({ line, ts });
+      this.buffers.set(key, next);
+      this.subs.get(key)?.forEach((fn) => fn());
+      return;
+    }
     const next = cur.length >= this.max ? cur.slice(cur.length - this.max + 1) : cur.slice();
     next.push(gap ? { line, ts, gap } : { line, ts });
     this.buffers.set(key, next);
