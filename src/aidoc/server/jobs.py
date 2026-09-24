@@ -225,7 +225,10 @@ class JobQueue:
             # a finished task starts over (its done segments are the old result); failed/cancelled ones resume
             store.requeue_task(task_id, reset_segments=use_new_version or was_finished, new_sha=new_sha)
             if retry_low or was_finished or use_new_version:
-                store.set_task_flags(task_id, {"force": True})
+                flags = {"force": True}
+                if retry_low:            # 重轉低品質: let routing pick the engine even if the job forced one
+                    flags["auto_engine"] = True
+                store.set_task_flags(task_id, flags)
             job = store.get_job(task["job_id"])
             if job is not None and job["status"] == JobStatus.cancelled.value:
                 store.set_job_status(task["job_id"], JobStatus.queued)       # a retried task un-cancels its job

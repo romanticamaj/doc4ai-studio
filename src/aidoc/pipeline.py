@@ -421,6 +421,8 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     task = store.get_task(task_id)
     job = store.get_job(task["job_id"])
     opts = ctx.opts = ConvertOptions.from_json(job["options"])
+    if (task.get("flags") or {}).get("auto_engine"):   # retry of a low result: routing may pick another engine
+        opts.engine = None
     ctx.attempt = task["attempt"]
     if ctx.cancelled():
         return _cancel(ctx)

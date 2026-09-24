@@ -210,4 +210,4 @@ def test_shutdown_keeps_the_retry_force_flag(client, ctx, tmp_root, fixtures):
     wait_until(lambda: ctx.queue.running_task_id == tid)
     ctx.queue.stop()
     t = ctx.store.get_task(tid)
-    assert t["status"] == "queued" and t["flags"] == {"force": True}
+    assert t["status"] == "queued" and t["flags"] == {"force": True, "auto_engine": True}

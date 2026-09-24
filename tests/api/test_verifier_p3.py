@@ -257,3 +257,23 @@ def test_an_empty_folder_is_400(client, tmp_root):
     (tmp_root / "empty").mkdir()
     r = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "empty")}]})
     assert r.status_code == 400 and r.json()["error"] == "no_inputs"
+
+
+# ---------------------------------------------------------------- P4 acceptance row 19: 重轉低品質 uses auto routing
+def test_retry_low_drops_a_forced_engine_for_that_run(client, ctx, fixtures, tmp_root):
+    from tests.fakes.scenario import write_scenario
+    write_scenario(tmp_root / "sc.json", rules=[{"match": {"engine": "markitdown"}, "behavior": "low"}])
+    src = tmp_root / "s.pdf"
+    shutil.copy(fixtures / "text.pdf", src)
+    job = client.post("/api/jobs", json={"inputs": [{"path": str(src)}], "engine": "markitdown"}).json()["job"]
+    ctx.queue.process_next()
+    task = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]
+    assert task["status"] == "low" and task["engine"] == "markitdown"
+    client.post(f"/api/tasks/{task['id']}/retry", json={"retry_low": True})
+    ctx.queue.process_next()
+    t2 = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]
+    assert t2["status"] == "done" and t2["engine"] != "markitdown" and t2["flags"] == {}
+    # a plain retry keeps the job's forced engine
+    client.post(f"/api/tasks/{task['id']}/retry", json={})
+    ctx.queue.process_next()
+    assert client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]["engine"] == "markitdown"

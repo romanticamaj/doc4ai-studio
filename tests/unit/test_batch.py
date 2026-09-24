@@ -200,6 +200,6 @@ def test_batch_resumes_unfinished_segments(tmp_root, fixtures, monkeypatch):
     assert t2["id"] == tid and t2["status"] == "done" and (out / "big" / "big.md").exists()
 
 
-def test_cancel_command_without_server(capsys):
+def test_cancel_command_without_server(tmp_root, capsys):      # tmp_root: never see a real running server
     assert main(["cancel", "abc"]) == 1
     assert "no server running; use Ctrl+C" in capsys.readouterr().err
