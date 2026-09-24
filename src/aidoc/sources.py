@@ -55,7 +55,11 @@ def stage_source(source_path: Path, expected_sha: str, work_dir: Path, preferred
 
 def _stage(source_path: Path, expected_sha: str, work_dir: Path) -> Path:
     dst = work_dir / f"src{source_path.suffix.lower()}"
-    if dst.is_file() and not _same_file(dst, source_path) and file_sha256(dst) == expected_sha:
+    # A staged copy with the expected sha stands in for an original that has gone away. While the original is
+    # still there it is compared again (spec §8.5): an original rewritten since must fail source_changed, not be
+    # silently converted from the old copy (P4 acceptance row 20).
+    if dst.is_file() and not _same_file(dst, source_path) and not source_path.exists() \
+            and file_sha256(dst) == expected_sha:
         return dst
     if not source_path.is_file():
         raise SourceError("source_missing", str(source_path))

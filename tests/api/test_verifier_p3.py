@@ -277,3 +277,22 @@ def test_retry_low_drops_a_forced_engine_for_that_run(client, ctx, fixtures, tmp
     client.post(f"/api/tasks/{task['id']}/retry", json={})
     ctx.queue.process_next()
     assert client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]["engine"] == "markitdown"
+
+
+# ---------------------------------------------------------------- P4 acceptance row 20: source changed on retry
+def test_retry_after_the_source_changed_fails_source_changed(client, ctx, fixtures, tmp_root):
+    src = tmp_root / "c.pdf"
+    shutil.copy(fixtures / "text.pdf", src)
+    job = client.post("/api/jobs", json={"inputs": [{"path": str(src)}]}).json()["job"]
+    ctx.queue.process_next()
+    task = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]
+    assert task["status"] == "done"
+    shutil.copy(fixtures / "twocol.pdf", src)                       # overwritten with other content
+    client.post(f"/api/tasks/{task['id']}/retry", json={})
+    ctx.queue.process_next()
+    t = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]
+    assert t["status"] == "failed" and t["error_msg"].startswith("source_changed")
+    client.post(f"/api/tasks/{task['id']}/retry", json={"use_new_version": True})
+    ctx.queue.process_next()
+    t = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]
+    assert t["status"] == "done" and t["sha256"] != task["sha256"]
