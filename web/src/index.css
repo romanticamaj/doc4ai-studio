@@ -267,3 +267,8 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@keyframes meter-slide {
+  0% { left: -35%; }
+  100% { left: 100%; }
+}
