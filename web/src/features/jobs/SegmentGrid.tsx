@@ -17,7 +17,7 @@ export function SegmentGrid({ segments }: { segments: Segment[] }) {
       <p className="mb-2 text-xs font-medium text-muted-foreground">
         段落 · {segments.filter((s) => s.status === "done").length}/{segments.length}
       </p>
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(76px,1fr))] gap-1.5">
+      <ul className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-1.5">
         {segments.map((s) => (
           <li
             key={s.id}

@@ -187,7 +187,7 @@ function TaskCard({ task, defaultOpen, onShowLog }: { task: Task; defaultOpen: b
           </span>
           <span className="min-w-0">
             <span className="block truncate text-[13px] font-medium">{baseName(task.source_path)}</span>
-            <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs whitespace-nowrap text-muted-foreground">
               <span className="tabular">{formatBytes(task.size)}</span>
               {task.engine && <span className="font-mono">{task.engine}</span>}
               {task.quality && <span className="tabular">品質 {task.quality.score.toFixed(2)}</span>}
@@ -196,7 +196,7 @@ function TaskCard({ task, defaultOpen, onShowLog }: { task: Task; defaultOpen: b
         </button>
         <div className="flex items-center gap-2.5">
           {(active || (task.progress?.pages_total ?? 0) > 1) && label !== "—" && (
-            <span className="text-xs text-muted-foreground tabular">{label}</span>
+            <span className="hidden text-xs text-muted-foreground tabular sm:inline">{label}</span>
           )}
           <StatusBadge status={task.status} />
           <button
