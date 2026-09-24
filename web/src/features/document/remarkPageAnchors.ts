@@ -8,7 +8,7 @@ const PAGE_RE = /^<!--\s*page:\s*(\d+)\s*-->$/;
  * HTML comments, so without this the Document view could not line Markdown up with the source pages.
  * The anchor is a custom mdast node with hName/hProperties, so no raw HTML is needed for it.
  */
-export function remarkPageAnchors() {
+export function remarkPageAnchors(options: { nonce?: string } = {}) {
   return (tree: Root) => {
     visit(tree, "html", (node: Html, index, parent: Parent | undefined) => {
       const m = PAGE_RE.exec(node.value.trim());
@@ -18,7 +18,12 @@ export function remarkPageAnchors() {
         type: "pageAnchor",
         data: {
           hName: inline ? "span" : "div",
-          hProperties: { dataPage: Number(m[1]), className: [inline ? "page-anchor page-anchor-inline" : "page-anchor"] },
+          // with a nonce (MarkdownView) the class is the nonce and is replaced after sanitizing; without one the
+          // final classes are emitted directly
+          hProperties: {
+            dataPage: Number(m[1]),
+            className: options.nonce ? [options.nonce] : inline ? ["page-anchor", "page-anchor-inline"] : ["page-anchor"],
+          },
         },
       };
       (parent.children as unknown[]).splice(index, 1, anchor);

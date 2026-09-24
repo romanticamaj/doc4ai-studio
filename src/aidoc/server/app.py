@@ -125,6 +125,17 @@ def create_app(ctx: ServerContext) -> FastAPI:
     return app
 
 
+# The Web UI's own pages: scripts only from this origin ('wasm-unsafe-eval' for the hash-wasm upload worker),
+# no plugins, no <base> rewriting, no framing. Styles stay open (KaTeX and Radix set inline styles).
+SPA_HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; "
+                               "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
+                               "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+                               "form-action 'self'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
+
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._@+-]+$")
 
 
@@ -184,6 +195,6 @@ def _mount_web(app: FastAPI, dist: Path) -> None:
         if not table:
             return {"message": "web UI not built; run pnpm --dir web build"}
         rel = safe_relative(full_path)
-        if rel is not None and rel in table:
-            return FileResponse(table[rel])
-        return FileResponse(table["index.html"], media_type="text/html")
+        if rel is not None and rel in table and rel != "index.html":
+            return FileResponse(table[rel], headers={"X-Content-Type-Options": "nosniff"})
+        return FileResponse(table["index.html"], media_type="text/html", headers=SPA_HEADERS)

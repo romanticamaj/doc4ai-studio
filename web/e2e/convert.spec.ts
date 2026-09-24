@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../tests/fixtures");
 
 test("upload → convert → preview", async ({ page }) => {
+  const csp: string[] = [];
+  page.on("console", (m) => {
+    if (/Content Security Policy|Refused to/i.test(m.text())) csp.push(m.text());
+  });
   await page.goto("/convert");
   await page.setInputFiles('input[type="file"]', path.join(fixtures, "text.pdf"));
   await expect(page.getByText("text.pdf")).toBeVisible();
@@ -19,6 +23,35 @@ test("upload → convert → preview", async ({ page }) => {
   const output = page.getByRole("region", { name: "轉換結果" });
   await expect(output.locator("[data-page='1']")).toHaveCount(1);
   await expect(output.getByRole("heading", { name: /第 1 頁 Heading 1/ })).toBeVisible();
+  await expect(page.locator('[aria-label="原始檔"] canvas').first()).toBeVisible(); // pdf.js worker under the CSP
+  expect(csp, "CSP violations").toEqual([]);
+});
+
+test("an HTML source with a script is never rendered on the aidoc origin (C1)", async ({ page, request }) => {
+  const html = path.join(fixtures, "..", "..", "web", "e2e", ".data-xss.html");
+  const fs = await import("node:fs");
+  fs.writeFileSync(
+    html,
+    '<!doctype html><title>r</title><script>document.title="PWNED"</script><h1>Report with plenty of ordinary words</h1>' +
+      '<p>Normal words for the quality gate, long enough to be judged fine.</p><a href="assets/../source">src</a>',
+  );
+  await page.goto("/convert");
+  await page.setInputFiles('input[type="file"]', html);
+  await expect(page.getByRole("button", { name: "開始轉換" })).toBeEnabled({ timeout: 15000 });
+  await page.getByRole("button", { name: "開始轉換" }).click();
+  await expect(page.locator('[data-task][data-status="done"]')).toHaveCount(1, { timeout: 30000 });
+  const docHref = await page.getByRole("link", { name: /開啟文件/ }).getAttribute("href");
+  const docId = docHref!.split("/").pop();
+  const r = await request.get(`/api/documents/${docId}/source`);
+  expect(r.headers()["content-type"]).toContain("application/octet-stream");
+  expect(r.headers()["content-disposition"]).toMatch(/^attachment/);
+  expect(r.headers()["content-security-policy"]).toContain("sandbox");
+  await page.goto(`/documents/${docId}`);
+  await expect(page.getByRole("tab", { name: "Markdown" })).toBeVisible();
+  const hrefs = await page.locator(".md-body a[href]").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+  expect(hrefs.filter((h) => /source|\/api\//.test(h ?? ""))).toEqual([]);
+  expect(await page.title()).not.toContain("PWNED");
+  fs.unlinkSync(html);
 });
 
 test("library filters live in the URL and survive Back", async ({ page }) => {

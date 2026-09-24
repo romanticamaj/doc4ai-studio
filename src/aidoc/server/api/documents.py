@@ -1,6 +1,7 @@
 """Library / Document endpoints (index §8, spec §6 pages 3-4, §8.5 orphaned)."""
 from __future__ import annotations
 
+import mimetypes
 import os
 import tempfile
 import zipfile
@@ -84,7 +85,7 @@ def get_asset(doc_id: str, path: str, request: Request) -> Response:
         raise ApiError(400, "bad_path")
     if not target.is_file():
         raise ApiError(404, "not_found")
-    return FileResponse(target)
+    return safe_file_response(target, target.name)
 
 
 @router.get("/documents/{doc_id}/source")
@@ -94,7 +95,25 @@ def get_source(doc_id: str, request: Request) -> Response:
     if f is None:
         raise ApiError(410, "source_missing")
     name = Path(doc["source_path"]).name or f.name
-    return FileResponse(f, filename=name, content_disposition_type="inline")
+    return safe_file_response(f, name)
+
+
+# Converted documents come from anywhere: a source or asset must never run as a page on the aidoc origin (final
+# P4 check C1: an HTML source served inline read the API token from localStorage). Only types a browser cannot
+# execute are shown inline; everything else downloads as opaque bytes, and every file response is sandboxed.
+SAFE_INLINE = {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/tiff"}
+FILE_HEADERS = {"X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox; default-src 'none'"}
+
+
+def safe_file_response(path: Path, filename: str) -> FileResponse:
+    mime = mimetypes.guess_type(filename)[0] or mimetypes.guess_type(path.name)[0] or ""
+    if mime in SAFE_INLINE:
+        return FileResponse(path, media_type=mime, headers={**FILE_HEADERS,
+                                                            "Content-Disposition": content_disposition(filename,
+                                                                                                       "inline")})
+    return FileResponse(path, media_type="application/octet-stream",
+                        headers={**FILE_HEADERS, "Content-Disposition": content_disposition(filename)})
 
 
 @router.get("/documents/{doc_id}/download.zip")
