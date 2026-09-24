@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
 import { ArrowUpRight, ChevronDown, ChevronLeft, CircleStop, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
@@ -31,15 +31,16 @@ export default function JobDetailPage() {
   const q = useJob(jobId);
   const sys = useSystem();
   const cancel = useCancelJob();
-  const [logTask, setLogTask] = useState<string | undefined>();
+  const [pickedLog, setPickedLog] = useState<string | undefined>();
 
   const tasks = useMemo(() => q.data?.tasks ?? [], [q.data]);
   const running = tasks.find((t) => t.id === sys.data?.queue.running_task_id) ?? tasks.find((t) => ACTIVE.has(t.status));
 
-  // follow the running task in the log panel unless the user picked one
-  useEffect(() => {
-    if (!logTask && tasks.length) setLogTask((running ?? tasks[0]).id);
-  }, [logTask, running, tasks]);
+  // the log panel follows the running task (else the last active one) until the user picks a file
+  const lastActive = useRef<string | undefined>(undefined);
+  if (running) lastActive.current = running.id;
+  const logTask = pickedLog ?? lastActive.current ?? tasks[0]?.id;
+  const setLogTask = setPickedLog;
 
   if (q.isError) {
     const notFound = q.error instanceof ApiError && q.error.status === 404;
