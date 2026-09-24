@@ -60,18 +60,30 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
       const { task_id, ...seg } = ev.payload as Segment & { task_id: string };
       for (const [key, data] of qc.getQueriesData<JobDetail>({ queryKey: ["jobs", "detail"] })) {
         if (!data?.tasks?.some((t) => t.id === task_id)) continue;
+        let unknown = false;
         qc.setQueryData<JobDetail>(key, {
           ...data,
           tasks: data.tasks.map((t) => {
             if (t.id !== task_id) return t;
             const segs = (t.segments ?? []).slice();
             const i = segs.findIndex((s) => s.id === seg.id);
-            if (i < 0) segs.push(seg);
-            else segs[i] = { ...segs[i], ...seg };
+            if (i < 0) {
+              unknown = true;
+              segs.push(seg);
+            } else segs[i] = { ...segs[i], ...seg };
             segs.sort((a, b) => a.idx - b.idx);
-            return { ...t, segments: segs, progress: taskProgress(segs) };
+            // The cache may know only some segments (the job was fetched before the task was split): never let a
+            // partial list shrink the server's page total; the refetch below brings the full list.
+            const calc = taskProgress(segs);
+            const prev = t.progress;
+            const partial = prev?.pages_total != null && (calc.pages_total ?? 0) < prev.pages_total;
+            const progress = partial
+              ? { pages_done: Math.max(calc.pages_done, prev.pages_done), pages_total: prev.pages_total }
+              : calc;
+            return { ...t, segments: segs, progress };
           }),
         });
+        if (unknown) qc.invalidateQueries({ queryKey: key });
       }
       return;
     }

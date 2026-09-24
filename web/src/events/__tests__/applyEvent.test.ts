@@ -58,6 +58,17 @@ test("segment.updated recomputes page progress", () => {
   expect((qc.getQueryData(qk.job("j1")) as any).tasks[0].progress).toEqual({ pages_done: 40, pages_total: 45 });
 });
 
+test("a segment the cache has not seen refetches the job and never shrinks the page total", () => {
+  // the job was fetched before the task was split: the cache knows no segments, the server's progress knows 315 pages
+  const qc = new QueryClient();
+  qc.setQueryData(qk.job("j1"), { job: { id: "j1" }, tasks: [task({ segments: [], progress: { pages_done: 0, pages_total: 315 } })] });
+  const spy = vi.spyOn(qc, "invalidateQueries");
+  applyEvent(qc, { kind: "segment.updated", seq: 5, payload: { id: "s0", idx: 0, page_start: 1, page_end: 40, status: "done", task_id: "t1" } } as any);
+  const t = (qc.getQueryData(qk.job("j1")) as any).tasks[0];
+  expect(t.progress).toEqual({ pages_done: 40, pages_total: 315 });
+  expect(spy).toHaveBeenCalledWith({ queryKey: qk.job("j1") });
+});
+
 test("job.updated upserts into the list (newest first) and the detail", () => {
   const qc = new QueryClient();
   qc.setQueryData(qk.jobs(), [{ id: "j0", status: "done" }]);
