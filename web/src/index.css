@@ -237,6 +237,15 @@
   .md-body th, .md-body td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
   .md-body th { background: var(--muted); font-weight: 600; }
   .md-body .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+  /* a long inline formula scrolls on its own line instead of pushing the whole pane sideways */
+  .md-body .katex:not(.katex-display .katex) {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    vertical-align: middle;
+  }
+  .md-body { overflow-wrap: anywhere; }
   .md-body hr { border: 0; border-top: 1px solid var(--border); }
 
   /* <!-- page: N --> becomes a thin rule with the page number in the gutter */

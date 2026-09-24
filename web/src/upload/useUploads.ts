@@ -86,7 +86,14 @@ export function useUploads(deps: Deps = {}) {
     setItems((cur) => {
       // the same file (name, size, mtime) twice is one input
       const known = new Set(cur.filter((c) => c.phase !== "error").map((c) => resumeKeyFor(c.file)));
-      return [...cur, ...list.filter((it) => !known.has(resumeKeyFor(it.file)))];
+      const fresh: UploadItem[] = [];
+      for (const it of list) {
+        const k = resumeKeyFor(it.file);
+        if (known.has(k)) continue; // also within one drop (the same file picked twice, Q5)
+        known.add(k);
+        fresh.push(it);
+      }
+      return [...cur, ...fresh];
     });
   }, []);
 
