@@ -9,8 +9,29 @@ import { defineConfig, devices } from "@playwright/test";
 const here = path.dirname(fileURLToPath(import.meta.url));
 // 8781, not 8765: on the dev host an unrelated service holds 0.0.0.0:8765 and answers the pre-start probe
 const port = Number(process.env.AIDOC_E2E_PORT ?? 8781);
+const owner = !process.env.AIDOC_E2E_DIR;
 const root = process.env.AIDOC_E2E_DIR ?? fs.mkdtempSync(path.join(os.tmpdir(), "aidoc-e2e-"));
 process.env.AIDOC_E2E_DIR = root; // workers re-import this file: keep one dir per run
+if (owner) {
+  // M6: the run's dir goes when the runner exits (after Playwright has stopped the server that held the DB open);
+  // dirs left by runs that were killed are swept once they are an hour old
+  process.on("exit", () => {
+    try {
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      /* a later run sweeps it */
+    }
+  });
+  for (const d of fs.readdirSync(os.tmpdir())) {
+    if (!d.startsWith("aidoc-e2e-")) continue;
+    const full = path.join(os.tmpdir(), d);
+    try {
+      if (full !== root && Date.now() - fs.statSync(full).mtimeMs > 3600_000) fs.rmSync(full, { recursive: true, force: true });
+    } catch {
+      /* in use */
+    }
+  }
+}
 const data = path.join(root, "data");
 const out = path.join(root, "out");
 fs.mkdirSync(data, { recursive: true });
