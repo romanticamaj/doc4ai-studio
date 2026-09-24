@@ -407,6 +407,10 @@ class Store:
         r = self._q1("SELECT MIN(seq) FROM events")
         return r[0] if r else None
 
+    def newest_event_seq(self) -> int | None:
+        r = self._q1("SELECT MAX(seq) FROM events")
+        return r[0] if r else None
+
     def prune_events(self, keep=10000) -> None:
         r = self._q1("SELECT MAX(seq) FROM events")
         if r and r[0] is not None:

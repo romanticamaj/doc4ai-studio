@@ -37,12 +37,38 @@ def read_lock(path: Path) -> dict | None:
 
 
 def is_live(info: dict | None) -> bool:
+    """The lock's pid is running aidoc. The command line is only a first guess (P3 verifier #4: an unusual
+    launcher such as `python -c "...main(['serve'])"` does not look like aidoc); a server lock is also live when
+    its port answers like an aidoc server."""
     if not info:
         return False
     pid = info.get("pid")
     if not isinstance(pid, int) or pid <= 0 or not psutil.pid_exists(pid):
         return False
-    return is_aidoc_process(pid)
+    if is_aidoc_process(pid):
+        return True
+    return bool(info.get("port")) and answers_like_aidoc(info.get("host"), info["port"])
+
+
+def answers_like_aidoc(host: str | None, port: int, timeout: float = 0.75) -> bool:
+    """GET /api/system and look for the `workspace` envelope (any status: 401/403 still prove it is aidoc)."""
+    import urllib.error
+    import urllib.request
+    h = host if host and host not in ("0.0.0.0", "::", "") else "127.0.0.1"
+    if ":" in h and not h.startswith("["):
+        h = f"[{h}]"
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # never via a proxy
+        with opener.open(f"http://{h}:{int(port)}/api/system", timeout=timeout) as r:
+            body = r.read(65536)
+    except urllib.error.HTTPError as e:
+        body = e.read(65536) if e.fp else b""
+    except (OSError, ValueError):
+        return False
+    try:
+        return json.loads(body).get("workspace") == "default"
+    except (ValueError, AttributeError):
+        return False
 
 
 def _write_new(path: Path, info: dict) -> bool:

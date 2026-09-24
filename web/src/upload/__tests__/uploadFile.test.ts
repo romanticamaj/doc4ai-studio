@@ -78,6 +78,45 @@ test("a resumed upload does not need the checksum; an unknown one is created ane
   expect(hashed).toBe(1);
 });
 
+test("a final chunk whose response was lost counts as done when the server says the upload is complete", async () => {
+  const api = fakeApi([], { size: 10 });
+  let n = 0;
+  const putRaw = api.putRaw;
+  api.putRaw = async (path: string, bytes: Blob) => {
+    n += 1;
+    if (n === 3) {
+      await putRaw(path, bytes); // the server stored it...
+      throw new TypeError("network"); // ...but the response never arrived
+    }
+    if (n === 4) return new Response(JSON.stringify({ error: "upload_not_receiving", status: "complete", received: 10 }), { status: 409 });
+    return putRaw(path, bytes);
+  };
+  // HEAD after the error reports 10/10: nothing left to send, so resolve without another PUT
+  const id = await uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any, retryDelayMs: 0 });
+  expect(id).toBe("u1");
+});
+
+test("409 upload_not_receiving with status complete is success", async () => {
+  sessionStorage.setItem("aidoc_upload:a.pdf:10:1", "u1");
+  const api = {
+    head: async () => new Headers({ "Upload-Offset": "8", "Upload-Length": "10", "Upload-Status": "receiving" }),
+    post: async () => ({ upload_id: "u1", chunk_size: 4, received: 0 }),
+    putRaw: async () => new Response(JSON.stringify({ error: "upload_not_receiving", status: "complete", received: 10 }), { status: 409 }),
+  };
+  await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any })).resolves.toBe("u1");
+});
+
+test("409 upload_not_receiving for a consumed upload throws and forgets it", async () => {
+  sessionStorage.setItem("aidoc_upload:a.pdf:10:1", "u1");
+  const api = {
+    head: async () => new Headers({ "Upload-Offset": "8", "Upload-Length": "10", "Upload-Status": "receiving" }),
+    post: async () => ({ upload_id: "u1", chunk_size: 4, received: 0 }),
+    putRaw: async () => new Response(JSON.stringify({ error: "upload_not_receiving", status: "consumed", received: 10 }), { status: 409 }),
+  };
+  await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any })).rejects.toMatchObject({ status: 409 });
+  expect(sessionStorage.getItem("aidoc_upload:a.pdf:10:1")).toBeNull();
+});
+
 test("sha mismatch (422) throws and forgets the saved upload id", async () => {
   const api = fakeApi([{ status: 200 }, { status: 200 }, { status: 422, body: { error: "sha_mismatch" } }], { size: 10 });
   await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any })).rejects.toMatchObject({

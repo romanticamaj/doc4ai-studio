@@ -126,6 +126,12 @@ export async function uploadFile(file: File, opts: UploadOptions): Promise<strin
       continue;
     }
     const body = await readBody(res);
+    if (res.status === 409 && body.error === "upload_not_receiving") {
+      // e.g. the final chunk landed but its response was lost: a complete upload is a success
+      if (body.status === "complete" && body.received === total) break;
+      store?.removeItem(key);
+      throw new ApiError(409, body as ApiErrorBody);
+    }
     if (res.status === 409 && typeof body.received === "number") {
       received = body.received;
       opts.onProgress?.(received, total);

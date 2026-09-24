@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match
 
 from aidoc.config import AidocConfig
 from aidoc.server import auth
@@ -26,8 +28,8 @@ def envelope(data: dict) -> dict:
     return {**data, "workspace": WORKSPACE}
 
 
-def error_response(status: int, error: str, headers: dict | None = None, **extra) -> JSONResponse:
-    return JSONResponse(envelope({"error": error, **extra}), status_code=status, headers=headers)
+def error_response(http_status: int, error: str, headers: dict | None = None, **extra) -> JSONResponse:
+    return JSONResponse(envelope({"error": error, **extra}), status_code=http_status, headers=headers)
 
 
 class EnvelopeMiddleware:
@@ -90,8 +92,10 @@ def build_context(cfg: AidocConfig, token: str | None, start_workers: bool = Tru
 def create_app(ctx: ServerContext) -> FastAPI:
     from aidoc.server import sse
     from aidoc.server.api import chunks, documents, jobs, settings, system, uploads
-    app = FastAPI(title="aidoc", version="0.1.0", docs_url="/api/docs", openapi_url="/api/openapi.json",
-                  redoc_url=None)
+    # interactive docs only in loopback mode: with a token they would sit outside the token gate
+    docs = not ctx.token
+    app = FastAPI(title="aidoc", version="0.1.0", docs_url="/api/docs" if docs else None,
+                  openapi_url="/api/openapi.json" if docs else None, redoc_url=None)
     app.state.ctx = ctx
 
     @app.exception_handler(ApiError)
@@ -121,19 +125,65 @@ def create_app(ctx: ServerContext) -> FastAPI:
     return app
 
 
-def _mount_web(app: FastAPI, dist: Path) -> None:
-    """Serve the built Web UI (P4) with an SPA fallback; /api/* never falls through to it."""
-    index = dist / "index.html"
-    root = dist.resolve()
+_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._@+-]+$")
 
-    @app.get("/{full_path:path}", include_in_schema=False)
-    def web(full_path: str):
+
+def _dist_files(dist: Path) -> dict[str, Path]:
+    """Every file under web/dist keyed by its POSIX relative path (links are not followed)."""
+    out: dict[str, Path] = {}
+    if not dist.is_dir():
+        return out
+    for dirpath, dirnames, filenames in os.walk(dist, followlinks=False):
+        for name in filenames:
+            full = Path(dirpath) / name
+            if full.is_symlink():
+                continue
+            out[full.relative_to(dist).as_posix()] = full
+    return out
+
+
+def safe_relative(path: str) -> str | None:
+    """`path` as a plain relative POSIX path of ordinary segments, else None. Pure string checks: backslashes,
+    drive letters, colons, NUL, empty or dot segments and leading slashes are all refused, so a UNC or drive path
+    can never reach the filesystem (P3 verifier #1: a UNC path made Windows open an SMB connection)."""
+    if not path or "\\" in path or ":" in path or "\x00" in path or path.startswith("/"):
+        return None
+    parts = path.split("/")
+    if any(p in ("", ".", "..") or not _SAFE_SEGMENT.match(p) for p in parts):
+        return None
+    return "/".join(parts)
+
+
+def _mount_web(app: FastAPI, dist: Path) -> None:
+    """Serve the built Web UI (P4) with an SPA fallback; /api/* never falls through to it.
+
+    The request path is only ever looked up in a table of the files that exist under web/dist (rebuilt when
+    index.html changes); it is never joined onto a filesystem path or resolved."""
+    index = dist / "index.html"
+    cache: dict = {"mtime": None, "files": {}}
+
+    def files() -> dict[str, Path]:
+        try:
+            mtime = index.stat().st_mtime
+        except OSError:
+            return {}
+        if cache["mtime"] != mtime:
+            cache["files"], cache["mtime"] = _dist_files(dist), mtime
+        return cache["files"]
+
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    def web(full_path: str, request: Request):
+        if not auth.host_ok(request, app.state.ctx):
+            return error_response(403, "bad_host")
         if full_path == "api" or full_path.startswith("api/"):
+            for route in app.router.routes:           # a known /api path with another method -> 405
+                if route.matches(request.scope)[0] == Match.PARTIAL:
+                    return error_response(405, "method_not_allowed")
             return error_response(404, "not_found")
-        if not index.is_file():
+        table = files()
+        if not table:
             return {"message": "web UI not built; run pnpm --dir web build"}
-        if full_path:
-            target = (dist / full_path).resolve()
-            if os.path.commonpath([str(root), str(target)]) == str(root) and target.is_file():
-                return FileResponse(target)
-        return FileResponse(index, media_type="text/html")
+        rel = safe_relative(full_path)
+        if rel is not None and rel in table:
+            return FileResponse(table[rel])
+        return FileResponse(table["index.html"], media_type="text/html")

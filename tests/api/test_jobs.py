@@ -167,7 +167,14 @@ def test_cancel_during_backoff(client, ctx, tmp_root, fixtures, monkeypatch):
     job = client.post("/api/jobs", json={"inputs": [{"path": make_src(tmp_root, fixtures)}]}).json()["job"]
     t = threading.Thread(target=ctx.queue.process_next, daemon=True)
     t.start()
-    time.sleep(1.0)
+    deadline = time.time() + 10               # the crash is recorded as a transient attempt: now in backoff
+    while time.time() < deadline:
+        tried = ctx.store.list_tasks(job["id"])[0]["tried"]
+        if any(a.get("error_kind") == "transient" for a in tried):
+            break
+        time.sleep(0.05)
+    task = ctx.store.list_tasks(job["id"])[0]
+    assert any(a.get("error_kind") == "transient" for a in task["tried"]) and task["status"] not in ("cancelled",)
     t0 = time.time()
     client.post(f"/api/jobs/{job['id']}/cancel")
     t.join(5)

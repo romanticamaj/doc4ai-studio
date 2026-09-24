@@ -15,7 +15,11 @@ router = APIRouter()
 _CHOICES = {("general", "lang"): {"cht", "en"}, ("engines", "mineru_tier"): {"basic", "standard"},
             ("engines", "docling_ocr"): {"easyocr", "rapidocr"}}
 _MIN = {("general", "work_retention_days"): 0, ("engines", "docling_page_batch_size"): 1,
-        ("server", "port"): 1}
+        ("server", "port"): 1, ("limits", "disk_space_factor"): 1, ("limits", "upload_max_bytes"): 1}
+_MAX = {("server", "port"): 65535, ("limits", "upload_max_bytes"): 2 ** 40,        # 1 TiB
+        ("engines", "docling_page_batch_size"): 1024, ("limits", "disk_space_factor"): 100,
+        ("general", "work_retention_days"): 3650}
+_INT_MAX = 10 ** 9                      # any other int (timeouts in seconds): ~30 years is already absurd
 
 
 def masked(ctx) -> dict:
@@ -36,9 +40,11 @@ def _validate(body: dict, cfg) -> dict:
         for key, val in values.items():
             if key not in known:
                 raise ApiError(422, "invalid_settings", detail=f"unknown key {section}.{key}")
-            if (section, key) == ("server", "token"):
-                raise ApiError(403, "token_readonly")
             cur = getattr(getattr(cfg, section), key)
+            if (section, key) == ("server", "token"):
+                if val in ("***", cur):              # the masked or unchanged value a settings form echoes back
+                    continue
+                raise ApiError(403, "token_readonly")
             ok = type(val) is type(cur) or (type(cur) is int and type(val) is int)
             if not ok:
                 raise ApiError(422, "invalid_settings", detail=f"{section}.{key} must be {type(cur).__name__}")
@@ -48,8 +54,18 @@ def _validate(body: dict, cfg) -> dict:
             lo = _MIN.get((section, key), 0 if isinstance(val, int) and not isinstance(val, bool) else None)
             if lo is not None and val < lo:
                 raise ApiError(422, "invalid_settings", detail=f"{section}.{key} must be >= {lo}")
-            if isinstance(val, str) and key == "output_dir" and not val.strip():
-                raise ApiError(422, "invalid_settings", detail="general.output_dir must not be empty")
+            hi = _MAX.get((section, key), _INT_MAX if isinstance(val, int) and not isinstance(val, bool) else None)
+            if hi is not None and val > hi:
+                raise ApiError(422, "invalid_settings", detail=f"{section}.{key} must be <= {hi}")
+            if isinstance(val, str) and key == "output_dir":
+                if not val.strip():
+                    raise ApiError(422, "invalid_settings", detail="general.output_dir must not be empty")
+                if val.replace("\\", "/").startswith("//"):   # UNC: a network share (and an NTLM handshake)
+                    raise ApiError(422, "invalid_settings", detail="general.output_dir must be a local path")
+            if section == "server":
+                if val == cur:
+                    continue
+                raise ApiError(403, "server_readonly", detail=f"{section}.{key} is set when aidoc serve starts")
             clean.setdefault(section, {})[key] = val
     return clean
 
@@ -64,7 +80,7 @@ async def put_settings(request: Request) -> dict:
     ctx = request.app.state.ctx
     try:
         body = await request.json()
-    except ValueError:
+    except (ValueError, RecursionError):
         raise ApiError(422, "invalid_settings", detail="body is not JSON") from None
     clean = _validate(body, ctx.config)
     new = copy.deepcopy(ctx.config)

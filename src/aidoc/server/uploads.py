@@ -15,9 +15,9 @@ STALE_AFTER_S = 24 * 3600
 
 
 class UploadError(Exception):
-    def __init__(self, status: int, error: str, **extra):
+    def __init__(self, http_status: int, error: str, **extra):     # `status` is a legal extra (upload status)
         super().__init__(error)
-        self.status, self.error, self.extra = status, error, extra
+        self.status, self.error, self.extra = http_status, error, extra
 
 
 class BadOffset(UploadError):

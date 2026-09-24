@@ -5,6 +5,7 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -76,7 +77,7 @@ def get_asset(doc_id: str, path: str, request: Request) -> Response:
     doc = _doc(request, doc_id)
     base = (Path(doc["output_dir"]) / "assets").resolve()
     rel = path.replace("\\", "/")
-    if not rel or rel.startswith("/") or ":" in rel or any(part in ("..", "") for part in rel.split("/")):
+    if not rel or rel.startswith("/") or ":" in rel or "\x00" in rel or any(part in ("..", "") for part in rel.split("/")):
         raise ApiError(400, "bad_path")
     target = (base / rel).resolve()
     if os.path.commonpath([str(base), str(target)]) != str(base):
@@ -104,9 +105,8 @@ def download_zip(doc_id: str, request: Request) -> Response:
         raise ApiError(410, "output_missing")
     spool = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024)   # noqa: SIM115  closed by the iterator
     with zipfile.ZipFile(spool, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in sorted(out.rglob("*")):
-            if f.is_file():
-                z.write(f, f.relative_to(out).as_posix())
+        for f in _plain_files(out):
+            z.write(f, f.relative_to(out).as_posix())
     spool.seek(0)
 
     def chunks():
@@ -116,7 +116,40 @@ def download_zip(doc_id: str, request: Request) -> Response:
         finally:
             spool.close()
     return StreamingResponse(chunks(), media_type="application/zip",
-                             headers={"Content-Disposition": f'attachment; filename="{out.name}.zip"'})
+                             headers={"Content-Disposition": content_disposition(f"{out.name}.zip")})
+
+
+def content_disposition(filename: str, kind: str = "attachment") -> str:
+    """RFC 6266 / 5987: an ASCII fallback plus `filename*` in UTF-8 (a raw non-Latin-1 name made a 500)."""
+    fallback = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_" for c in filename) or "download"
+    return f"{kind}; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
+
+
+def _plain_files(root: Path) -> list[Path]:
+    """Regular files under `root`, never following symlinks or junctions out of it (P3 verifier #6)."""
+    base = root.resolve()
+    out: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        d = Path(dirpath)
+        dirnames[:] = sorted(n for n in dirnames if not _is_link(d / n))
+        for name in sorted(filenames):
+            f = d / name
+            if _is_link(f) or not f.is_file():
+                continue
+            if os.path.commonpath([str(base), str(f.resolve())]) != str(base):
+                continue
+            out.append(f)
+    return out
+
+
+def _is_link(p: Path) -> bool:
+    try:
+        if p.is_symlink():
+            return True
+        is_junction = getattr(os.path, "isjunction", None)
+        return bool(is_junction and is_junction(p))
+    except OSError:
+        return True
 
 
 @router.delete("/documents/orphaned")

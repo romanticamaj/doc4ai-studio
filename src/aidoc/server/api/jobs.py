@@ -72,6 +72,8 @@ def create_job(body: JobIn, request: Request) -> dict:
     if (paths or body.output_dir) and not allow_local_paths(request, ctx):
         raise ApiError(403, "local_path_forbidden")
     for p in paths:
+        if not p.is_absolute():                     # a relative path would depend on the server's cwd
+            raise ApiError(400, "path_not_absolute", path=str(p))
         if not p.is_file():
             raise ApiError(400, "input_not_found", path=str(p))
     opts = build_options(ctx.config, body)

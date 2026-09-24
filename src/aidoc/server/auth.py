@@ -12,9 +12,9 @@ LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 class ApiError(Exception):
     """Raised by endpoints; rendered as `{error, **extra}` (plus `workspace`) by the app's handler."""
 
-    def __init__(self, status: int, error: str, **extra):
+    def __init__(self, http_status: int, error: str, **extra):
         super().__init__(error)
-        self.status, self.error, self.extra = status, error, extra
+        self.status, self.error, self.extra = http_status, error, extra
 
 
 def is_loopback(host: str | None) -> bool:

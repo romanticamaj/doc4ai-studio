@@ -7,7 +7,8 @@ from aidoc.server.sse import format_event, replay_plan
 
 
 def test_format():
-    assert format_event(7, "task.updated", {"a": "中"}) == 'id: 7\nevent: task.updated\ndata: {"a": "中"}\n\n'
+    assert format_event(7, "task.updated", {"a": "中"}) == \
+        'id: 7\nevent: task.updated\ndata: {"a": "中", "workspace": "default"}\n\n'
 
 
 def test_publish_writes_db_then_fanout(ctx):
@@ -15,7 +16,7 @@ def test_publish_writes_db_then_fanout(ctx):
     sub = bus.subscribe()
     seq = bus.publish("task.log", "t1", {"line": "x"})
     assert ctx.store.events_since(seq - 1)[0]["kind"] == "task.log"
-    assert sub.queue.get(timeout=1)[0] == seq
+    assert sub.drain()[1][0][0] == seq
     sub.close()
     assert bus.subscriber_count == 0
 
@@ -71,6 +72,7 @@ def test_slow_subscriber_overflow_gets_resync(ctx):
         bus.publish("x", None, {"i": i})
     assert sub.overflowed is True
     sub.close()
+    # the stream really sends the resync frame: test_verifier_p3.test_overflowing_subscriber_receives_a_resync_frame
 
 
 def test_stream_ends_subscription_on_disconnect(live_server, ctx):

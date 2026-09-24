@@ -21,9 +21,9 @@ _FINISHED = {TaskStatus.done.value, TaskStatus.low.value, TaskStatus.skipped.val
 
 
 class RetryError(Exception):
-    def __init__(self, status: int, error: str, **extra):
+    def __init__(self, http_status: int, error: str, **extra):
         super().__init__(error)
-        self.status, self.error, self.extra = status, error, extra
+        self.status, self.error, self.extra = http_status, error, extra
 
 
 class JobQueue:
