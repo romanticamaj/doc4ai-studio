@@ -296,3 +296,33 @@ def test_retry_after_the_source_changed_fails_source_changed(client, ctx, fixtur
     ctx.queue.process_next()
     t = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]
     assert t["status"] == "done" and t["sha256"] != task["sha256"]
+
+
+# ---------------------------------------------------------------- final review I2: empty events table
+def test_last_event_id_with_an_empty_events_table_resyncs(ctx):
+    from aidoc.server.sse import replay_plan
+    assert ctx.store.newest_event_seq() is None
+    assert replay_plan(ctx.store, 5000)[0] == "resync"
+    assert replay_plan(ctx.store, 0)[0] == "replay"
+
+
+# ---------------------------------------------------------------- final review I1: all-or-nothing job creation
+def test_a_busy_upload_leaves_no_half_created_job(client, ctx, fixtures):
+    from aidoc.tasklock import TaskLock, lock_path
+    a = upload(client, fixtures / "text.pdf")
+    first = client.post("/api/jobs", json={"inputs": [{"upload_id": a}]}).json()["job"]
+    tid = ctx.store.list_tasks(first["id"])[0]["id"]
+    ctx.store.update_task(tid, status="converting")                  # "text.pdf" is being converted elsewhere
+    other = TaskLock(lock_path(ctx.config.data_dir, tid))
+    assert other.acquire()
+    try:
+        b = upload(client, fixtures / "sample.docx")
+        again = upload(client, fixtures / "text.pdf")                  # same content and name -> the busy task
+        jobs_before = len(ctx.store.list_jobs())
+        r = client.post("/api/jobs", json={"inputs": [{"upload_id": b}, {"upload_id": again}]})
+        assert r.status_code == 409 and r.json()["error"] == "already_converting"
+        assert len(ctx.store.list_jobs()) == jobs_before                # no half-created job
+        assert ctx.store.get_upload(b)["status"] == "complete"          # still usable
+        assert ctx.uploads.part_path(b).exists()
+    finally:
+        other.release()

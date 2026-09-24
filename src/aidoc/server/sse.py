@@ -117,7 +117,7 @@ def replay_plan(store, last_event_id: int | None) -> tuple[str, list[dict]]:
     if last_event_id is None:
         return "live", []
     newest = store.newest_event_seq()
-    if newest is not None and last_event_id > newest:
+    if last_event_id > (newest or 0):             # includes an empty table after a DB reset (final review I2)
         return "resync", []
     oldest = store.oldest_event_seq()
     if oldest is None:

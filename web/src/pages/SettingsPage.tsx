@@ -17,6 +17,7 @@ import { ApiError, getToken, setToken } from "@/api/client";
 import type { EngineName, Settings } from "@/api/types";
 import { useEventStream } from "@/events/EventStreamProvider";
 import { EngineCard } from "@/features/settings/EngineCard";
+import { NumberField } from "@/features/settings/NumberField";
 import { diffSettings } from "@/features/settings/diffSettings";
 import { describeError } from "@/lib/errors";
 import { formatBytes, gb } from "@/lib/format";
@@ -194,14 +195,7 @@ function SettingsForm({ original }: { original: Settings }) {
             <Input id="set-out" value={edited.general.output_dir} onChange={(e) => set("general", "output_dir", e.target.value)} className="font-mono text-[12.5px]" spellCheck={false} />
           </Field>
           <Field label="工作副本保留天數" hint="轉換成功後保留原始檔副本的天數" htmlFor="set-days">
-            <Input
-              id="set-days"
-              type="number"
-              min={0}
-              value={edited.general.work_retention_days}
-              onChange={(e) => set("general", "work_retention_days", Math.max(0, Math.floor(Number(e.target.value) || 0)))}
-              className="w-28 tabular"
-            />
+            <NumberField id="set-days" min={0} max={3650} value={edited.general.work_retention_days} onValue={(n) => set("general", "work_retention_days", n)} className="w-28 tabular" />
           </Field>
           <Field label="MinerU tier" hint="standard 較慢，公式與表格略好" htmlFor="set-tier">
             <Select value={edited.engines.mineru_tier} onValueChange={(v) => set("engines", "mineru_tier", v as Settings["engines"]["mineru_tier"])}>
@@ -227,26 +221,12 @@ function SettingsForm({ original }: { original: Settings }) {
           </Field>
           <Field label="上傳上限" hint="單一檔案，MB" htmlFor="set-upload">
             <div className="flex items-center gap-2">
-              <Input
-                id="set-upload"
-                type="number"
-                min={1}
-                value={Math.round(edited.limits.upload_max_bytes / MB)}
-                onChange={(e) => set("limits", "upload_max_bytes", Math.max(1, Math.round(Number(e.target.value) || 1)) * MB)}
-                className="w-28 tabular"
-              />
+              <NumberField id="set-upload" min={1} max={1024 * 1024} value={Math.round(edited.limits.upload_max_bytes / MB)} onValue={(n) => set("limits", "upload_max_bytes", n * MB)} className="w-28 tabular" />
               <span className="text-xs text-muted-foreground">MB</span>
             </div>
           </Field>
           <Field label="磁碟空間倍數" hint="送出前要求的可用空間 = 輸入大小 × 倍數" htmlFor="set-disk">
-            <Input
-              id="set-disk"
-              type="number"
-              min={1}
-              value={edited.limits.disk_space_factor}
-              onChange={(e) => set("limits", "disk_space_factor", Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-              className="w-28 tabular"
-            />
+            <NumberField id="set-disk" min={1} max={100000} value={edited.limits.disk_space_factor} onValue={(n) => set("limits", "disk_space_factor", n)} className="w-28 tabular" />
           </Field>
           <Field label="允許線上音訊轉錄" hint="開啟後，音訊檔會送到 Google 轉成文字" htmlFor="set-audio">
             <Switch id="set-audio" checked={edited.general.enable_audio} onCheckedChange={(v) => set("general", "enable_audio", v)} />

@@ -117,6 +117,17 @@ test("409 upload_not_receiving for a consumed upload throws and forgets it", asy
   expect(sessionStorage.getItem("aidoc_upload:a.pdf:10:1")).toBeNull();
 });
 
+test("507 insufficient_disk fails at once instead of retrying as a network error", async () => {
+  const api = fakeApi([{ status: 507, body: { error: "insufficient_disk", needed: 30, free: 1 } }], { size: 10 });
+  const t0 = Date.now();
+  await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any, retryDelayMs: 200 })).rejects.toMatchObject({
+    status: 507,
+    body: { error: "insufficient_disk" },
+  });
+  expect(Date.now() - t0).toBeLessThan(150);
+  expect(api.calls.some((c) => c[0] === "head")).toBe(false);
+});
+
 test("sha mismatch (422) throws and forgets the saved upload id", async () => {
   const api = fakeApi([{ status: 200 }, { status: 200 }, { status: 422, body: { error: "sha_mismatch" } }], { size: 10 });
   await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any })).rejects.toMatchObject({

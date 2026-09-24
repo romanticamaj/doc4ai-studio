@@ -226,6 +226,14 @@ class Store:
             (tid, job_id, source_path, sha256, size, mtime, lang, TaskStatus.queued.value, output_dir, now, now))
         return tid, False
 
+    def busy_task_id(self, sha256, output_dir) -> str | None:
+        """The id of the (sha256, output_dir) task when another live process is converting it (what `create_task`
+        would refuse with TaskBusyError), else None."""
+        old = self._q1("SELECT id, status FROM tasks WHERE sha256=? AND output_dir=?", (sha256, str(output_dir)))
+        if old is not None and old["status"] in _ACTIVE and self.task_is_live(old["id"]):
+            return old["id"]
+        return None
+
     def requeue_task(self, task_id, *, reset_segments: bool, new_sha: str | None = None) -> None:
         """Back to `queued` (errors and pid cleared). `new_sha` = "convert the new version": sha256/size/mtime
         are re-read from source_path by the caller and stored here."""

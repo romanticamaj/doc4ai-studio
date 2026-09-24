@@ -137,11 +137,11 @@ export async function uploadFile(file: File, opts: UploadOptions): Promise<strin
       opts.onProgress?.(received, total);
       continue;
     }
-    if (res.status >= 500) {
+    if (res.status >= 500 && res.status !== 507) {   // 507 insufficient_disk will not go away by retrying
       received = await recover();
       continue;
     }
-    if (res.status === 422 || res.status === 404 || (res.status === 409 && body.error === "upload_not_receiving")) {
+    if (res.status === 422 || res.status === 404) {
       store?.removeItem(key); // the server dropped this upload: a retry must start over
     }
     throw new ApiError(res.status, (typeof body.error === "string" ? body : { error: `http_${res.status}` }) as ApiErrorBody);

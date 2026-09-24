@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { FileSearch, FolderX, LayoutGrid, Library, Rows3, Search, X } from "lucide-react";
@@ -28,7 +29,10 @@ export default function LibraryPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const f = parseFilters(location.search);
-  const set = (patch: Partial<Filters>) => navigate({ search: toSearch({ ...f, ...patch }) }, { replace: true });
+  const latest = useRef(f);
+  latest.current = f;
+  // reads the filters at call time: a debounced search commit must not undo a filter picked meanwhile
+  const set = (patch: Partial<Filters>) => navigate({ search: toSearch({ ...latest.current, ...patch }) }, { replace: true });
 
   const docs = useDocuments(toQuery(f));
   const orphaned = useDocuments({ status: "orphaned" });
@@ -81,14 +85,7 @@ export default function LibraryPage() {
       <div className="mb-4 flex flex-col gap-2.5 md:flex-row md:items-center">
         <div className="relative md:w-72">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            aria-label="搜尋檔名"
-            placeholder="搜尋檔名"
-            value={f.q}
-            onChange={(e) => set({ q: e.target.value })}
-            className="pl-8"
-          />
+          <SearchBox value={f.q} onCommit={(q) => set({ q })} />
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <Select value={f.engine || "all"} onValueChange={(v) => set({ engine: v === "all" ? "" : v })}>
@@ -282,5 +279,55 @@ function CardSkeletons() {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Local text state; written to the URL 250 ms after typing stops and never in the middle of an IME composition
+ *  (a URL-controlled input loses characters and breaks 注音/倉頡 input). */
+function SearchBox({ value, onCommit }: { value: string; onCommit: (q: string) => void }) {
+  const [text, setText] = useState(value);
+  const composing = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const last = useRef(value);
+  const commit = useRef(onCommit);
+  commit.current = onCommit;
+
+  // the URL changed from outside (Back/Forward, 清除篩選): follow it
+  useEffect(() => {
+    if (value !== last.current) {
+      last.current = value;
+      setText(value);
+    }
+  }, [value]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const schedule = (q: string) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      last.current = q;
+      commit.current(q);
+    }, 250);
+  };
+
+  return (
+    <Input
+      type="search"
+      aria-label="搜尋檔名"
+      placeholder="搜尋檔名"
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        if (!composing.current) schedule(e.target.value);
+      }}
+      onCompositionStart={() => {
+        composing.current = true;
+        clearTimeout(timer.current);
+      }}
+      onCompositionEnd={(e) => {
+        composing.current = false;
+        schedule((e.target as HTMLInputElement).value);
+      }}
+      className="pl-8"
+    />
   );
 }

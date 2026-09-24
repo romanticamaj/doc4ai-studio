@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from aidoc.batch import collect_inputs, register_source
 from aidoc.models import ConvertOptions
+from aidoc.output import planned_output_dir
 from aidoc.server.auth import ApiError, allow_local_paths
 from aidoc.server.jobs import RetryError
 from aidoc.server.serialize import serialize_job, serialize_task
@@ -95,6 +96,12 @@ def create_job(body: JobIn, request: Request) -> dict:
         if up["status"] != "complete":
             raise ApiError(409, "upload_incomplete", upload_id=up["id"], received=up["received"], size=up["size"])
         sizes.append(up["size"])
+    # all-or-nothing (final review I1): refuse before anything is created or any upload is consumed
+    for up in uploads:
+        out_dir = planned_output_dir(store, opts.output_dir, Path(up["filename"]), up["sha256"])
+        busy = store.busy_task_id(up["sha256"], out_dir)
+        if busy is not None:
+            raise ApiError(409, "already_converting", task_id=busy, upload_id=up["id"])
     needed = sum(sizes) * ctx.config.limits.disk_space_factor
     opts.output_dir.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(opts.output_dir).free
