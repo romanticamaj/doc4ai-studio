@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   Document,
@@ -53,7 +53,7 @@ export function useDocuments(filters: DocFilters) {
     queryKey: qk.documents(filters),
     queryFn: ({ signal }) =>
       api.get<{ documents: Document[] }>(`/api/documents${qs(filters)}`, signal).then((r) => r.documents),
-    placeholderData: keepPreviousData,
+    placeholderData: (prev: Document[] | undefined) => prev,
   });
 }
 
