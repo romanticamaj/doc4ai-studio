@@ -20,6 +20,10 @@ export function describeError(e: unknown): string {
         return "同一個上傳檔案不能加入兩次";
       case "already_converting":
         return "這個檔案已經在轉換中";
+      case "disk_full":
+        return "伺服器磁碟已滿，上傳中斷；清出空間後按重試即可從中斷處續傳";
+      case "upload_write_failed":
+        return "伺服器無法寫入上傳的檔案";
       case "upload_too_large":
         return `檔案超過上傳上限 ${formatBytes(b.limit as number)}`;
       case "sha_mismatch":

@@ -379,6 +379,8 @@ function describeUploadError(item: UploadItem): string {
   if (b?.error === "upload_too_large") return `超過上傳上限 ${formatBytes(b.limit as number)}`;
   if (b?.error === "insufficient_disk") return `磁碟空間不足：需要 ${formatBytes(b.needed as number)}，剩餘 ${formatBytes(b.free as number)}`;
   if (b?.error === "sha_mismatch") return "檢查碼不符，檔案可能在上傳中被修改";
+  if (b?.error === "disk_full") return "伺服器磁碟已滿；清出空間後按重試，會從中斷處續傳";
+  if (b?.error === "upload_write_failed") return "伺服器無法寫入檔案";
   if (b?.error === "network_error") return "連線中斷太久，請重試";
   return item.error ?? "上傳失敗";
 }

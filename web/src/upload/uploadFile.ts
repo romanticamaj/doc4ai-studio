@@ -137,7 +137,9 @@ export async function uploadFile(file: File, opts: UploadOptions): Promise<strin
       opts.onProgress?.(received, total);
       continue;
     }
-    if (res.status >= 500 && res.status !== 507) {   // 507 insufficient_disk will not go away by retrying
+    // a bare 5xx (crash, proxy) is retried; a 507 or a 5xx that names its cause (disk_full, upload_write_failed)
+    // will not go away by retrying
+    if (res.status >= 500 && res.status !== 507 && typeof body.error !== "string") {
       received = await recover();
       continue;
     }

@@ -2,6 +2,7 @@
 `offset == received`, sha256 verified on the last chunk, unfinished uploads purged after 24 h."""
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import threading
@@ -12,6 +13,11 @@ from aidoc.names import file_sha256
 
 CHUNK_SIZE = 8 * 1024 * 1024
 STALE_AFTER_S = 24 * 3600
+
+
+def is_disk_full(e: OSError) -> bool:
+    """ENOSPC / EDQUOT, or Windows ERROR_DISK_FULL (112) / ERROR_HANDLE_DISK_FULL (39)."""
+    return e.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)) or getattr(e, "winerror", None) in (39, 112)
 
 
 class UploadError(Exception):
@@ -105,12 +111,18 @@ class UploadManager:
             if offset + len(data) > row["size"]:
                 raise UploadError(400, "exceeds_declared_size", size=row["size"], received=row["received"])
             path = self.part_path(upload_id)
-            with open(path, "r+b" if path.exists() else "w+b") as f:
-                f.seek(offset)
-                f.write(data)
-                f.truncate()
-                f.flush()
-                os.fsync(f.fileno())
+            try:
+                with open(path, "r+b" if path.exists() else "w+b") as f:
+                    f.seek(offset)
+                    f.write(data)
+                    f.truncate()
+                    f.flush()
+                    os.fsync(f.fileno())
+            except OSError as e:                  # nothing is counted: the client resends from `received`
+                if is_disk_full(e):
+                    raise UploadError(507, "disk_full", received=row["received"]) from None
+                raise UploadError(500, "upload_write_failed", received=row["received"],
+                                  detail=f"{type(e).__name__}: {e}") from None
             received = offset + len(data)
             store.update_upload(upload_id, received=received)
             status = "receiving"

@@ -128,6 +128,15 @@ test("507 insufficient_disk fails at once instead of retrying as a network error
   expect(api.calls.some((c) => c[0] === "head")).toBe(false);
 });
 
+test("a server-side write error with a code is not retried", async () => {
+  const api = fakeApi([{ status: 500, body: { error: "upload_write_failed" } }], { size: 10 });
+  await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any, retryDelayMs: 200 })).rejects.toMatchObject({
+    status: 500,
+    body: { error: "upload_write_failed" },
+  });
+  expect(api.calls.some((c) => c[0] === "head")).toBe(false);
+});
+
 test("sha mismatch (422) throws and forgets the saved upload id", async () => {
   const api = fakeApi([{ status: 200 }, { status: 200 }, { status: 422, body: { error: "sha_mismatch" } }], { size: 10 });
   await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any })).rejects.toMatchObject({
