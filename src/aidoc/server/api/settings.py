@@ -17,7 +17,7 @@ _CHOICES = {("general", "lang"): {"cht", "en"}, ("engines", "mineru_tier"): {"ba
 _MIN = {("general", "work_retention_days"): 0, ("engines", "docling_page_batch_size"): 1,
         ("server", "port"): 1, ("limits", "disk_space_factor"): 1, ("limits", "upload_max_bytes"): 1}
 _MAX = {("server", "port"): 65535, ("limits", "upload_max_bytes"): 2 ** 40,        # 1 TiB
-        ("engines", "docling_page_batch_size"): 1024, ("limits", "disk_space_factor"): 100,
+        ("engines", "docling_page_batch_size"): 1024, ("limits", "disk_space_factor"): 100000,
         ("general", "work_retention_days"): 3650}
 _INT_MAX = 10 ** 9                      # any other int (timeouts in seconds): ~30 years is already absurd
 
