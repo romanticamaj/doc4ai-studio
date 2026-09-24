@@ -56,7 +56,7 @@ export function LogPanel({
           const el = e.currentTarget;
           follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
         }}
-        className="h-64 overflow-auto bg-muted/40 px-3 py-2 font-mono text-[12px] leading-[1.6] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        className="h-56 overflow-auto bg-muted/40 px-3 py-2 font-mono text-[12px] leading-[1.6] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       >
         {lines.length === 0 ? (
           <p className="py-6 text-center font-sans text-xs text-muted-foreground">{empty}</p>

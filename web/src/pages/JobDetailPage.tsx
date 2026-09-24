@@ -150,7 +150,7 @@ export default function JobDetailPage() {
 function BackLink() {
   return (
     <Link to="/jobs" className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-      <ChevronLeft className="size-3.5" /> 工作
+      <ChevronLeft className="size-3.5" /> Jobs
     </Link>
   );
 }
@@ -192,13 +192,20 @@ function TaskCard({ task, defaultOpen, onShowLog }: { task: Task; defaultOpen: b
               {task.quality && <span className="tabular">品質 {task.quality.score.toFixed(2)}</span>}
             </span>
           </span>
-          <ChevronDown className={cn("ml-1 size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
         </button>
         <div className="flex items-center gap-2.5">
           {(active || (task.progress?.pages_total ?? 0) > 1) && label !== "—" && (
             <span className="text-xs text-muted-foreground tabular">{label}</span>
           )}
           <StatusBadge status={task.status} />
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-label={open ? "收合" : "展開"}
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
+          </button>
         </div>
       </div>
       {active && (

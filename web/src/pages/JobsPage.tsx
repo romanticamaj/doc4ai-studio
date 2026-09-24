@@ -26,7 +26,7 @@ export default function JobsPage() {
 
   return (
     <Page>
-      <PageHeader title="工作" description="每次送出的轉換都是一個工作；點進去看每個檔案的進度與 log。" actions={<QueueButton />} />
+      <PageHeader title="Jobs" description="每次送出的轉換都是一個工作；點進去看每個檔案的進度與 log。" actions={<QueueButton />} />
       {jobs.isError ? (
         <ErrorState title="無法載入工作清單" error={jobs.error} onRetry={() => jobs.refetch()} />
       ) : jobs.isPending ? (

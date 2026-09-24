@@ -104,7 +104,7 @@ export default function ConvertPage() {
   return (
     <Page>
       <PageHeader
-        title="轉換文件"
+        title="Convert"
         description="把 PDF、Office、圖片與網頁轉成帶頁碼標記的 Markdown，給 AI 與 RAG 使用。"
       />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_320px]">

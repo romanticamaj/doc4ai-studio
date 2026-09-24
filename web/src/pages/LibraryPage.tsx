@@ -51,7 +51,7 @@ export default function LibraryPage() {
   return (
     <Page>
       <PageHeader
-        title="文件庫"
+        title="Library"
         description="所有已轉換的文件。點一份文件，左右對照原始檔與 Markdown。"
         actions={
           <Button variant="outline" size="sm" onClick={doRescan} disabled={rescan.isPending}>

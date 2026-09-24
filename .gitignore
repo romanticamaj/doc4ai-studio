@@ -18,3 +18,4 @@ out_p3/
 web/test-results/
 web/playwright-report/
 web/e2e/.data/
+.playwright-mcp/

@@ -51,7 +51,7 @@ export function shortId(id: string): string {
 
 /** Last path component of a Windows or POSIX path (upload tasks already carry just the name). */
 export function baseName(p: string): string {
-  const parts = p.split(/[\/]/);
+  const parts = p.split(/[\\/]/);
   return parts[parts.length - 1] || p;
 }
 
