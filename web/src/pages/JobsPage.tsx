@@ -91,6 +91,11 @@ export default function JobsPage() {
                     <StatusBadge status={job.status} />
                   </td>
                   <td className="order-5 col-span-2 md:px-4 md:py-3">
+                    {job.progress?.total === 0 ? (
+                      <span className="text-xs text-muted-foreground" title="同一檔案、同一輸出位置只保留最新一次轉換的紀錄">
+                        檔案已由較新的工作重新轉換
+                      </span>
+                    ) : (
                     <div className="flex items-center gap-3">
                       <Meter
                         value={jobPercent(job)}
@@ -101,6 +106,7 @@ export default function JobsPage() {
                         {job.progress?.done ?? 0}/{job.progress?.total ?? 0}
                       </span>
                     </div>
+                    )}
                   </td>
                   <td className="hidden pr-3 text-muted-foreground md:table-cell">
                     <ChevronRight className="size-4 opacity-0 transition-opacity group-hover:opacity-100" />

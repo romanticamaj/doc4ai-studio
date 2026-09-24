@@ -114,7 +114,7 @@ export default function JobDetailPage() {
 
       <div className="flex flex-col gap-3">
         {tasks.length === 0 ? (
-          <EmptyState title="這個工作沒有檔案" description="所有輸入都被略過，或建立時發生錯誤。" />
+          <EmptyState title="這個工作已沒有檔案" description="它的檔案之後又被轉換過：同一檔案、同一輸出位置只保留最新一次的紀錄，請到 Jobs 看較新的工作。" action={<Button asChild variant="outline"><Link to="/jobs">回到 Jobs</Link></Button>} />
         ) : (
           tasks.map((t) => (
             <TaskCard key={t.id} task={t} defaultOpen={tasks.length <= 3 || ACTIVE.has(t.status) || t.status === "failed"} onShowLog={() => setLogTask(t.id)} />
