@@ -25,6 +25,29 @@ function withJobProgress(d: JobDetail): JobDetail {
 }
 
 /**
+ * A fetch in flight (or not yet answered) started before this event: its snapshot may be older than the event and
+ * would overwrite it when it lands. Restart it so the answer includes the event (I1).
+ */
+function refetchIfInFlight(qc: QueryClient, queryKey: readonly unknown[]): void {
+  const st = qc.getQueryState(queryKey);
+  if (!st) return;
+  if (st.fetchStatus === "fetching" && st.data === undefined) {
+    // a first fetch is shared, not restarted, by TanStack: refetch once it has landed
+    const cache = qc.getQueryCache();
+    const hash = cache.find({ queryKey, exact: true })?.queryHash;
+    const off = cache.subscribe((e) => {
+      if (e.query.queryHash !== hash || e.type !== "updated") return;
+      if (e.action.type === "success" || e.action.type === "error") {
+        off();
+        void qc.invalidateQueries({ queryKey, exact: true });
+      }
+    });
+    return;
+  }
+  if (st.fetchStatus === "fetching") void qc.invalidateQueries({ queryKey, exact: true }); // cancels and restarts
+}
+
+/**
  * Merge one SSE event into the TanStack Query cache. Pure with respect to the cache: it only reads and writes
  * query data (and the log store for log lines); it never fetches.
  */
@@ -41,6 +64,8 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
         return next;
       });
       qc.setQueryData<JobDetail>(qk.job(job.id), (old) => (old ? { ...old, job: { ...old.job, ...job } } : old));
+      refetchIfInFlight(qc, qk.jobs());
+      refetchIfInFlight(qc, qk.job(job.id));
       return;
     }
     case "task.updated": {
@@ -53,6 +78,7 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
         else tasks[i] = { ...old.tasks[i], ...task, segments: task.segments ?? old.tasks[i].segments };
         return withJobProgress({ ...old, tasks });
       });
+      refetchIfInFlight(qc, qk.job(task.job_id));
       if (task.status === "done" || task.status === "low") qc.invalidateQueries({ queryKey: ["documents"] });
       return;
     }
@@ -84,6 +110,7 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
           }),
         });
         if (unknown) qc.invalidateQueries({ queryKey: key });
+        else refetchIfInFlight(qc, key);
       }
       return;
     }

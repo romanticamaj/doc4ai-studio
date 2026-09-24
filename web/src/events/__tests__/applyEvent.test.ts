@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { expect, test, vi } from "vitest";
 import { applyEvent } from "../applyEvent";
 import { qk } from "@/api/queries";
@@ -67,6 +67,23 @@ test("a segment the cache has not seen refetches the job and never shrinks the p
   const t = (qc.getQueryData(qk.job("j1")) as any).tasks[0];
   expect(t.progress).toEqual({ pages_done: 40, pages_total: 315 });
   expect(spy).toHaveBeenCalledWith({ queryKey: qk.job("j1") });
+});
+
+test("an event that arrives while the job is being fetched is not lost to the older snapshot (I1)", async () => {
+  const qc = new QueryClient();
+  let serverStatus = "queued";
+  const fetchJob = async () => {
+    const snap = serverStatus; // the server answered before the event happened...
+    await new Promise((r) => setTimeout(r, 50)); // ...but the response arrives after it
+    return { job: { id: "j1", status: "running", progress: { done: 0, total: 1 } }, tasks: [task({ status: snap })] };
+  };
+  const unsubscribe = new QueryObserver(qc, { queryKey: qk.job("j1"), queryFn: fetchJob }).subscribe(() => {}); // the page
+  await new Promise((r) => setTimeout(r, 10));
+  serverStatus = "done";
+  applyEvent(qc, { kind: "task.updated", seq: 9, payload: task({ status: "done" }) } as any);
+  await new Promise((r) => setTimeout(r, 200));
+  unsubscribe();
+  expect((qc.getQueryData(qk.job("j1")) as any).tasks[0].status).toBe("done");
 });
 
 test("job.updated upserts into the list (newest first) and the detail", () => {

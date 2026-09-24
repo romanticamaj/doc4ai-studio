@@ -7,7 +7,7 @@ import { AppRoutes } from "@/routes";
 import { EventStreamProvider } from "@/events/EventStreamProvider";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 5_000, refetchOnWindowFocus: false, retry: 1 } },
+  defaultOptions: { queries: { staleTime: 5_000, refetchOnWindowFocus: true, retry: 1 } },
 });
 
 export default function App() {

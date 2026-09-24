@@ -30,6 +30,7 @@ export function EventStreamProvider({ children }: { children: React.ReactNode })
     let retry: ReturnType<typeof setTimeout> | undefined;
     let delay = 1000;
     let disposed = false;
+    let wasDown = false;
 
     const open = () => {
       let url = eventsUrl();
@@ -39,8 +40,16 @@ export function EventStreamProvider({ children }: { children: React.ReactNode })
         delay = 1000;
         setConnected(true);
         logStore.setStale(false);
+        if (wasDown) {
+          // the server may have restarted or replayed only part of what happened: refetch what is on screen
+          wasDown = false;
+          void qc.invalidateQueries({ queryKey: ["jobs"] });
+          void qc.invalidateQueries({ queryKey: ["documents"] });
+          void qc.invalidateQueries({ queryKey: ["system"] });
+        }
       };
       es.onerror = () => {
+        wasDown = true;
         setConnected(false);
         logStore.setStale(true);
         if (es && es.readyState === EventSource.CLOSED && !disposed) {
