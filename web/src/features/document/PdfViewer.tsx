@@ -3,6 +3,7 @@ import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTas
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Loader2 } from "lucide-react";
 import { getToken } from "@/api/client";
+import { pageRatios } from "./pageRatios";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -38,13 +39,20 @@ export const PdfViewer = forwardRef<HTMLDivElement, Props>(function PdfViewer({ 
   useEffect(() => {
     let cancelled = false;
     const t = getToken();
-    const task = getDocument({ url, httpHeaders: t ? { Authorization: `Bearer ${t}` } : undefined });
+    const task = getDocument({
+      url,
+      httpHeaders: t ? { Authorization: `Bearer ${t}` } : undefined,
+      // bundled with the app (vite.config.ts copies them): the 14 standard fonts and the CJK character maps (Q3)
+      standardFontDataUrl: "/pdfjs/standard_fonts/",
+      cMapUrl: "/pdfjs/cmaps/",
+      cMapPacked: true,
+    });
     task.promise.then(
       async (d) => {
         if (cancelled) return;
-        const first = await d.getPage(1);
-        const vp = first.getViewport({ scale: 1 });
-        setRatios(Array.from({ length: d.numPages }, () => vp.height / vp.width));
+        const ratios = await pageRatios(d);          // per page: mixed sizes must line up (M5)
+        if (cancelled) return;
+        setRatios(ratios);
         setDoc(d);
         onLoaded?.(d.numPages);
       },

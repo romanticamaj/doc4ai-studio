@@ -7,7 +7,7 @@ const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 test("upload → convert → preview", async ({ page }) => {
   const csp: string[] = [];
   page.on("console", (m) => {
-    if (/Content Security Policy|Refused to/i.test(m.text())) csp.push(m.text());
+    if (/Content Security Policy|Refused to|standardFontDataUrl|cMapUrl/i.test(m.text())) csp.push(m.text());
   });
   await page.goto("/convert");
   await page.setInputFiles('input[type="file"]', path.join(fixtures, "text.pdf"));
@@ -24,7 +24,7 @@ test("upload → convert → preview", async ({ page }) => {
   await expect(output.locator("[data-page='1']")).toHaveCount(1);
   await expect(output.getByRole("heading", { name: /第 1 頁 Heading 1/ })).toBeVisible();
   await expect(page.locator('[aria-label="原始檔"] canvas').first()).toBeVisible(); // pdf.js worker under the CSP
-  expect(csp, "CSP violations").toEqual([]);
+  expect(csp, "CSP violations or pdf.js font warnings").toEqual([]);
 });
 
 test("an HTML source with a script is never rendered on the aidoc origin (C1)", async ({ page, request }) => {
