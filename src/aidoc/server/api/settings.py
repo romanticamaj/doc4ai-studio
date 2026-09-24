@@ -87,7 +87,11 @@ async def put_settings(request: Request) -> dict:
     for section, values in clean.items():
         for key, val in values.items():
             setattr(getattr(new, section), key, val)
-    await run_in_threadpool(save_config, new, config_path())
+    changes = {sec: {k: v for k, v in vals.items() if getattr(getattr(ctx.config, sec), k) != v}
+               for sec, vals in clean.items()}
+    changes = {sec: vals for sec, vals in changes.items() if vals}
+    if changes:                                      # a no-op save must not rewrite the file (M4)
+        await run_in_threadpool(save_config, new, config_path(), changes)
     for section, values in clean.items():             # hot-apply to the running server
         for key, val in values.items():
             setattr(getattr(ctx.config, section), key, val)

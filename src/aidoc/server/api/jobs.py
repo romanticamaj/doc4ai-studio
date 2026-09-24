@@ -73,6 +73,9 @@ def create_job(body: JobIn, request: Request) -> dict:
             seen.add(i.upload_id)
     if (paths or body.output_dir) and not allow_local_paths(request, ctx):
         raise ApiError(403, "local_path_forbidden")
+    for p in [*paths, *([Path(body.output_dir)] if body.output_dir else [])]:
+        if str(p).replace("\\", "/").startswith("//"):   # a network share: SMB (and an NTLM handshake), M7
+            raise ApiError(422, "unc_path_forbidden", path=str(p))
     opts = build_options(ctx.config, body)
     files_of: dict[int, list[Path]] = {}            # input index -> the files it stands for
     for n, ref in enumerate(body.inputs):

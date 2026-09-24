@@ -95,16 +95,17 @@ def load_config(path: Path | None = None) -> AidocConfig:
     return cfg
 
 
-def save_config(cfg: AidocConfig, path: Path | None = None) -> None:
-    """Write `cfg` to aidoc.toml, keeping the existing file's comments and layout (tomlkit): only values that
-    changed are replaced, missing sections/keys are appended."""
+def save_config(cfg: AidocConfig, path: Path | None = None, changes: dict | None = None) -> None:
+    """Write to aidoc.toml, keeping the existing file's comments and layout (tomlkit). With `changes`
+    ({section: {key: value}}) only those keys are written; otherwise every value of `cfg` that differs from the file
+    (or is missing from it) is."""
     p = Path(path) if path else config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     try:
         doc = tomlkit.parse(p.read_text(encoding="utf-8")) if p.exists() else tomlkit.document()
     except (OSError, tomlkit.exceptions.ParseError):
         doc = tomlkit.document()
-    for section, values in cfg.to_dict().items():
+    for section, values in (changes if changes is not None else cfg.to_dict()).items():
         if section not in doc:
             doc[section] = tomlkit.table()
         table = doc[section]
