@@ -1,0 +1,269 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: "Geist Variable", ui-sans-serif, "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Mono", Consolas, "Microsoft JhengHei UI", monospace;
+    --color-ok: var(--ok);
+    --color-ok-soft: var(--ok-soft);
+    --color-warn: var(--warn);
+    --color-warn-soft: var(--warn-soft);
+    --color-danger: var(--danger);
+    --color-danger-soft: var(--danger-soft);
+    --color-info: var(--info);
+    --color-info-soft: var(--info-soft);
+    --color-neutral-soft: var(--neutral-soft);
+    --color-canvas: var(--canvas);
+    --shadow-panel: var(--shadow-panel);
+    --shadow-pop: var(--shadow-pop);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * aidoc design tokens.
+ * A graphite workbench: neutral canvas, white work surfaces, one ink-blue accent (focus, links, the running
+ * state) and four status hues that mean the same thing on every page:
+ *   ok = converted fine · warn = low quality · danger = failed · info = running.
+ * Radius steps: controls 6-8px, panels 10px. Shadows are a hairline plus a 1px lift, never soft grey blobs.
+ */
+:root {
+    --background: oklch(0.975 0.002 250);
+    --canvas: oklch(0.975 0.002 250);
+    --foreground: oklch(0.2 0.01 260);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.2 0.01 260);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.2 0.01 260);
+    --primary: oklch(0.51 0.19 270);
+    --primary-foreground: oklch(0.99 0 0);
+    --secondary: oklch(0.955 0.004 260);
+    --secondary-foreground: oklch(0.2 0.01 260);
+    --muted: oklch(0.955 0.004 260);
+    --muted-foreground: oklch(0.5 0.012 260);
+    --accent: oklch(0.95 0.012 270);
+    --accent-foreground: oklch(0.3 0.08 270);
+    --destructive: oklch(0.56 0.2 25);
+    --border: oklch(0.915 0.004 260);
+    --input: oklch(0.885 0.005 260);
+    --ring: oklch(0.51 0.19 270 / 55%);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0.0015 250);
+    --sidebar-foreground: oklch(0.2 0.01 260);
+    --sidebar-primary: oklch(0.51 0.19 270);
+    --sidebar-primary-foreground: oklch(0.99 0 0);
+    --sidebar-accent: oklch(0.94 0.006 260);
+    --sidebar-accent-foreground: oklch(0.2 0.01 260);
+    --sidebar-border: oklch(0.915 0.004 260);
+    --sidebar-ring: oklch(0.51 0.19 270 / 55%);
+    --chart-1: oklch(0.51 0.19 270);
+    --chart-2: oklch(0.6 0.13 160);
+    --chart-3: oklch(0.72 0.14 75);
+    --chart-4: oklch(0.56 0.2 25);
+    --chart-5: oklch(0.55 0.01 260);
+
+    --ok: oklch(0.53 0.13 155);
+    --ok-soft: oklch(0.96 0.035 155);
+    --warn: oklch(0.58 0.13 65);
+    --warn-soft: oklch(0.965 0.045 85);
+    --danger: oklch(0.55 0.2 25);
+    --danger-soft: oklch(0.965 0.022 25);
+    --info: oklch(0.51 0.19 270);
+    --info-soft: oklch(0.955 0.025 270);
+    --neutral-soft: oklch(0.945 0.004 260);
+    --shadow-panel: 0 1px 0 oklch(0 0 0 / 2.5%), 0 1px 2px oklch(0 0 0 / 4%);
+    --shadow-pop: 0 10px 28px -8px oklch(0 0 0 / 16%), 0 2px 6px oklch(0 0 0 / 5%);
+}
+
+.dark {
+    --background: oklch(0.155 0.004 260);
+    --canvas: oklch(0.155 0.004 260);
+    --foreground: oklch(0.93 0.004 260);
+    --card: oklch(0.19 0.005 260);
+    --card-foreground: oklch(0.93 0.004 260);
+    --popover: oklch(0.21 0.006 260);
+    --popover-foreground: oklch(0.93 0.004 260);
+    --primary: oklch(0.72 0.14 272);
+    --primary-foreground: oklch(0.16 0.02 270);
+    --secondary: oklch(0.24 0.006 260);
+    --secondary-foreground: oklch(0.93 0.004 260);
+    --muted: oklch(0.235 0.006 260);
+    --muted-foreground: oklch(0.68 0.01 260);
+    --accent: oklch(0.26 0.03 270);
+    --accent-foreground: oklch(0.9 0.04 272);
+    --destructive: oklch(0.68 0.17 25);
+    --border: oklch(1 0 0 / 8.5%);
+    --input: oklch(1 0 0 / 13%);
+    --ring: oklch(0.72 0.14 272 / 55%);
+    --sidebar: oklch(0.17 0.004 260);
+    --sidebar-foreground: oklch(0.93 0.004 260);
+    --sidebar-primary: oklch(0.72 0.14 272);
+    --sidebar-primary-foreground: oklch(0.16 0.02 270);
+    --sidebar-accent: oklch(0.235 0.006 260);
+    --sidebar-accent-foreground: oklch(0.93 0.004 260);
+    --sidebar-border: oklch(1 0 0 / 8.5%);
+    --sidebar-ring: oklch(0.72 0.14 272 / 55%);
+
+    --ok: oklch(0.76 0.14 155);
+    --ok-soft: oklch(0.76 0.14 155 / 13%);
+    --warn: oklch(0.82 0.13 80);
+    --warn-soft: oklch(0.82 0.13 80 / 13%);
+    --danger: oklch(0.72 0.17 25);
+    --danger-soft: oklch(0.72 0.17 25 / 14%);
+    --info: oklch(0.72 0.14 272);
+    --info-soft: oklch(0.72 0.14 272 / 15%);
+    --neutral-soft: oklch(1 0 0 / 6%);
+    --shadow-panel: 0 0 0 1px oklch(1 0 0 / 1.5%);
+    --shadow-pop: 0 12px 32px -8px oklch(0 0 0 / 60%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+    font-size: 14px;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 22%, transparent);
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rendered Markdown (Document page). Tuned for long-form reading: 68ch measure, generous leading for CJK. */
+@layer components {
+  .md-body {
+    max-width: 72ch;
+    line-height: 1.75;
+    font-size: 15px;
+    color: var(--foreground);
+  }
+  .md-body > * + * { margin-top: 0.9em; }
+  .md-body h1, .md-body h2, .md-body h3, .md-body h4 {
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    margin-top: 1.6em;
+  }
+  .md-body h1 { font-size: 1.6rem; }
+  .md-body h2 { font-size: 1.3rem; }
+  .md-body h3 { font-size: 1.1rem; }
+  .md-body a { color: var(--primary); text-underline-offset: 3px; }
+  .md-body a:hover { text-decoration: underline; }
+  .md-body ul { list-style: disc; padding-left: 1.4em; }
+  .md-body ol { list-style: decimal; padding-left: 1.4em; }
+  .md-body li + li { margin-top: 0.25em; }
+  .md-body blockquote { border-left: 2px solid var(--border); padding-left: 1em; color: var(--muted-foreground); }
+  .md-body code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--muted);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+  .md-body pre {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    line-height: 1.6;
+  }
+  .md-body pre code { background: none; padding: 0; font-size: inherit; }
+  .md-body img { max-width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border); }
+  .md-body table {
+    display: block;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 100%;
+  }
+  .md-body th, .md-body td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .md-body th { background: var(--muted); font-weight: 600; }
+  .md-body .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+  .md-body hr { border: 0; border-top: 1px solid var(--border); }
+
+  /* <!-- page: N --> becomes a thin rule with the page number in the gutter */
+  .md-body .page-anchor {
+    position: relative;
+    height: 1px;
+    margin: 2.2em 0 1.2em;
+    background: linear-gradient(to right, var(--border), transparent 85%);
+    scroll-margin-top: 16px;
+  }
+  .md-body .page-anchor::before {
+    content: "p." attr(data-page);
+    position: absolute;
+    top: -9px;
+    left: 0;
+    padding-right: 8px;
+    background: var(--card);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted-foreground);
+  }
+  .md-body > .page-anchor:first-child { margin-top: 0.4em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

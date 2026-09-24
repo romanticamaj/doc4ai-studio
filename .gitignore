@@ -15,3 +15,6 @@ out_batch/
 tests/fixtures/manual/
 out_p2/
 out_p3/
+web/test-results/
+web/playwright-report/
+web/e2e/.data/
