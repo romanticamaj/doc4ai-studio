@@ -137,6 +137,36 @@ test("a server-side write error with a code is not retried", async () => {
   expect(api.calls.some((c) => c[0] === "head")).toBe(false);
 });
 
+test("creating the upload is retried after a network error (Q1)", async () => {
+  const api = fakeApi([], { size: 10 });
+  let fails = 2;
+  const post = api.post;
+  api.post = async (p: string, b: any) => {
+    if (fails-- > 0) throw new TypeError("Failed to fetch");
+    return post(p, b);
+  };
+  await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any, retryDelayMs: 0 })).resolves.toBe("u1");
+});
+
+test("a lost response to a last chunk that failed its checksum reports sha_mismatch (M1)", async () => {
+  const api = fakeApi([{ status: 200 }, { status: 200 }, { status: 0, throw: true }], { size: 10 });
+  const head = api.head;
+  let n = 0;
+  api.head = async (p: string) => {
+    n += 1;
+    const h = await head(p);
+    h.set("Upload-Status", "failed");
+    h.set("Upload-Offset", "0");
+    return h;
+  };
+  await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any, retryDelayMs: 0 })).rejects.toMatchObject({
+    status: 422,
+    body: { error: "sha_mismatch" },
+  });
+  expect(n).toBe(1);
+  expect(sessionStorage.getItem("aidoc_upload:a.pdf:10:1")).toBeNull();
+});
+
 test("sha mismatch (422) throws and forgets the saved upload id", async () => {
   const api = fakeApi([{ status: 200 }, { status: 200 }, { status: 422, body: { error: "sha_mismatch" } }], { size: 10 });
   await expect(uploadFile(file(), { sha256: "x".repeat(64), chunkSize: 4, api: api as any })).rejects.toMatchObject({

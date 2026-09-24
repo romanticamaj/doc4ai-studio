@@ -97,7 +97,17 @@ export async function uploadFile(file: File, opts: UploadOptions): Promise<strin
 
   if (!id) {
     const sha256 = typeof opts.sha256 === "function" ? await opts.sha256() : opts.sha256;
-    const created = await api.post<UploadCreated>("/api/uploads", { filename: file.name, size: total, sha256 });
+    // like the chunks, creating the upload survives a short network drop (Q1)
+    let created: UploadCreated | null = null;
+    for (let tries = 1; !created; tries++) {
+      try {
+        created = await api.post<UploadCreated>("/api/uploads", { filename: file.name, size: total, sha256 });
+      } catch (e) {
+        if (isAbort(e) || e instanceof ApiError || tries > maxFailures) throw e instanceof TypeError ? new ApiError(0, { error: "network_error" }) : e;
+        await sleep(retryDelay * Math.min(tries, 5), opts.signal);
+        await waitOnline(opts.signal);
+      }
+    }
     id = created.upload_id;
     received = created.received ?? 0;
     store?.setItem(key, id);
@@ -157,16 +167,45 @@ export async function uploadFile(file: File, opts: UploadOptions): Promise<strin
       failures += 1;
       if (failures > maxFailures) throw new ApiError(0, { error: "network_error" });
       await sleep(retryDelay * Math.min(failures, 5), opts.signal);
+      await waitOnline(opts.signal);
+      let h: Headers;
       try {
-        const h = await api.head(`/api/uploads/${id}`);
-        return Number(h.get("Upload-Offset") ?? received) || 0;
+        h = await api.head(`/api/uploads/${id}`);
       } catch (e) {
         if (isAbort(e)) throw e;
         if (e instanceof ApiError && e.status === 404) {
           store?.removeItem(key);
           throw e;
         }
+        continue;
       }
+      // the last chunk may have landed and failed its checksum (or been used) while its response was lost (M1)
+      const status = h.get("Upload-Status");
+      if (status === "failed") {
+        store?.removeItem(key);
+        throw new ApiError(422, { error: "sha_mismatch" });
+      }
+      if (status === "consumed") {
+        store?.removeItem(key);
+        throw new ApiError(409, { error: "upload_not_receiving", status });
+      }
+      if (status === "complete") return total;
+      return Number(h.get("Upload-Offset") ?? received) || 0;
     }
   }
+}
+
+/** Resolves when the browser reports it is online (at once if it already is), or after 5 s. */
+function waitOnline(signal?: AbortSignal): Promise<void> {
+  if (typeof navigator === "undefined" || navigator.onLine !== false) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(t);
+      window.removeEventListener("online", done);
+      resolve();
+    };
+    const t = setTimeout(done, 5000);
+    window.addEventListener("online", done, { once: true });
+    signal?.addEventListener("abort", done, { once: true });
+  });
 }
