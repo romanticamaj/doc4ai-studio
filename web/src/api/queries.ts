@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   Document,
@@ -49,11 +49,11 @@ export function useJob(id: string | undefined) {
 }
 
 export function useDocuments(filters: DocFilters) {
-  return useQuery({
+  return useQuery<Document[], Error, Document[], ReturnType<typeof qk.documents>>({
     queryKey: qk.documents(filters),
     queryFn: ({ signal }) =>
       api.get<{ documents: Document[] }>(`/api/documents${qs(filters)}`, signal).then((r) => r.documents),
-    placeholderData: (prev: Document[] | undefined) => prev,
+    placeholderData: keepPreviousData,
   });
 }
 
