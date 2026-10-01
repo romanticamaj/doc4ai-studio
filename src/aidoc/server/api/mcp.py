@@ -135,7 +135,8 @@ def status(request: Request) -> dict:
             "calls_24h": ctx.store.count_mcp_calls(since=now - DAY),
             "errors_24h": ctx.store.count_mcp_calls(since=now - DAY, errors_only=True),
             "tokens_expiring_soon": expiring, "local_path_roots": list(cfg.mcp.local_path_roots),
-            "plaintext_http": True, "tokenizer": ctx.store.page_index_tokenizer()}
+            "plaintext_http": True, "tokenizer": ctx.store.page_index_tokenizer(),
+            "config_warnings": list(getattr(cfg, "warnings", []))}
 
 
 @router.get("/mcp/tokens")

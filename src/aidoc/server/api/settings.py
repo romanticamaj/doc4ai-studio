@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import copy
-import re
 from dataclasses import fields
-from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 
-from aidoc.config import _SECTIONS, config_path, save_config
+from aidoc.config import _SECTIONS, config_path, mcp_list_problem, save_config
 from aidoc.server.auth import ApiError
 
 router = APIRouter()
@@ -24,7 +22,6 @@ _MAX = {("server", "port"): 65535, ("limits", "upload_max_bytes"): 2 ** 40,     
 _INT_MAX = 10 ** 9                      # any other int (timeouts in seconds): ~30 years is already absurd
 
 # [mcp] (MCP spec §10, plan index §4 §7)
-_HOST_RE = re.compile(r"^[A-Za-z0-9.\-\[\]:*]+$")
 _MIN.update({("mcp", "default_token_ttl_days"): 1, ("mcp", "max_token_ttl_days"): 1, ("mcp", "rate_limit_per_min"): 1,
              ("mcp", "max_concurrent_jobs_per_token"): 1, ("mcp", "max_upload_mb"): 1,
              ("mcp", "response_token_budget"): 500, ("mcp", "call_log_max_rows"): 1000,
@@ -37,18 +34,9 @@ def _validate_mcp_lists(key: str, val) -> None:
     if not isinstance(val, list) or not all(isinstance(v, str) for v in val):
         raise ApiError(422, "invalid_settings", detail=f"mcp.{key} must be a list of strings")
     for v in val:
-        if key == "allowed_hosts":
-            if not v or not _HOST_RE.match(v):
-                raise ApiError(422, "invalid_settings", detail=f"mcp.allowed_hosts entry {v!r} is not a host[:port|:*]")
-        else:                                   # local_path_roots
-            s = v.replace("\\", "/")
-            if s.startswith("//") or v.startswith("\\\\?\\"):
-                raise ApiError(422, "invalid_settings", detail=f"mcp.local_path_roots entry {v!r} must be a local path")
-            p = Path(v)
-            if not p.is_absolute():
-                raise ApiError(422, "invalid_settings", detail=f"mcp.local_path_roots entry {v!r} must be absolute")
-            if not p.is_dir():
-                raise ApiError(422, "invalid_settings", detail=f"mcp.local_path_roots entry {v!r} does not exist")
+        problem = mcp_list_problem(key, v)              # the same rules aidoc.toml is checked with at load
+        if problem is not None:
+            raise ApiError(422, "invalid_settings", detail=problem[0])
 
 
 def masked(ctx) -> dict:

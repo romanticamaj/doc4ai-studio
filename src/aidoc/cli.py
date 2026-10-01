@@ -261,11 +261,17 @@ def cmd_serve(args) -> int:
     import time
 
     from aidoc import lockfile
-    from aidoc.config import load_config
+    from aidoc.config import ConfigError, load_config
     from aidoc.server.app import build_context, create_app
     from aidoc.server.auth import is_loopback
     from aidoc.server.maintenance import Maintenance
-    cfg = load_config()
+    try:
+        cfg = load_config()
+    except ConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 6
+    for w in cfg.warnings:                          # hand-edited aidoc.toml values that were ignored
+        print(f"warning: {w}", file=sys.stderr)
     host = args.host or cfg.server.host
     port = args.port or cfg.server.port
     token = args.token or os.environ.get("AIDOC_TOKEN") or cfg.server.token or None
