@@ -91,3 +91,50 @@ def test_rescan_reports_page_flags(client, ctx, tmp_root, fixtures):
     r = client.post("/api/documents/rescan?all=1").json()
     assert {"orphaned", "assessed", "page_map_incomplete", "page_quality"} <= set(r)
     assert r["assessed"] >= 1 and r["page_map_incomplete"] == 0
+
+
+def test_document_flags_and_page_summary(client, ctx, tmp_root, fixtures):
+    did = converted(client, ctx, tmp_root, fixtures)
+    d = client.get(f"/api/documents/{did}").json()["document"]
+    assert d["flags"] == [] and d["page_summary"]["coverage"] == 1.0 and d["page_summary"]["expected"] == 3
+    assert client.get("/api/documents?flag=page_map_incomplete").json()["documents"] == []
+    assert client.get("/api/documents?flag=bogus").status_code == 422
+
+
+def test_reconvert_rewrites_same_output_dir(client, ctx, tmp_root, fixtures):
+    did = converted(client, ctx, tmp_root, fixtures)
+    doc = client.get(f"/api/documents/{did}").json()["document"]
+    r = client.post("/api/documents/reconvert", json={"ids": [did]})
+    assert r.status_code == 201
+    ctx.queue.process_next()
+    tasks = client.get(f"/api/jobs/{r.json()['job']['id']}").json()["tasks"]
+    assert tasks[0]["status"] == "done" and tasks[0]["output_dir"] == doc["output_dir"]
+    assert "reconvert" not in tasks[0]["flags"]                                      # one-run flags cleared
+
+
+def test_reconvert_uses_work_copy_when_source_is_gone(client, ctx, tmp_root, fixtures):
+    did = converted(client, ctx, tmp_root, fixtures)
+    (tmp_root / "text.pdf").unlink()
+    r = client.post("/api/documents/reconvert", json={"ids": [did]})
+    assert r.status_code == 201
+    ctx.queue.process_next()
+    assert client.get(f"/api/jobs/{r.json()['job']['id']}").json()["tasks"][0]["status"] == "done"
+    d = client.get(f"/api/documents/{did}").json()
+    assert d["source_available"] is True                       # the new work copy serves the Document view
+
+
+def test_reconvert_errors_create_nothing(client, ctx, tmp_root, fixtures):
+    did = converted(client, ctx, tmp_root, fixtures)
+    n_jobs = len(client.get("/api/jobs").json()["jobs"])
+    assert client.post("/api/documents/reconvert", json={"ids": [did, "nope"]}).json()["error"] == "not_found"
+    assert client.post("/api/documents/reconvert", json={"ids": []}).status_code == 422
+    assert len(client.get("/api/jobs").json()["jobs"]) == n_jobs
+
+
+def test_reconvert_source_missing(client, ctx, tmp_root, fixtures):
+    import shutil as _sh
+    did = converted(client, ctx, tmp_root, fixtures)
+    (tmp_root / "text.pdf").unlink()
+    _sh.rmtree(ctx.store.get_document(did)["work_copy_path"])
+    r = client.post("/api/documents/reconvert", json={"ids": [did]})
+    assert r.status_code == 410 and r.json()["error"] == "source_missing" and r.json()["id"] == did

@@ -478,7 +478,9 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     work_dir, _ = stage_paths(task_id)
     ctx.work_dir = work_dir
     # an upload task's source_path is a display name (never absolute): its file already lives in the work dir
-    preferred = Path(task["work_path"]) if task.get("work_path") and not src.is_absolute() else None
+    # a reconverted document whose original is gone: its retained work copy was staged into this task's work dir
+    reconvert = bool((task.get("flags") or {}).get("reconvert"))
+    preferred = Path(task["work_path"]) if task.get("work_path") and (reconvert or not src.is_absolute()) else None
     try:
         work_src = ctx.work_src = stage_source(src, task["sha256"], work_dir, preferred=preferred)
     except SourceError as e:

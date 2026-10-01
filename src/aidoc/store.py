@@ -205,7 +205,14 @@ class Store:
         return st
 
     # ---- tasks
-    def create_task(self, job_id, source_path, sha256, size, mtime, lang, output_dir) -> tuple[str, bool]:
+    def create_task(self, job_id, source_path, sha256, size, mtime, lang, output_dir,
+                    work_path: str | None = None) -> tuple[str, bool]:
+        tid, reused = self._create_task(job_id, source_path, sha256, size, mtime, lang, output_dir)
+        if work_path is not None:
+            self.update_task(tid, work_path=str(work_path))
+        return tid, reused
+
+    def _create_task(self, job_id, source_path, sha256, size, mtime, lang, output_dir) -> tuple[str, bool]:
         source_path, output_dir = str(source_path), str(output_dir)
         now = time.time()
         old = self._q1("SELECT id, status FROM tasks WHERE sha256=? AND output_dir=?", (sha256, output_dir))

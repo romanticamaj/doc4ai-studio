@@ -153,3 +153,14 @@ def test_update_document_quality(tmp_path):
     store.update_document_quality(did, {"score": 0.5, "level": "warn", "reasons": [], "page_check": 1}, "warn")
     d = store.get_document(did)
     assert d["status"] == "warn" and d["quality"]["page_check"] == 1 and d["quality"]["level"] == "warn"
+
+
+def test_create_task_stores_work_path(tmp_path):
+    from pathlib import Path
+
+    from aidoc.models import ConvertOptions
+    from aidoc.store import Store
+    store = Store(tmp_path / "a.db")
+    job = store.create_job(ConvertOptions(output_dir=Path("out")), "web")
+    tid, _ = store.create_task(job, "a.pdf", "s" * 64, 1, 1.0, "cht", "out/a", work_path="w/src.pdf")
+    assert store.get_task(tid)["work_path"] == "w/src.pdf"

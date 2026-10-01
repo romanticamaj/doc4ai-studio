@@ -3,18 +3,23 @@ from __future__ import annotations
 
 import mimetypes
 import os
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field
 
 from aidoc import fsops
+from aidoc.models import ConvertOptions
+from aidoc.names import file_sha256
 from aidoc.output import read_sidecar, sidecar_path
 from aidoc.server.auth import ApiError
-from aidoc.server.serialize import serialize_document
+from aidoc.server.serialize import serialize_document, serialize_job
 
 router = APIRouter()
 
@@ -50,9 +55,10 @@ def output_available(doc: dict) -> bool:
 
 @router.get("/documents")
 def list_documents(request: Request, status: str | None = None, engine: str | None = None,
-                   q: str | None = None) -> dict:
+                   q: str | None = None,
+                   flag: Literal["page_map_incomplete", "page_quality", "unassessed"] | None = None) -> dict:
     store = request.app.state.ctx.store
-    docs = store.list_documents(status=status or None, engine=engine or None, q=q or None)
+    docs = store.list_documents(status=status or None, engine=engine or None, q=q or None, flag=flag)
     return {"documents": [serialize_document(d) for d in docs]}
 
 
@@ -203,3 +209,89 @@ def rescan(request: Request, all: int = 0) -> dict:
     counts = reassess_all(store, force=bool(all), log=lambda line: None)
     ctx.bus.publish("system.updated", None, {"documents_rescanned": True, "orphaned": n, **counts})
     return {"orphaned": n, **counts}
+
+
+class ReconvertIn(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=500)
+
+
+def _reconvert_source(doc: dict) -> tuple[Path, bool] | None:
+    """(file, is_work_copy): the original when it is an absolute path that still has the document's content,
+    else the retained work copy with that content, else None."""
+    src = Path(doc["source_path"])
+    if src.is_absolute() and src.is_file():
+        try:
+            if file_sha256(src) == doc["sha256"]:
+                return src, False
+        except OSError:
+            pass
+    wc = doc.get("work_copy_path")
+    if wc and Path(wc).is_dir():
+        for f in sorted(Path(wc).glob("src.*")):
+            try:
+                if f.is_file() and file_sha256(f) == doc["sha256"]:
+                    return f, True
+            except OSError:
+                continue
+    return None
+
+
+def _link_or_copy(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(f".{dst.name}.tmp")
+    tmp.unlink(missing_ok=True)
+    try:
+        os.link(src, tmp)                    # the work copy is never written to: a hardlink is safe and instant
+    except OSError:
+        shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+
+
+@router.post("/documents/reconvert", status_code=201)
+def reconvert(body: ReconvertIn, request: Request) -> dict:
+    """One job, one forced auto-routed task per document, written back to the document's own output dir
+    (spec 2026-10-01 §9.2). Every id is checked before anything is created."""
+    ctx = request.app.state.ctx
+    store = ctx.store
+    ids = list(dict.fromkeys(body.ids))
+    plan = []
+    for doc_id in ids:
+        doc = store.get_document(doc_id)
+        if doc is None:
+            raise ApiError(404, "not_found", id=doc_id)
+        found = _reconvert_source(doc)
+        if found is None:
+            raise ApiError(410, "source_missing", id=doc_id)
+        busy = store.busy_task_id(doc["sha256"], doc["output_dir"])
+        if busy is None:
+            live = [t for t in store.list_tasks() if t["sha256"] == doc["sha256"] and t["output_dir"] == doc["output_dir"]
+                    and t["status"] in ("queued", "probing", "converting", "checking")]
+            busy = live[0]["id"] if live else None
+        if busy is not None:
+            raise ApiError(409, "already_converting", id=doc_id, task_id=busy)
+        plan.append((doc, *found))
+    cfg = ctx.config
+    out_root = Path(plan[0][0]["output_dir"]).parent
+    opts = ConvertOptions(output_dir=out_root, engine=None, lang=plan[0][0].get("lang") or cfg.general.lang, force=True,
+                          allow_online_audio=bool(cfg.general.enable_audio), mineru_tier=cfg.engines.mineru_tier,
+                          docling_ocr=cfg.engines.docling_ocr)
+    job_id = store.create_job(opts, "web")
+    task_ids = []
+    for doc, src, is_work_copy in plan:
+        st = src.stat()
+        tid, _ = store.create_task(job_id, doc["source_path"], doc["sha256"], st.st_size, st.st_mtime,
+                                   doc.get("lang") or opts.lang, doc["output_dir"])
+        work_path = None
+        if is_work_copy:                     # stage it into the new task's work dir, like an upload
+            work_path = cfg.data_dir / "work" / tid / f"src{src.suffix.lower()}"
+            _link_or_copy(src, work_path)
+            store.update_task(tid, work_path=str(work_path))
+        store.set_task_flags(tid, {"force": True, "auto_engine": True, "reconvert": True})
+        task_ids.append(tid)
+    store.refresh_job_status(job_id)
+    for tid in task_ids:
+        ctx.queue.publish_task(tid)
+    ctx.queue.publish_job(job_id)
+    ctx.queue.publish_queue()
+    ctx.queue.wake()
+    return {"job": serialize_job(store, store.get_job(job_id))}

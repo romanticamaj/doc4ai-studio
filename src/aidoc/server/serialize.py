@@ -46,7 +46,19 @@ def serialize_job(store, job: dict) -> dict:
     return out
 
 
+def page_summary(quality: dict | None) -> dict | None:
+    """{expected, found, coverage, flagged, unrepaired} from a page-aware quality, else None (spec 2026-10-01 §9.2)."""
+    pm = (quality or {}).get("page_map")
+    if not pm:
+        return None
+    return {"expected": pm.get("expected"), "found": pm.get("found"), "coverage": pm.get("coverage"),
+            "flagged": quality.get("pages_flagged", 0), "unrepaired": quality.get("pages_unrepaired", 0)}
+
+
 def serialize_document(doc: dict) -> dict:
+    from aidoc.reassess import doc_flags
     out = {k: v for k, v in doc.items() if k not in ("work_copy_path", "work_copy_expires_at")}
     out["stem"] = Path(doc["output_dir"]).name
+    out["flags"] = doc_flags(doc)
+    out["page_summary"] = page_summary(doc.get("quality"))
     return out
