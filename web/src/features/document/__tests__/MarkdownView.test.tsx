@@ -55,3 +55,26 @@ test("page markers, math and HTML tables render; scripts are stripped", () => {
   expect(screen.getByText("cell")).toBeInTheDocument();
   expect(container.querySelector("script")).toBeNull();
 });
+
+test("a large document renders its first block at once, not the whole text, and publishes page anchors", async () => {
+  const { createRef } = await import("react");
+  const { ANCHORS_EVENT } = await import("../useScrollSync");
+  const pages = Array.from({ length: 60 }, (_, i) => `<!-- page: ${i + 1} -->\n\n# Page ${i + 1}\n\n${"word ".repeat(400)}\n\n![f](assets/p${i}.png)`);
+  const md = pages.join("\n\n");
+  const ref = createRef<HTMLDivElement>();
+  let published = 0;
+  const { container } = render(
+    <div ref={(el) => {
+      (ref as { current: HTMLDivElement | null }).current = el;
+      el?.addEventListener(ANCHORS_EVENT, () => published++);
+    }}>
+      <MarkdownView docId="d1" markdown={md} scrollRef={ref} />
+    </div>,
+  );
+  expect(screen.getByRole("heading", { name: "Page 1" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Page 60" })).toBeNull();
+  expect(container.querySelector("img")!.getAttribute("decoding")).toBe("async");
+  expect(published).toBeGreaterThan(0);
+  const source = (ref.current as unknown as { anchorSource: () => { page: number }[] }).anchorSource;
+  expect(source().map((a) => a.page)).toEqual(Array.from({ length: 60 }, (_, i) => i + 1));
+});

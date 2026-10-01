@@ -7,10 +7,11 @@ import { defineConfig, type Plugin } from "vite";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pdfjsDir = path.join(here, "node_modules", "pdfjs-dist");
-const PDFJS_ASSETS = ["standard_fonts", "cmaps"];
+const PDFJS_ASSETS = ["standard_fonts", "cmaps", "wasm", "iccs"];
 
-/** pdf.js needs its standard fonts and CJK character maps at runtime: serve them at /pdfjs/* (dev) and copy them
- *  into dist/pdfjs/ (build), so the app works offline and pdf.js stops warning about standardFontDataUrl. */
+/** pdf.js needs its standard fonts, CJK character maps, image decoders (JBIG2 / JPEG 2000 wasm) and CMYK ICC
+ *  profiles at runtime: serve them at /pdfjs/* (dev) and copy them into dist/pdfjs/ (build), so the app works
+ *  offline and pdf.js stops warning about standardFontDataUrl / wasmUrl / iccUrl. */
 function pdfjsAssets(): Plugin {
   let outDir = "dist";
   return {
@@ -20,7 +21,7 @@ function pdfjsAssets(): Plugin {
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const m = /^\/pdfjs\/(standard_fonts|cmaps)\/([A-Za-z0-9._-]+)$/.exec((req.url ?? "").split("?")[0]);
+        const m = /^\/pdfjs\/(standard_fonts|cmaps|wasm|iccs)\/([A-Za-z0-9._-]+)$/.exec((req.url ?? "").split("?")[0]);
         if (!m) return next();
         const file = path.join(pdfjsDir, m[1], m[2]);
         if (!fs.existsSync(file)) return next();

@@ -12,6 +12,7 @@ import { ApiError, withToken } from "@/api/client";
 import type { DocumentDetail } from "@/api/types";
 import { MarkdownView } from "@/features/document/MarkdownView";
 import { PdfViewer } from "@/features/document/PdfViewer";
+import { RawSource } from "@/features/document/RawSource";
 import { useScrollSync } from "@/features/document/useScrollSync";
 import { reasonText } from "@/features/jobs/buildTimeline";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -42,6 +43,7 @@ export default function DocumentPage() {
 
   const left = useRef<HTMLDivElement>(null);
   const right = useRef<HTMLDivElement>(null);
+  const raw = useRef<HTMLDivElement>(null);
   const [pdfPages, setPdfPages] = useState(0);
   const { enabled, page } = useScrollSync(left, right, {
     active: sync && tab === "markdown" && wide,
@@ -174,10 +176,10 @@ export default function DocumentPage() {
         ) : (
           <>
             <TabsContent value="markdown" className="relative min-h-0 flex-1 overflow-auto px-6 py-5 sm:px-8" ref={right}>
-              <MarkdownView markdown={md.data} docId={doc.id} />
+              <MarkdownView markdown={md.data} docId={doc.id} scrollRef={right} />
             </TabsContent>
-            <TabsContent value="source" className="min-h-0 flex-1 overflow-auto">
-              <pre className="min-h-full bg-muted/30 px-5 py-4 font-mono text-[12px] leading-[1.65] whitespace-pre-wrap break-words">{md.data}</pre>
+            <TabsContent value="source" className="relative min-h-0 flex-1 overflow-auto" ref={raw}>
+              <RawSource text={md.data} scrollRef={raw} />
             </TabsContent>
             <TabsContent value="json" className="min-h-0 flex-1 overflow-auto">
               <pre className="min-h-full bg-muted/30 px-5 py-4 font-mono text-[12px] leading-[1.65]">{JSON.stringify(d.sidecar ?? doc, null, 2)}</pre>

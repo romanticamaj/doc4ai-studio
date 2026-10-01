@@ -36,6 +36,57 @@ export function scrollTopFor(anchors: Anchor[], page: number, fraction: number, 
   return start + fraction * Math.max(0, end - start);
 }
 
+/** Anchors sorted by position with O(log n) lookups (binary search) and O(1) page → index; built once per layout. */
+export class AnchorTable {
+  readonly anchors: Anchor[];
+  private tops: Float64Array;
+  private byPage = new Map<number, number>();
+
+  readonly scrollHeight: number;
+
+  constructor(anchors: Anchor[], scrollHeight: number) {
+    this.scrollHeight = scrollHeight;
+    this.anchors = [...anchors].sort((a, b) => a.top - b.top);
+    this.tops = Float64Array.from(this.anchors, (a) => a.top);
+    this.anchors.forEach((a, i) => {
+      if (!this.byPage.has(a.page)) this.byPage.set(a.page, i);
+    });
+  }
+
+  get size() {
+    return this.anchors.length;
+  }
+
+  private indexAt(y: number): number {
+    let lo = 0;
+    let hi = this.tops.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (this.tops[mid] <= y) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  }
+
+  locate(scrollTop: number): { page: number; fraction: number } | null {
+    if (!this.anchors.length) return null;
+    const i = this.indexAt(scrollTop + 8);
+    const start = this.tops[i];
+    const end = i + 1 < this.tops.length ? this.tops[i + 1] : this.scrollHeight;
+    const span = end - start;
+    const fraction = span > 0 ? Math.max(0, Math.min(1, (scrollTop - start) / span)) : 0;
+    return { page: this.anchors[i].page, fraction };
+  }
+
+  scrollTopFor(page: number, fraction: number): number | null {
+    const i = this.byPage.get(page);
+    if (i == null) return null;
+    const start = this.tops[i];
+    const end = i + 1 < this.tops.length ? this.tops[i + 1] : this.scrollHeight;
+    return start + fraction * Math.max(0, end - start);
+  }
+}
+
 /** `[data-page]` elements inside a scroll container, with their offset from the container's content top. */
 export function measure(container: HTMLElement): Anchor[] {
   const base = container.getBoundingClientRect().top - container.scrollTop;
@@ -49,9 +100,30 @@ export function measure(container: HTMLElement): Anchor[] {
 }
 
 /**
- * Keeps two scroll containers on the same page. Each side marks its pages with `[data-page]`. Scrolling one side
- * moves the other to the same page and the same fraction of that page. The side that was moved programmatically
- * ignores its own scroll events for 150 ms, so the two panes never echo each other.
+ * A virtualized pane cannot be measured from the DOM (most pages are not mounted), so it publishes its anchors:
+ * it sets `anchorSource` on its scroll container and dispatches ANCHORS_EVENT on it whenever its layout changed.
+ * Panes without a source (e.g. the image preview) are measured from their `[data-page]` elements instead.
+ */
+export const ANCHORS_EVENT = "aidoc:anchors";
+export type AnchorSource = () => Anchor[];
+type WithSource = HTMLElement & { anchorSource?: AnchorSource };
+
+export function publishAnchors(el: HTMLElement | null, source: AnchorSource | undefined) {
+  if (!el) return;
+  (el as WithSource).anchorSource = source;
+  el.dispatchEvent(new Event(ANCHORS_EVENT));
+}
+
+function anchorsOf(el: HTMLElement): Anchor[] {
+  const src = (el as WithSource).anchorSource;
+  return src ? src() : measure(el);
+}
+
+/**
+ * Keeps two scroll containers on the same page. Scrolling one side moves the other to the same page and the same
+ * fraction of that page. The side that was moved programmatically ignores its own scroll events for 150 ms, so the
+ * two panes never echo each other. Anchor tables are cached and rebuilt only when a pane reports a layout change
+ * (ANCHORS_EVENT) or is resized; a scroll frame does two binary searches and no layout reads.
  * `enabled` is false when either side has no page anchors (e.g. a .docx result without page markers).
  */
 export function useScrollSync(
@@ -63,12 +135,50 @@ export function useScrollSync(
   const [page, setPage] = useState<number | null>(null);
   const lock = useRef<{ side: "left" | "right"; until: number } | null>(null);
   const frame = useRef(0);
+  const tables = useRef<{ left: AnchorTable | null; right: AnchorTable | null }>({ left: null, right: null });
+  // the side the user scrolled last: when a pane's layout settles (a block rendered, a page got its real size)
+  // shortly after, the other side is lined up again
+  const leader = useRef<{ side: "left" | "right"; at: number } | null>(null);
+  const active = useRef(opts.active);
+  active.current = opts.active;
+
+  const table = useCallback(
+    (side: "left" | "right"): AnchorTable | null => {
+      const el = side === "left" ? left.current : right.current;
+      if (!el) return null;
+      let t = tables.current[side];
+      if (!t || t.scrollHeight !== el.scrollHeight) {
+        t = new AnchorTable(anchorsOf(el), el.scrollHeight);
+        tables.current[side] = t;
+      }
+      return t;
+    },
+    [left, right],
+  );
+
+  /** Moves the other pane to where `from` is; returns the page `from` is on. */
+  const follow = useCallback(
+    (from: "left" | "right") => {
+      const src = from === "left" ? left.current : right.current;
+      const dst = from === "left" ? right.current : left.current;
+      if (!src || !dst) return null;
+      const at = table(from)?.locate(src.scrollTop) ?? null;
+      if (!active.current || !at) return at;
+      const top = table(from === "left" ? "right" : "left")?.scrollTopFor(at.page, at.fraction) ?? null;
+      if (top == null || Math.abs(dst.scrollTop - top) < 2) return at;
+      lock.current = { side: from === "left" ? "right" : "left", until: performance.now() + 150 };
+      dst.scrollTop = top;
+      return at;
+    },
+    [left, right, table],
+  );
 
   const recheck = useCallback(() => {
-    const l = left.current;
-    const r = right.current;
-    setEnabled(!!l && !!r && measure(l).length > 0 && measure(r).length > 0);
-  }, [left, right]);
+    tables.current = { left: null, right: null };
+    const l = table("left");
+    const r = table("right");
+    setEnabled(!!l && !!r && l.size > 0 && r.size > 0);
+  }, [table]);
 
   useEffect(() => {
     recheck();
@@ -77,24 +187,53 @@ export function useScrollSync(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recheck, ...(opts.deps ?? [])]);
 
+  // invalidate the cached tables when a pane's layout changes; recheck `enabled` at most once a frame
+  useEffect(() => {
+    const els = [left.current, right.current].filter((e): e is HTMLElement => !!e);
+    if (!els.length) return;
+    let raf = 0;
+    const invalidate = (side?: "left" | "right") => {
+      if (side) tables.current[side] = null;
+      else tables.current = { left: null, right: null };
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const l = table("left");
+        const r = table("right");
+        setEnabled(!!l && !!r && l.size > 0 && r.size > 0);
+        const lead = leader.current;
+        if (lead && performance.now() - lead.at < 1500) follow(lead.side);
+      });
+    };
+    const onL = () => invalidate("left");
+    const onR = () => invalidate("right");
+    left.current?.addEventListener(ANCHORS_EVENT, onL);
+    right.current?.addEventListener(ANCHORS_EVENT, onR);
+    const ro = new ResizeObserver(() => invalidate());
+    for (const el of els) {
+      ro.observe(el);
+      if (!(el as WithSource).anchorSource && el.firstElementChild) ro.observe(el.firstElementChild);
+    }
+    return () => {
+      left.current?.removeEventListener(ANCHORS_EVENT, onL);
+      right.current?.removeEventListener(ANCHORS_EVENT, onR);
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [left, right, table, follow, ...(opts.deps ?? [])]);
+
   useEffect(() => {
     const l = left.current;
     const r = right.current;
     if (!l || !r) return;
     const onScroll = (from: "left" | "right") => () => {
-      const src = from === "left" ? l : r;
-      const dst = from === "left" ? r : l;
       const lk = lock.current;
       if (lk && lk.side === from && performance.now() < lk.until) return; // our own programmatic scroll
+      leader.current = { side: from, at: performance.now() };
       cancelAnimationFrame(frame.current);
       frame.current = requestAnimationFrame(() => {
-        const at = locate(measure(src), src.scrollTop, src.scrollHeight);
+        const at = follow(from);
         setPage(at?.page ?? null);
-        if (!opts.active || !at) return;
-        const top = scrollTopFor(measure(dst), at.page, at.fraction, dst.scrollHeight);
-        if (top == null || Math.abs(dst.scrollTop - top) < 2) return;
-        lock.current = { side: from === "left" ? "right" : "left", until: performance.now() + 150 };
-        dst.scrollTop = top;
       });
     };
     const onL = onScroll("left");
@@ -107,7 +246,7 @@ export function useScrollSync(
       cancelAnimationFrame(frame.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left, right, opts.active, enabled, ...(opts.deps ?? [])]);
+  }, [left, right, follow, opts.active, enabled, ...(opts.deps ?? [])]);
 
   return { enabled, page, recheck };
 }

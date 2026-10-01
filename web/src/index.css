@@ -268,6 +268,13 @@
     color: var(--muted-foreground);
   }
   .md-body > .page-anchor:first-child { margin-top: 0.4em; }
+
+  /* large documents: the body is a column of blocks (or placeholders), each its own formatting context so its
+     height is exactly what the virtualizer measures */
+  .md-blocks > .md-block { display: flow-root; position: relative; margin: 0; }
+  .md-blocks > .md-block + .md-block { padding-top: 0.9em; }
+  .md-blocks .md-block > * + * { margin-top: 0.9em; }
+  .md-blocks .md-block:first-child > .page-anchor:first-child { margin-top: 0.4em; }
 }
 
 @media (prefers-reduced-motion: reduce) {
