@@ -42,3 +42,32 @@ def test_probe_and_quality_json():
     assert p.to_json()["text_ratio"] == 1.0
     q = QualityResult(score=0.9, level="ok", reasons=[])
     assert q.to_json() == {"score": 0.9, "level": "ok", "reasons": [], "metrics": {}}
+
+
+from aidoc.models import DocStatus, RawResult  # noqa: E402
+
+
+def test_warn_level_and_doc_status():
+    assert DocStatus.warn.value == "warn"
+    q = QualityResult(score=0.9, level="warn", reasons=[])
+    assert "page_map" not in q.to_json()                      # legacy shape when page_check is None
+
+
+def test_quality_page_fields_serialise():
+    q = QualityResult(score=1.0, level="ok", reasons=[], page_check=1,
+                      page_map={"expected": 3, "found": 3, "coverage": 1.0},
+                      pages=[{"page": 2, "reasons": ["broken_text_layer"], "repaired_by": "docling:pypdfium_full_page_ocr"},
+                             {"page": 3, "reasons": ["garbage"]}], pages_flagged=2)
+    j = q.to_json()
+    assert j["page_check"] == 1 and j["page_map"]["coverage"] == 1.0
+    assert j["pages_flagged"] == 2 and j["pages_unrepaired"] == 1
+
+
+def test_probe_compacts_broken_font_pages():
+    p = ProbeResult(kind="pdf", ext=".pdf", size=1, pages=3, broken_fonts=["ComicSansMS"], broken_font_pages=[1, 3])
+    j = p.to_json()
+    assert j["broken_fonts"] == ["ComicSansMS"] and j["broken_font_pages_count"] == 2 and "broken_font_pages" not in j
+
+
+def test_raw_result_page_map_method_default():
+    assert RawResult(markdown="", image_paths=[], raw_dir=Path("."), has_page_markers=False).page_map_method is None

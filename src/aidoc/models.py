@@ -48,6 +48,7 @@ class ErrorKind(str, Enum):
 
 class DocStatus(str, Enum):
     ok = "ok"
+    warn = "warn"
     low = "low"
     orphaned = "orphaned"
 
@@ -93,9 +94,13 @@ class ProbeResult:
     has_table_lines: bool = False
     blank_pages: list[int] = field(default_factory=list)   # 1-based
     error: str | None = None           # "corrupt" | "encrypted" | None
+    broken_fonts: list[str] = field(default_factory=list)        # fonts without ToUnicode (spec 2026-10-01 §5.5)
+    broken_font_pages: list[int] = field(default_factory=list)   # 1-based, every page scanned
 
     def to_json(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["broken_font_pages_count"] = len(d.pop("broken_font_pages"))
+        return d
 
 
 @dataclass
@@ -129,6 +134,7 @@ class RawResult:
     page_count: int | None = None
     first_table: TableEdge | None = None
     last_table: TableEdge | None = None
+    page_map_method: str | None = None     # how the runner produced page markers (index A20)
 
 
 @dataclass
@@ -140,12 +146,25 @@ class NormalizedResult:
 @dataclass
 class QualityResult:
     score: float                       # 0..1
-    level: Literal["ok", "low"]
-    reasons: list[str]                 # "chars_per_page", "garbage_ratio", "missing_table"
+    level: Literal["ok", "warn", "low"]
+    reasons: list[str]                 # "chars_per_page", "garbage_ratio", "missing_table", "page_map_incomplete",
+                                       # "page_map_misaligned", "pages_flagged"
     metrics: dict = field(default_factory=dict)
+    page_check: int | None = None      # per-page assessment version (None = legacy result)
+    page_map: dict | None = None       # PDFs only
+    pages: list[dict] = field(default_factory=list)   # flagged pages: {page, reasons, metrics?, repaired_by?}
+    pages_flagged: int = 0             # pages flagged before repair
+
+    @property
+    def pages_unrepaired(self) -> int:
+        return sum(1 for p in self.pages if not p.get("repaired_by"))
 
     def to_json(self) -> dict:
-        return asdict(self)
+        d = {"score": self.score, "level": self.level, "reasons": list(self.reasons), "metrics": dict(self.metrics)}
+        if self.page_check is not None:
+            d.update(page_check=self.page_check, page_map=self.page_map, pages=[dict(p) for p in self.pages],
+                     pages_flagged=self.pages_flagged, pages_unrepaired=self.pages_unrepaired)
+        return d
 
 
 @dataclass
