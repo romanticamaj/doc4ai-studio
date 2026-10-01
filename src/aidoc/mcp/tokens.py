@@ -65,22 +65,58 @@ def token_hash(secret: bytes, token: str) -> str:
     return hmac.new(secret, token.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+class SecretKeyError(RuntimeError):
+    """`data/secret.key` exists but is not a 32-byte key. Never repaired automatically: a new key would silently
+    invalidate every issued token (only their HMACs are stored)."""
+
+
+SECRET_LEN = 32
+
+
+def _damaged(p: Path, n: int) -> SecretKeyError:
+    return SecretKeyError(
+        f"{p} has {n} bytes; a Doc4AI Studio secret key is exactly {SECRET_LEN} bytes. Refusing to start: replacing it "
+        f"would silently invalidate every MCP token. To recover, restore the original file from a backup. To start over "
+        f"instead, delete (or move away) {p}; a new key is created on the next start and every existing MCP token stops "
+        f"working - re-issue them on the MCP page (Tokens) and update your clients.")
+
+
+def _read_secret(p: Path) -> bytes:
+    data = p.read_bytes()
+    if len(data) != SECRET_LEN:
+        raise _damaged(p, len(data))
+    return data
+
+
 def load_or_create_secret(data_dir: Path) -> bytes:
-    """`data/secret.key`: 32 random bytes created on first use; readable only by the owner where the OS allows."""
+    """`data/secret.key`: 32 random bytes created on first use; readable only by the owner where the OS allows.
+    An existing file is never replaced: a wrong length raises `SecretKeyError` with recovery steps, and a key that
+    another process created meanwhile wins over ours (link/rename refuse to overwrite)."""
     p = Path(data_dir) / SECRET_FILE
-    if p.is_file():
-        data = p.read_bytes()
-        if len(data) == 32:
-            return data
+    if p.exists():
+        return _read_secret(p)
     p.parent.mkdir(parents=True, exist_ok=True)
-    data = secrets.token_bytes(32)
-    tmp = p.with_name(f".{p.name}.tmp")
+    data = secrets.token_bytes(SECRET_LEN)
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
     try:
         os.write(fd, data)
     finally:
         os.close(fd)
-    os.replace(tmp, p)
+    try:
+        try:
+            os.link(tmp, p)                 # atomic and never overwrites (FileExistsError)
+        except FileExistsError:
+            return _read_secret(p)
+        except OSError:                     # no hard links here: rename, which also refuses on Windows
+            if p.exists():
+                return _read_secret(p)
+            os.rename(tmp, p)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
     try:
         os.chmod(p, 0o600)
     except OSError:

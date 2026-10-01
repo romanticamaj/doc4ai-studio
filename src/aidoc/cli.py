@@ -273,6 +273,12 @@ def cmd_serve(args) -> int:
         print(f"refusing to bind {host} without --token", file=sys.stderr)
         return 2
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    from aidoc.mcp.tokens import SecretKeyError, load_or_create_secret
+    try:
+        load_or_create_secret(cfg.data_dir)         # MCP token HMAC key: fail loudly, never replace a damaged one
+    except SecretKeyError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 5
     from aidoc.clilock import active_cli_runs
     n = active_cli_runs(cfg.data_dir)
     if n:                                    # spec §8.1: one queue owner

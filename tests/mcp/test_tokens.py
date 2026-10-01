@@ -65,3 +65,34 @@ def test_secret_created_once_and_private(tmp_path):
     assert p.read_bytes() == s1
     if sys.platform != "win32":
         assert stat.S_IMODE(os.stat(p).st_mode) == 0o600
+
+
+def test_secret_of_wrong_length_fails_loudly_and_is_never_replaced(tmp_path):
+    import pytest
+    p = tmp_path / "secret.key"
+    p.write_bytes(b"x" * 31)
+    with pytest.raises(T.SecretKeyError) as e:
+        T.load_or_create_secret(tmp_path)
+    msg = str(e.value)
+    assert "31 bytes" in msg and "32" in msg and str(p) in msg
+    assert "backup" in msg and "re-issue" in msg                    # recovery instructions
+    assert p.read_bytes() == b"x" * 31                              # untouched
+    p.write_bytes(b"")
+    with pytest.raises(T.SecretKeyError):
+        T.load_or_create_secret(tmp_path)
+    assert p.read_bytes() == b""
+
+
+def test_secret_creation_never_overwrites_a_file_created_meanwhile(tmp_path, monkeypatch):
+    """Two processes starting at once: the loser reads the winner's key instead of replacing it."""
+    p = tmp_path / "secret.key"
+    real_write = T.os.write
+
+    def racing_write(fd, data):
+        if not p.exists():
+            p.write_bytes(b"w" * 32)                                 # the other process wins the race
+        return real_write(fd, data)
+    monkeypatch.setattr(T.os, "write", racing_write)
+    assert T.load_or_create_secret(tmp_path) == b"w" * 32
+    assert p.read_bytes() == b"w" * 32
+    assert not list(tmp_path.glob(".secret.key*"))                  # no temp file left behind

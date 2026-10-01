@@ -214,3 +214,13 @@ def test_maintenance_prunes_mcp_calls(ctx):
     res = Maintenance(ctx).run_once()
     assert res["mcp_calls_pruned"] == 6                      # 5 by age + 1 by the row cap
     assert ctx.store.count_mcp_calls(since=0) == 2
+
+
+def test_serve_refuses_a_damaged_secret_key(tmp_root, monkeypatch, capsys):
+    (paths.data_dir() / "secret.key").write_bytes(b"short")
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    assert main(["serve"]) == 5
+    err = capsys.readouterr().err
+    assert "secret.key" in err and "5 bytes" in err and "re-issue" in err
+    assert (paths.data_dir() / "secret.key").read_bytes() == b"short"
+    assert not (paths.data_dir() / "aidoc.lock").exists()
