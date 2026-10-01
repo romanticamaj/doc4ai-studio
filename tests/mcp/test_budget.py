@@ -6,7 +6,7 @@ from aidoc.mcp import budget as B
 def test_estimate_tokens_methods(monkeypatch):
     n, method = B.estimate_tokens("hello world " * 10)
     assert method in ("tiktoken", "bytes") and n > 0
-    import aidoc.chunk as chunk
+    from aidoc import chunk
 
     def boom(text):
         raise chunk.TokenizerUnavailable("offline")
@@ -18,7 +18,7 @@ def test_estimate_tokens_methods(monkeypatch):
 def test_cut_to_budget_prefers_paragraph_boundary():
     text = "para one " * 30 + "\n\n" + "para two " * 30 + "\n\n" + "para three " * 30
     kept, nxt = B.cut_to_budget(text, max_tokens=120)
-    assert kept.endswith("para two") or kept.endswith("para one")
+    assert kept.endswith(("para two", "para one"))
     assert nxt is not None and text[nxt:].lstrip("\n").startswith("para")
     assert B.estimate_tokens(kept)[0] <= 120
     rest, nxt2 = B.cut_to_budget(text, max_tokens=10_000, start=nxt)
