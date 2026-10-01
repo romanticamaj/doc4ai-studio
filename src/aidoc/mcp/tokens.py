@@ -82,7 +82,15 @@ def _damaged(p: Path, n: int) -> SecretKeyError:
 
 
 def _read_secret(p: Path) -> bytes:
-    data = p.read_bytes()
+    try:
+        if not p.is_file():
+            raise IsADirectoryError(str(p))
+        data = p.read_bytes()
+    except OSError as e:
+        raise SecretKeyError(
+            f"{p} exists but is not a readable file ({type(e).__name__}). Refusing to start. Restore the original key "
+            f"file from a backup, or move this path away to start over (every existing MCP token then stops working - "
+            f"re-issue them on the MCP page).") from None
     if len(data) != SECRET_LEN:
         raise _damaged(p, len(data))
     return data

@@ -224,3 +224,12 @@ def test_serve_refuses_a_damaged_secret_key(tmp_root, monkeypatch, capsys):
     assert "secret.key" in err and "5 bytes" in err and "re-issue" in err
     assert (paths.data_dir() / "secret.key").read_bytes() == b"short"
     assert not (paths.data_dir() / "aidoc.lock").exists()
+
+
+def test_serve_refuses_a_secret_key_that_is_a_directory(tmp_root, monkeypatch, capsys):
+    (paths.data_dir() / "secret.key").mkdir()
+    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    assert main(["serve"]) == 5
+    err = capsys.readouterr().err
+    assert "secret.key" in err and "not a readable file" in err and "Traceback" not in err
+    assert (paths.data_dir() / "secret.key").is_dir()
