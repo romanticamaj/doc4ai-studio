@@ -346,6 +346,16 @@ function McpSettingsForm({ original }: { original: Settings }) {
           <Field label="convert_path 白名單根目錄" hint="必須是主機上存在的絕對路徑；留空即隱藏 convert_path" htmlFor="mcp-roots">
             <ListField id="mcp-roots" rows={2} value={m.local_path_roots} onValue={(v) => set("local_path_roots", v)} className="font-mono text-[12.5px]" />
           </Field>
+          <Field label="允許整個磁碟根目錄" hint="預設拒絕 C:\ 或 D:\ 這類根目錄；開啟後該磁碟上任何檔案都能被轉換" htmlFor="mcp-driveroot">
+            <div className="flex flex-wrap items-center gap-3">
+              <Switch id="mcp-driveroot" checked={Boolean(m.allow_drive_root)} onCheckedChange={(v) => set("allow_drive_root", v)} />
+              {m.allow_drive_root && (
+                <span className="flex items-center gap-1.5 text-xs text-danger">
+                  <TriangleAlert className="size-3.5" /> 擁有 convert:local 的 token 能讀整個磁碟
+                </span>
+              )}
+            </div>
+          </Field>
         </div>
         <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
           {dirty && <span className="mr-auto text-xs text-muted-foreground">有未儲存的變更</span>}

@@ -30,11 +30,11 @@ _MAX.update({("mcp", "max_upload_mb"): 2048, ("mcp", "response_token_budget"): 2
              ("mcp", "max_token_ttl_days"): 3650, ("mcp", "default_token_ttl_days"): 3650})
 
 
-def _validate_mcp_lists(key: str, val) -> None:
+def _validate_mcp_lists(key: str, val, allow_drive_root: bool = False) -> None:
     if not isinstance(val, list) or not all(isinstance(v, str) for v in val):
         raise ApiError(422, "invalid_settings", detail=f"mcp.{key} must be a list of strings")
     for v in val:
-        problem = mcp_list_problem(key, v)              # the same rules aidoc.toml is checked with at load
+        problem = mcp_list_problem(key, v, allow_drive_root)   # the same rules aidoc.toml is checked with at load
         if problem is not None:
             raise ApiError(422, "invalid_settings", detail=problem[0])
 
@@ -63,7 +63,8 @@ def _validate(body: dict, cfg) -> dict:
                     continue
                 raise ApiError(403, "token_readonly")
             if section == "mcp" and key in ("allowed_hosts", "local_path_roots"):
-                _validate_mcp_lists(key, val)
+                allow = values.get("allow_drive_root", cfg.mcp.allow_drive_root)
+                _validate_mcp_lists(key, val, allow is True)
                 clean.setdefault(section, {})[key] = val
                 continue
             ok = type(val) is type(cur) or (type(cur) is int and type(val) is int)

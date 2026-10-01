@@ -55,6 +55,7 @@ class Mcp:
     enabled: bool = True
     allowed_hosts: list[str] = field(default_factory=list)      # extra Host values; the bound interface is added
     local_path_roots: list[str] = field(default_factory=list)   # convert_path whitelist; empty = tool hidden
+    allow_drive_root: bool = False                              # a whole drive (C:\ or /) as a root needs this
     default_token_ttl_days: int = 90
     max_token_ttl_days: int = 365
     allow_no_expiry: bool = False
@@ -74,7 +75,16 @@ _HOST_RE = re.compile(r"^[A-Za-z0-9.\-\[\]:*]+$")
 MCP_LISTS = ("allowed_hosts", "local_path_roots")
 
 
-def mcp_list_problem(key: str, value: str) -> tuple[str, bool] | None:
+def is_drive_root(value: str) -> bool:
+    p = Path(value)
+    try:
+        p = p.resolve()
+    except (OSError, RuntimeError):
+        pass
+    return p.parent == p
+
+
+def mcp_list_problem(key: str, value: str, allow_drive_root: bool = False) -> tuple[str, bool] | None:
     """The one rule set for [mcp] list entries, shared by PUT /api/settings (422 on any problem) and load_config
     (fatal problems refuse to start, the others are dropped with a warning). Returns (message, fatal) or None."""
     if key == "allowed_hosts":
@@ -87,6 +97,9 @@ def mcp_list_problem(key: str, value: str) -> tuple[str, bool] | None:
     p = Path(value)
     if not p.is_absolute():
         return f"mcp.local_path_roots entry '{value}' must be absolute", True
+    if is_drive_root(value) and not allow_drive_root:
+        return (f"mcp.local_path_roots entry '{value}' is a whole drive; name a folder, or set "
+                f"mcp.allow_drive_root = true if every file on it may be converted by path"), True
     if not p.is_dir():
         return f"mcp.local_path_roots entry '{value}' does not exist", False
     return None
@@ -103,7 +116,7 @@ def _check_mcp(cfg: AidocConfig, where: Path) -> None:
             raise ConfigError(f"{where}: mcp.{key} must be a list of strings")
         kept = []
         for v in val:
-            problem = mcp_list_problem(key, v)
+            problem = mcp_list_problem(key, v, bool(cfg.mcp.allow_drive_root))
             if problem is None:
                 kept.append(v)
             elif problem[1]:
@@ -111,6 +124,10 @@ def _check_mcp(cfg: AidocConfig, where: Path) -> None:
             else:
                 cfg.warnings.append(f"{problem[0]}; ignored")
         setattr(cfg.mcp, key, kept)
+    for root in cfg.mcp.local_path_roots:
+        if is_drive_root(root):
+            cfg.warnings.append(f"mcp.local_path_roots includes the drive root '{root}' (allowed by "
+                                f"mcp.allow_drive_root): any file on that drive can be converted by path")
 
 
 _SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp}

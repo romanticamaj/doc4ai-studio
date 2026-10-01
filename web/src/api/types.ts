@@ -217,6 +217,7 @@ export interface Settings {
     enabled: boolean;
     allowed_hosts: string[];
     local_path_roots: string[];
+    allow_drive_root?: boolean;
     default_token_ttl_days: number;
     max_token_ttl_days: number;
     allow_no_expiry: boolean;

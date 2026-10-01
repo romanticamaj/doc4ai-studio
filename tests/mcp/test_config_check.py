@@ -78,3 +78,21 @@ def test_call_log_retention_must_be_at_least_one_day(tmp_root, client):
     assert "call_log_retention_days" in str(e.value)
     r = client.put("/api/settings", json={"mcp": {"call_log_retention_days": 0}})
     assert r.status_code == 422 and ">= 1" in r.json()["detail"]
+
+
+def test_drive_root_needs_explicit_allow_drive_root(tmp_root, client, ctx):
+    """Item 9: a whole drive as convert_path root is refused unless mcp.allow_drive_root = true (then warned)."""
+    from pathlib import Path
+    root = Path(tmp_root).anchor                                          # e.g. C:\ (or / on POSIX)
+    _write(tmp_root, "[mcp]\nlocal_path_roots = " + _toml_list([root]) + "\n")
+    with pytest.raises(ConfigError) as e:
+        load_config()
+    assert "allow_drive_root" in str(e.value)
+    _write(tmp_root, "[mcp]\nallow_drive_root = true\nlocal_path_roots = " + _toml_list([root]) + "\n")
+    cfg = load_config()
+    assert cfg.mcp.local_path_roots == [root] and any("drive root" in w for w in cfg.warnings)
+    r = client.put("/api/settings", json={"mcp": {"local_path_roots": [root]}})
+    assert r.status_code == 422 and "allow_drive_root" in r.json()["detail"]
+    r = client.put("/api/settings", json={"mcp": {"allow_drive_root": True, "local_path_roots": [root]}})
+    assert r.status_code == 200, r.text
+    ctx.config.mcp.local_path_roots, ctx.config.mcp.allow_drive_root = [], False
