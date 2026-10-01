@@ -36,6 +36,7 @@ class Principal:
 class AuthFailure:
     reason: FailureReason
     prefix_seen: str | None
+    token_id: str | None = None          # known-but-revoked/expired token: lets the log show its name
 
 
 current_principal: ContextVar[Principal | None] = ContextVar("doc4ai_principal", default=None)
@@ -70,9 +71,9 @@ class PatVerifier:
         if row is None:
             return AuthFailure("unknown_token", seen)
         if row["revoked_at"] is not None and row["revoked_at"] <= now:
-            return AuthFailure("revoked", seen)
+            return AuthFailure("revoked", seen, row["id"])
         if row["expires_at"] is not None and row["expires_at"] <= now:
-            return AuthFailure("expired", seen)
+            return AuthFailure("expired", seen, row["id"])
         return Principal(kind="pat", subject="owner", token_id=row["id"], client_id=None,
                          scopes=frozenset(row["scopes"]), expires_at=row["expires_at"], name=row["name"],
                          rate_limit_per_min=row["rate_limit_per_min"])

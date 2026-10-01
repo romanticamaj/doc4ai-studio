@@ -150,7 +150,7 @@ class McpGate:
                 return await self._flooded(send, retry, result.reason)
             text = _FAILURE_TEXT[result.reason]
             self.recorder.record(status="auth_error", error_code=result.reason, http_status=401, ip=ip,
-                                 token_prefix_seen=result.prefix_seen, protocol_version=pv, ts=ts)
+                                 token_id=result.token_id, token_prefix_seen=result.prefix_seen, protocol_version=pv, ts=ts)
             return await _send_json(send, 401, {"error": "invalid_token", "error_description": text},
                                     [(b"www-authenticate", www_authenticate("invalid_token", text).encode())])
         principal = result
