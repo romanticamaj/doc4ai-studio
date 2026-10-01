@@ -1,8 +1,8 @@
-# AIDoc Studio
+# Doc4AI Studio
 
 **AI-friendly document conversion.**
 
-AIDoc Studio converts almost any document (PDF, scanned PDF, images, Word, PowerPoint, Excel, HTML, EPUB…) into clean **Markdown + JSON metadata** that LLMs and RAG pipelines can actually use. It picks the right engine per file, checks the output quality, and falls back automatically when a conversion looks wrong.
+Doc4AI Studio converts almost any document (PDF, scanned PDF, images, Word, PowerPoint, Excel, HTML, EPUB…) into clean **Markdown + JSON metadata** that LLMs and RAG pipelines can actually use. It picks the right engine per file, checks the output quality, and falls back automatically when a conversion looks wrong.
 
 把各種文件轉成適合 AI 讀取的 Markdown 與中繼資料；支援繁體中文與英文 OCR。
 
