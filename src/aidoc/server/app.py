@@ -89,6 +89,8 @@ def build_context(cfg: AidocConfig, token: str | None, start_workers: bool = Tru
     if start_workers:
         ctx.queue.start()
         start_reassessment(ctx)
+        from aidoc.pageindex import start_page_index_backfill
+        start_page_index_backfill(ctx.store)            # MCP search index for documents converted before v4
     return ctx
 
 

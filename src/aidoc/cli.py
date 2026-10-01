@@ -296,6 +296,8 @@ def cmd_serve(args) -> int:
         ctx.queue.start()
         from aidoc.server.app import start_reassessment
         start_reassessment(ctx)                         # after recovery: grade existing outputs (spec 2026-10-01)
+        from aidoc.pageindex import start_page_index_backfill
+        start_page_index_backfill(ctx.store)            # MCP search index for documents converted before v4
         m = ctx.extras["maintenance"] = Maintenance(ctx)
         m.start()
         print(f"aidoc serve: http://{host}:{port}  (data: {cfg.data_dir})", flush=True)

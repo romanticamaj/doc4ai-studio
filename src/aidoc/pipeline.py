@@ -394,10 +394,23 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
                           aidoc_version=sidecar["aidoc_version"], status=cand.quality.level,
                           work_copy_path=str(ctx.work_dir), work_copy_expires_at=time.time() + retention * 86400,
                           created_at=time.time())
+    _index_pages(ctx, store, output_dir)
     ctx.set(status=status, engine=cand.engine, quality=cand.quality.to_json(), output_dir=str(output_dir),
             error_kind=None, error_msg=None, pid=None)
     _purge_intermediates(ctx)
     return status
+
+
+def _index_pages(ctx: PipelineContext, store: Store, output_dir) -> None:
+    """MCP search index (spec 2026-10-01 MCP §3): rewritten on every finalize, first run or reconvert."""
+    from aidoc.pageindex import index_document
+    doc_row = store.get_document_by_output(str(output_dir))
+    if doc_row is None:
+        return
+    try:
+        index_document(store, doc_row)
+    except Exception as e:  # noqa: BLE001  the index is a convenience; never fail a finished conversion over it
+        ctx.log(f"page index skipped: {type(e).__name__}: {e}")
 
 
 def _purge_intermediates(ctx: PipelineContext) -> None:
