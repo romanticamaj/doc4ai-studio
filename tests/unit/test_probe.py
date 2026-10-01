@@ -62,8 +62,10 @@ def test_blank_pages_counted_on_every_page_not_just_the_sample(tmp_path):
     pr = probe_file(p)
     assert pr.pages == 45 and len(pr.blank_pages) == 25
     assert pr.blank_pages == [i + 1 for i in range(45) if i % 9 >= 4]
-    md = "\n".join(f"<!-- page: {i + 1} -->\nPage {i + 1} " + "lorem ipsum dolor sit amet " * 3
-                   for i in range(45) if i % 9 < 4)
+    # every page carries its marker (spec 2026-10-01: blank pages too); only the text pages have text
+    md = "\n".join(f"<!-- page: {i + 1} -->\n" + (f"Page {i + 1} " + "lorem ipsum dolor sit amet " * 3
+                                                    if i % 9 < 4 else "")
+                   for i in range(45))
     assert assess(md, pr, 45).level == "ok"
 
 
