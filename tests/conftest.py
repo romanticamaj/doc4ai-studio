@@ -70,7 +70,7 @@ def live_server(ctx):
 
     from aidoc.server.app import create_app
     server = uvicorn.Server(uvicorn.Config(create_app(ctx), host="127.0.0.1", port=0, log_level="warning",
-                                           lifespan="off"))
+                                           lifespan="on"))
     th = threading.Thread(target=server.run, daemon=True)
     th.start()
     deadline = _time.time() + 10

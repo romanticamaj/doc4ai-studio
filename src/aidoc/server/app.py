@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -41,7 +42,9 @@ class EnvelopeMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
+        path = scope.get("path", "")
+        # MCP protocol responses (and Phase 2 /.well-known/) must reach clients byte for byte (MCP spec §4.1)
+        if scope["type"] != "http" or path == "/mcp" or path.startswith(("/mcp/", "/.well-known/")):
             return await self.app(scope, receive, send)
         start: dict | None = None
         chunks: list[bytes] = []
@@ -118,12 +121,25 @@ def start_reassessment(ctx: ServerContext, log=None) -> threading.Thread:
 
 
 def create_app(ctx: ServerContext) -> FastAPI:
+    from aidoc.mcp.server import build_mcp
     from aidoc.server import sse
     from aidoc.server.api import chunks, documents, jobs, settings, system, uploads
+    rt = build_mcp(ctx)                                 # MCP spec §4.1: Streamable HTTP at /mcp on the same port
+    ctx.extras["mcp"] = rt
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        rt.recorder.start()
+        try:
+            async with rt.mcp.session_manager.run():   # a route-mounted ASGI app never runs its own lifespan
+                yield
+        finally:
+            rt.recorder.stop()
+
     # interactive docs only in loopback mode: with a token they would sit outside the token gate
     docs = not ctx.token
     app = FastAPI(title="aidoc", version="0.1.0", docs_url="/api/docs" if docs else None,
-                  openapi_url="/api/openapi.json" if docs else None, redoc_url=None)
+                  openapi_url="/api/openapi.json" if docs else None, redoc_url=None, lifespan=lifespan)
     app.state.ctx = ctx
 
     @app.exception_handler(ApiError)
@@ -148,6 +164,7 @@ def create_app(ctx: ServerContext) -> FastAPI:
     api.include_router(chunks.router)
     api.include_router(settings.router)
     app.include_router(api)
+    app.add_route("/mcp", rt.app, methods=["GET", "POST", "DELETE"])     # before the SPA catch-all (D2, spike S2)
     _mount_web(app, Path(ctx.config.root) / "web" / "dist")
     app.add_middleware(EnvelopeMiddleware)
     app.add_middleware(CompressionMiddleware)       # outermost: compresses the enveloped JSON, never SSE / ranges

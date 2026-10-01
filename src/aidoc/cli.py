@@ -290,6 +290,7 @@ def cmd_serve(args) -> int:
     try:
         ctx = build_context(cfg, token=token, start_workers=False)
         ctx.extras["bind_host"] = host
+        ctx.extras["bind_port"] = port                  # MCP: allowed Host values and advertised endpoint URLs
         if not args.no_recover:
             _recover(ctx.store, cfg)
         ctx.uploads.reconcile()

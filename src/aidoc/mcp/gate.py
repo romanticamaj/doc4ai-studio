@@ -128,7 +128,6 @@ class McpGate:
         state = CallState(principal=principal, ip=ip, user_agent=ua, method=method, ts=ts, started=started,
                           protocol_version=pv)
         scope.setdefault("state", {})["doc4ai"] = state
-        self.recorder.touch_token(principal.token_id, ip, ua)
 
         replayed = {"done": False}
 
@@ -158,3 +157,4 @@ class McpGate:
                                      duration_ms=int((time.perf_counter() - started) * 1000),
                                      response_bytes=status_box["bytes"])
                 state.logged = True
+                self.recorder.touch_token(principal.token_id, ip, ua)    # the middleware touches with the client label
