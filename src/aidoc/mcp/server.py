@@ -161,6 +161,8 @@ class McpRuntime:
 
 def build_mcp(ctx) -> McpRuntime:
     cfg = ctx.config
+    from aidoc.server.logfilter import install_secret_redaction
+    install_secret_redaction()                         # the SDK logs tool arguments and resource URIs
     secret = load_or_create_secret(cfg.data_dir)
     recorder = CallRecorder(ctx)
     verifier = PatVerifier(ctx.store, secret)

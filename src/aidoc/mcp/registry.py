@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from aidoc.mcp.errors import ToolFailure
 from aidoc.mcp.principal import current_principal
+from aidoc.mcp.redact import redact_text, redact_value
 
 TEXT_RESERVE_TOKENS = 100          # header/footer lines around budgeted Markdown (tools cut to budget minus this)
 
@@ -27,10 +28,11 @@ def _compact(d) -> str:
 
 
 def failure_result(f: ToolFailure) -> CallToolResult:
-    payload = f.payload()
+    payload = redact_value(f.payload())
     text = f"{f.code}: {f.message}" + (f" ({f.hint})" if f.hint else "")
     if f.extra:
         text += " " + _compact(f.extra)
+    text = redact_text(text)
     return CallToolResult(content=[TextContent(type="text", text=text)], structured_content=payload, is_error=True)
 
 

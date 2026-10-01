@@ -9,6 +9,8 @@ import time
 import traceback
 from typing import Any
 
+from aidoc.mcp.redact import redact_text, redact_value
+
 ACTIVE_WINDOW_S = 300          # spec §3: a client is active when last_seen is within 5 minutes
 TOUCH_THROTTLE_S = 10          # spec §4.3 step 4
 ARGS_MAX = 500
@@ -25,7 +27,7 @@ def summarize_args(args: dict | None) -> str | None:
         if k in _REDACT_KEYS and isinstance(v, str):
             clean[k] = {"len": len(v), "sha256_8": hashlib.sha256(v.encode("utf-8")).hexdigest()[:8]}
         else:
-            clean[k] = v
+            clean[k] = redact_value(v)              # PATs / bearer secrets / long base64 under ANY key
     s = json.dumps(clean, ensure_ascii=False, default=str)
     return s if len(s) <= ARGS_MAX else s[: ARGS_MAX - 1] + "…"
 
@@ -49,7 +51,7 @@ class CallRecorder:
         ts = time.time() if ts is None else ts
         rid = store.insert_mcp_call(
             status=status, ts=ts, token_id=token_id, token_prefix_seen=token_prefix_seen, client_id=client_id,
-            method=method, tool_name=tool_name, resource_uri=(resource_uri or None) and resource_uri[:200],
+            method=method, tool_name=tool_name, resource_uri=(resource_uri or None) and redact_text(resource_uri)[:200],
             args_summary=summarize_args(args), error_code=error_code, http_status=http_status, duration_ms=duration_ms,
             response_bytes=response_bytes, response_tokens_est=response_tokens_est, ip=ip,
             protocol_version=protocol_version, job_id=job_id)

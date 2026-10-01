@@ -13,8 +13,10 @@ def test_summarize_args_redacts_base64_and_truncates():
     assert d["filename"] == "a.pdf" and d["engine"] is None
     assert d["content_base64"] == {"len": 4000, "sha256_8": d["content_base64"]["sha256_8"]} and len(d["content_base64"]["sha256_8"]) == 8
     assert "QUJD" not in s
-    long = summarize_args({"query": "x" * 2000})
+    long = summarize_args({"query": "word " * 400})                      # prose: truncated, not summarised as a blob
     assert len(long) <= ARGS_MAX and long.endswith("…")
+    digest = __import__("hashlib").sha256(b"x" * 2000).hexdigest()[:8]
+    assert summarize_args({"query": "x" * 2000}) == f'{{"query": "<base64 len=2000 sha256={digest}>"}}'
     assert summarize_args(None) is None and summarize_args({}) == "{}"
 
 
