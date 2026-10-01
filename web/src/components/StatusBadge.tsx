@@ -24,6 +24,17 @@ const STATUS_TONE: Record<string, Tone> = {
   cancelled: "neutral",
   skipped: "neutral",
   orphaned: "neutral",
+  // MCP call / token / client states
+  tool_error: "warn",
+  forbidden_scope: "warn",
+  auth_error: "danger",
+  rate_limited: "danger",
+  protocol_error: "danger",
+  active: "ok",
+  expired: "warn",
+  revoked: "neutral",
+  idle: "neutral",
+  new: "info",
 };
 
 const LIVE = new Set(["running", "probing", "converting", "checking"]);

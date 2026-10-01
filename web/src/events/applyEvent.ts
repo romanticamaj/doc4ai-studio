@@ -1,7 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { qk } from "@/api/queries";
-import type { AidocEvent, Job, JobDetail, Segment, SystemInfo, Task } from "@/api/types";
+import { qk as mcpQk, type CallFilters } from "@/api/mcp";
+import type { AidocEvent, Job, JobDetail, McpCall, McpCallsPage, McpClient, Segment, SystemInfo, Task } from "@/api/types";
+import { mergeLiveCall } from "@/features/mcp/mergeCalls";
 import { logStore as defaultLogs, type LogStore } from "./useTaskLogs";
+
+let lastMcpBump = 0; // stats refetch throttle (mcp.call can arrive many times a second)
 
 const TERMINAL = new Set(["done", "low", "failed", "skipped", "cancelled"]);
 
@@ -138,10 +142,42 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["documents"] });
       qc.invalidateQueries({ queryKey: ["system"] });
+      qc.invalidateQueries({ queryKey: ["mcp"] });
       logs.markGap();
       logs.setStale(false);
       return;
     case "upload.updated":
       return; // the upload routine tracks its own progress
+    case "mcp.call": {
+      const call = ev.payload as unknown as McpCall;
+      for (const [key, data] of qc.getQueriesData<{ pages: McpCallsPage[]; pageParams: unknown[] }>({ queryKey: ["mcp", "calls"] })) {
+        if (!data) continue;
+        const filters = (key[2] ?? {}) as CallFilters;
+        qc.setQueryData(key, { ...data, pages: mergeLiveCall(data.pages, call, filters) });
+      }
+      if (Date.now() - lastMcpBump > 5000) {
+        lastMcpBump = Date.now();
+        qc.invalidateQueries({ queryKey: ["mcp", "stats"] });
+      }
+      qc.invalidateQueries({ queryKey: mcpQk.mcp.status() });
+      if (call.status === "auth_error") qc.invalidateQueries({ queryKey: mcpQk.mcp.tokens() });
+      return;
+    }
+    case "mcp.client": {
+      const { state, ...client } = ev.payload as McpClient & { state: string };
+      for (const [key, data] of qc.getQueriesData<{ clients: McpClient[] }>({ queryKey: ["mcp", "clients"] })) {
+        if (!data) continue;
+        const i = data.clients.findIndex((c) => c.id === client.id);
+        const next = i < 0 ? [{ ...client, active: state !== "idle" }, ...data.clients] : data.clients.map((c) => (c.id === client.id ? { ...c, ...client, active: state !== "idle" } : c));
+        qc.setQueryData(key, { clients: next });
+      }
+      qc.invalidateQueries({ queryKey: mcpQk.mcp.status() });
+      return;
+    }
+    case "mcp.token":
+      qc.invalidateQueries({ queryKey: mcpQk.mcp.tokens() });
+      qc.invalidateQueries({ queryKey: mcpQk.mcp.status() });
+      return;
+
   }
 }

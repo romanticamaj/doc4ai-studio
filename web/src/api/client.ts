@@ -63,6 +63,7 @@ export const api = {
   get: <T>(path: string, signal?: AbortSignal) => json<T>("GET", path, undefined, signal),
   post: <T>(path: string, body?: unknown) => json<T>("POST", path, body ?? {}),
   put: <T>(path: string, body?: unknown) => json<T>("PUT", path, body ?? {}),
+  patch: <T>(path: string, body?: unknown) => json<T>("PATCH", path, body ?? {}),
   del: <T>(path: string) => json<T>("DELETE", path),
   /** Raw text body (Markdown, NDJSON). */
   text: async (path: string, init?: { method?: string; body?: unknown }) => {

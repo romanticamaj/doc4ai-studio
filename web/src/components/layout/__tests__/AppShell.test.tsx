@@ -17,7 +17,7 @@ test("renders navigation and toggles dark mode", async () => {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  for (const label of ["Convert", "Jobs", "Library", "Chunks", "Settings"])
+  for (const label of ["Convert", "Jobs", "Library", "Chunks", "MCP", "Settings"])
     expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: /theme/i }));
   expect(document.documentElement.classList.contains("dark")).toBe(true);

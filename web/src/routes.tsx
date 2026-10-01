@@ -6,6 +6,7 @@ import JobDetailPage from "@/pages/JobDetailPage";
 import LibraryPage from "@/pages/LibraryPage";
 import ChunksPage from "@/pages/ChunksPage";
 import SettingsPage from "@/pages/SettingsPage";
+import McpPage from "@/pages/McpPage";
 import { PageFallback } from "@/components/states";
 
 // pdf.js + KaTeX are heavy: the document view loads on demand
@@ -28,6 +29,7 @@ export function AppRoutes() {
         }
       />
       <Route path="/chunks" element={<ChunksPage />} />
+      <Route path="/mcp" element={<McpPage />} />
       <Route path="/settings" element={<SettingsPage />} />
       <Route path="*" element={<Navigate to="/convert" replace />} />
     </Routes>

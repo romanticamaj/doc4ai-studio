@@ -35,7 +35,7 @@ export interface Job {
   created_at: number;
   options: ConvertOptionsJson;
   status: JobStatus;
-  origin: "cli" | "web";
+  origin: "cli" | "web" | "mcp";
   progress: { done: number; total: number };
 }
 
@@ -213,6 +213,20 @@ export interface Settings {
     disk_space_factor: number;
   };
   server: { host: string; port: number; token: string };
+  mcp: {
+    enabled: boolean;
+    allowed_hosts: string[];
+    local_path_roots: string[];
+    default_token_ttl_days: number;
+    max_token_ttl_days: number;
+    allow_no_expiry: boolean;
+    rate_limit_per_min: number;
+    max_concurrent_jobs_per_token: number;
+    max_upload_mb: number;
+    response_token_budget: number;
+    call_log_retention_days: number;
+    call_log_max_rows: number;
+  };
 }
 
 export type SettingsPatch = { [S in keyof Settings]?: Partial<Settings[S]> };
@@ -263,6 +277,9 @@ export interface EventPayloads {
   "setup.log": { engine: string; line: string };
   "setup.done": { engine: string; ok: boolean; error?: string };
   "system.updated": Record<string, unknown>;
+  "mcp.call": McpCallEvent;
+  "mcp.client": McpClient & { state: "new" | "active" | "idle" };
+  "mcp.token": { id: string; name: string; prefix: string; action: "created" | "updated" | "revoked" | "rotated" };
   resync: Record<string, never>;
 }
 export type EventKind = keyof EventPayloads;
@@ -276,9 +293,51 @@ export const EVENT_KINDS: EventKind[] = [
   "setup.log",
   "setup.done",
   "system.updated",
+  "mcp.call",
+  "mcp.client",
+  "mcp.token",
   "resync",
 ];
 
 export type AidocEvent<K extends EventKind = EventKind> = K extends EventKind
   ? { kind: K; seq: number; payload: EventPayloads[K] }
   : never;
+
+// ---- MCP admin (plan index §4 /api/mcp/*)
+export type McpScope = "doc4ai:read" | "doc4ai:convert" | "doc4ai:convert:local" | "doc4ai:manage";
+export type McpCallStatus = "ok" | "tool_error" | "protocol_error" | "auth_error" | "forbidden_scope" | "rate_limited";
+
+export interface McpStatus {
+  enabled: boolean; endpoint_urls: string[]; bind: { host: string; port: number }; allowed_hosts: string[];
+  protocol_versions: string[]; sdk_version: string; active_clients: number; calls_24h: number; errors_24h: number;
+  tokens_expiring_soon: number; local_path_roots: string[]; plaintext_http: boolean; tokenizer: string;
+  config_warnings?: string[];
+}
+export interface McpToken {
+  id: string; name: string; prefix: string; scopes: McpScope[]; note: string | null; created_at: number; expires_at: number | null;
+  revoked_at: number | null; revoked_reason: string | null; rotated_from: string | null; rate_limit_per_min: number | null;
+  last_used_at: number | null; last_used_ip: string | null; last_client: string | null; status: "active" | "expired" | "revoked";
+  calls_24h: number; errors_24h: number;
+}
+export interface McpSnippet { client: "claude-code" | "cursor" | "vscode" | "claude-desktop"; title: string; language: "bash" | "json"; text: string }
+export interface McpTokenCreated { token: string; record: McpToken; snippets: McpSnippet[]; revoked?: McpToken }
+export interface McpClient {
+  id: string; token_id: string | null; token_name: string | null; client_name: string; client_version: string | null;
+  protocol_version: string | null; user_agent: string | null; first_seen: number; last_seen: number; last_ip: string | null;
+  request_count: number; active: boolean;
+}
+export interface McpCall {
+  id: number; ts: number; token_id: string | null; token_prefix_seen: string | null; client_id: string | null; method: string | null;
+  tool_name: string | null; resource_uri: string | null; args_summary: string | null; status: McpCallStatus; error_code: string | null;
+  http_status: number | null; duration_ms: number | null; response_bytes: number | null; response_tokens_est: number | null;
+  ip: string | null; protocol_version: string | null; job_id: string | null; token_name: string | null; client_name: string | null;
+}
+export interface McpCallsPage { calls: McpCall[]; next_cursor: string | null }
+export interface McpStats {
+  window: "24h" | "7d"; since: number;
+  tools: { tool: string; calls: number; errors: number; error_rate: number; p50_ms: number | null; p95_ms: number | null; tokens_median: number | null }[];
+  tokens: { token_id: string; name: string | null; calls: number; errors: number }[];
+  series: { ts: number; calls: number; errors: number }[];
+}
+export type McpCallEvent = Pick<McpCall, "id" | "ts" | "token_id" | "token_name" | "client_id" | "client_name" | "method" | "tool_name" |
+  "status" | "error_code" | "http_status" | "duration_ms" | "response_tokens_est" | "job_id">;
