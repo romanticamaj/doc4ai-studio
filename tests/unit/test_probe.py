@@ -89,3 +89,22 @@ def test_paged_furniture_shape(fixtures):
     d = pymupdf.open(fixtures / "paged_furniture.pdf")
     assert d.page_count == 8 and d[3].get_text().strip() == "" and "........" in d[1].get_text()
     assert probe_file(fixtures / "paged_furniture.pdf").blank_pages == [4]
+
+
+def test_table_lines_need_a_ruled_grid(tmp_path):
+    """Figure call-out lines and filled boxes are not table rules (2026-10-01 acceptance, real orthopaedic book)."""
+    import pymupdf as fitz
+    doc = fitz.open()
+    page = doc.new_page()
+    sh = page.new_shape()
+    for y in (300, 340, 380):                                  # call-out leaders: L shapes to three labels
+        sh.draw_line((100, y), (250, y))
+        sh.draw_line((250, y), (250, y - 30))
+    sh.draw_rect(fitz.Rect(0, 0, 150, 40))                     # a coloured header band and a page-number box
+    sh.draw_rect(fitz.Rect(350, 60, 560, 260))
+    sh.finish(color=(0, 0, 0), fill=(0.5, 0.6, 0.8))
+    sh.commit()
+    page.insert_text((72, 500), "Body text " * 20)
+    p = tmp_path / "callouts.pdf"
+    doc.save(p)
+    assert probe_file(p).has_table_lines is False

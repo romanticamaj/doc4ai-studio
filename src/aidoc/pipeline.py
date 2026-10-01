@@ -218,17 +218,18 @@ def _segment_probe(probe: ProbeResult, page_start: int, page_end: int) -> ProbeR
 
 
 def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedResult,
-                   method: str | None) -> tuple[NormalizedResult, QualityResult]:
+                   method: str | None, last_resort: bool = False) -> tuple[NormalizedResult, QualityResult]:
     """Whole-document check (spec 2026-10-01 §5, §8.2): flag broken pages, repair them page by page when they are
     few (more than 20 % of the non-blank pages means the engine is wrong for this file: no repair, reason
-    pages_flagged), then assess with the page map and the alignment spot check."""
+    pages_flagged), then assess with the page map and the alignment spot check. `last_resort` (no engine to fall
+    back to: a forced engine or the last one in the order): every flagged page is repaired, whatever their share."""
     probe = ctx.probe
     if probe.kind != "pdf" or probe.pages is None:
         return merged, assess(merged.markdown, probe, probe.pages, page_map_method=method)
     flagged = flag_pages(merged.markdown, probe.broken_font_pages)
     effective = max(1, probe.pages - len(probe.blank_pages))
     repaired: list[dict] = []
-    if flagged and len(flagged) <= FLAGGED_MAX_RATIO * effective and ctx.engines:
+    if flagged and (last_resort or len(flagged) <= FLAGGED_MAX_RATIO * effective) and ctx.engines:
         outcome = repair_pages(ctx, ctx.engines, merged, [e["page"] for e in flagged], engine_name)
         merged = NormalizedResult(markdown=outcome.markdown, assets=outcome.assets)
         labels = sorted(set(outcome.repaired.values()))
@@ -239,7 +240,7 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     elif flagged:
         ctx.log(f"{len(flagged)} of {effective} pages have a broken text layer or garbage: not repaired page by page")
     q = assess(merged.markdown, probe, probe.pages, pdf=ctx.work_src, page_map_method=method,
-               flagged_before=len(flagged), repaired=repaired)
+               flagged_before=len(flagged), repaired=repaired, last_resort=last_resort)
     if q.page_map and q.page_map.get("alignment"):
         al = q.page_map["alignment"]
         ctx.log(f"page map {q.page_map['found']}/{q.page_map['expected']} ({q.page_map.get('method')}); "
@@ -250,7 +251,7 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
 # ---------------------------------------------------------------- one engine attempt (one runner session)
 
 def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
-                       quick_check: bool = True) -> tuple[NormalizedResult, QualityResult, int | None]:
+                       quick_check: bool = True, last: bool = False) -> tuple[NormalizedResult, QualityResult, int | None]:
     """Convert every unfinished segment with one runner session, merge, assess the whole document.
 
     Raises EngineError / EngineCancelled. Done segments of the same engine are reused (resume)."""
@@ -325,7 +326,7 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
     else:
         merged = NormalizedResult(markdown=parts[0].markdown, assets=parts[0].assets)
     page_count = probe.pages if probe.pages is not None else parts[0].page_count
-    merged, q = check_document(ctx, engine.name, merged, parts[0].page_map_method)
+    merged, q = check_document(ctx, engine.name, merged, parts[0].page_map_method, last_resort=last)
     return merged, q, page_count
 
 
@@ -527,7 +528,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
         result = None
         while result is None:                              # retries of this engine (spec §8.2)
             try:
-                result = run_engine_attempt(ctx, engine, eo, quick_check=not last)
+                result = run_engine_attempt(ctx, engine, eo, quick_check=not last, last=last)
             except EngineCancelled:
                 return _cancel(ctx)
             except TaskPaused:

@@ -59,6 +59,21 @@ def _is_blank(page) -> bool:
     return not page.get_image_info() and not page.get_drawings()
 
 
+def _ruled_grid(hs, vs, tol: float = 2.0) -> bool:
+    """Ruling lines that form a table grid: at least 2 column lines (vertical rules at the same x, collinear cell
+    edges merged) that each cross at least 3 distinct horizontal rules. Loose lines — figure call-out lines, frames,
+    filled boxes, underlines — do not (2026-10-01 acceptance: such lines on 33 of 80 pages of a real book made the
+    `missing_table` rule fail a document without any table)."""
+    if len(hs) < 3 or len(vs) < 2:
+        return False
+    levels: dict[int, set[int]] = {}
+    for x, y0, y1 in vs:
+        for x0, x1, y in hs:
+            if x0 - tol <= x <= x1 + tol and y0 - tol <= y <= y1 + tol:
+                levels.setdefault(round(x / 3), set()).add(round(y / 3))
+    return sum(1 for ys in levels.values() if len(ys) >= 3) >= 2
+
+
 def _analyse_page(page) -> dict:
     rect = page.rect
     W, H = rect.width, rect.height
@@ -89,15 +104,15 @@ def _analyse_page(page) -> dict:
         two_col = left >= 0.35 * len(blocks) and right >= 0.35 * len(blocks)
 
     drawings = page.get_drawings()
-    h = v = 0
+    hs: list[tuple[float, float, float]] = []      # (x0, x1, y)
+    vs: list[tuple[float, float, float]] = []      # (x, y0, y1)
 
     def classify(p1, p2):
-        nonlocal h, v
         dx, dy = abs(p2.x - p1.x), abs(p2.y - p1.y)
         if dy < 1 and dx >= 0.05 * W:
-            h += 1
+            hs.append((min(p1.x, p2.x), max(p1.x, p2.x), (p1.y + p2.y) / 2))
         elif dx < 1 and dy >= 0.02 * H:
-            v += 1
+            vs.append(((p1.x + p2.x) / 2, min(p1.y, p2.y), max(p1.y, p2.y)))
 
     for d in drawings:
         for item in d.get("items", []):
@@ -109,7 +124,7 @@ def _analyse_page(page) -> dict:
                 classify(r.bl, r.br)
                 classify(r.tl, r.bl)
                 classify(r.tr, r.br)
-    table_lines = h >= 3 and v >= 2
+    table_lines = _ruled_grid(hs, vs)
     blank = len(stripped) < 3 and not infos and not drawings
     return {"has_text": has_text, "image_cover": image_cover, "math": math_fonts or math_syms,
             "two_col": two_col, "table_lines": table_lines, "blank": blank}

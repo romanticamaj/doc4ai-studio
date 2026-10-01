@@ -33,3 +33,9 @@ The same script copies self-check samples into `src/aidoc/engines/runner/samples
 Real samples live in `tests/fixtures/manual/` (gitignored, never committed — copyrighted books). They are listed in the
 committed `manual_samples.json` and obtained through `tests/manual.py` (`manual_sample(name)`, `require_engine(name)`):
 missing samples skip normally and **fail** with `AIDOC_REQUIRE_MANUAL=1` (spec 2026-10-01 §10).
+Generate them from the original books (found by sha256 in the database's work copies, `--source`, or
+`tests/fixtures/manual/originals/`):
+
+    uv run python tests/fixtures/make_manual.py [--db data/aidoc.db] [--source <sha8>=<path> ...]
+
+Acceptance run (a skip is a failure there): `AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration -q`.

@@ -249,3 +249,12 @@ def test_segment_quick_check_is_quick(env, monkeypatch):
     seg_calls = [k for k in calls if k.get("quick")]
     assert len(seg_calls) == 2 and all(k.get("pdf") is not None for k in seg_calls)
     assert [k for k in calls if not k.get("quick")][-1].get("pdf") is not None   # document check uses the PDF
+
+
+def test_forced_engine_repairs_even_many_broken_pages(env):
+    # 1 of 2 pages (50 %) but the engine is forced: no fallback exists, so the page is repaired instead
+    write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "garbled"}], garbled_pages=[1])
+    tid = env["make"]("broken_tounicode.pdf", engine="docling")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    q = _sidecar(env, "broken_tounicode")["quality"]
+    assert q["level"] == "ok" and q["pages_flagged"] == 1 and q["pages"][0]["repaired_by"].startswith("docling:")

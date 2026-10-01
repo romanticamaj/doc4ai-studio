@@ -169,7 +169,7 @@ def flag_pages(md: str, broken_font_pages: Iterable[int]) -> list[dict]:
 
 def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | None = None,
            page_map_method: str | None = None, quick: bool = False, flagged_before: int | None = None,
-           repaired: list[dict] | None = None, align_sample: int | None = None,
+           repaired: list[dict] | None = None, align_sample: int | None = None, last_resort: bool = False,
            layers: list[str] | None = None) -> QualityResult:
     """Document quality. Legacy rules for non-PDFs; PDFs add the page map, alignment spot check and flagged pages
     (spec 2026-10-01 §5.2: any document reason -> low; else unrepaired flagged pages -> warn; else ok)."""
@@ -194,7 +194,10 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     entries = sorted(flagged + repaired + missing, key=lambda e: e["page"])
     n_flagged = flagged_before if flagged_before is not None else len(flagged) + len(repaired)
     effective = max(1, pages - len(probe.blank_pages))
-    if not quick and n_flagged > FLAGGED_MAX_RATIO * effective:
+    # pages_flagged means "this engine is wrong for the file: use another one". With no engine left (forced engine or
+    # the last fallback) every flagged page was sent to repair instead, and only pages still broken count.
+    still_broken = sum(1 for e in flagged if not e.get("repaired_by"))
+    if not quick and (still_broken if last_resort else n_flagged) > FLAGGED_MAX_RATIO * effective:
         reasons.append("pages_flagged")
     unrepaired = sum(1 for e in entries if not e.get("repaired_by"))
     # missing pages beyond the listed 200 still count as unrepaired

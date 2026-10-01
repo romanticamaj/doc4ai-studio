@@ -144,3 +144,15 @@ def test_too_many_flagged_pages_is_low_but_not_in_quick_check():
 def test_non_pdf_keeps_legacy_rules():
     q = assess(GOOD_EN, ProbeResult(kind="office", ext=".docx", size=1), None)
     assert q.level == "ok" and q.page_map is None and q.page_check == 1
+
+
+def test_last_resort_judges_pages_flagged_on_pages_still_broken():
+    md = _doc([GOOD_EN] * 10)                                        # all 3 flagged pages were repaired
+    entries = [{"page": p, "reasons": ["broken_text_layer"], "repaired_by": "docling:pypdfium_full_page_ocr"}
+               for p in (1, 2, 3)]
+    probe = _probe(10, broken=[1, 2, 3])
+    assert "pages_flagged" in assess(md, probe, 10, page_map_method="x", flagged_before=3, repaired=entries).reasons
+    q = assess(md, probe, 10, page_map_method="x", flagged_before=3, repaired=entries, last_resort=True)
+    assert q.level == "ok" and q.pages_flagged == 3
+    still = _doc([GOOD_EN + GARBLED] * 3 + [GOOD_EN] * 7)              # nothing repaired: still low
+    assert "pages_flagged" in assess(still, probe, 10, page_map_method="x", last_resort=True).reasons
