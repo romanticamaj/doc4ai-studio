@@ -47,6 +47,13 @@ def www_authenticate(error: str, description: str | None, resource_metadata: str
     return "Bearer " + ", ".join(parts)
 
 
+def same_origin(origin: str, host: str | None) -> bool:
+    """`Origin: http://h:p` names the page's own server: true when it equals the request's Host (port included)."""
+    if not host:
+        return False
+    return origin.strip().lower().split("://", 1)[-1].rstrip("/") == host.strip().lower()
+
+
 def _header(scope, name: str) -> str | None:
     want = name.lower().encode()
     for k, v in scope.get("headers") or []:
@@ -91,6 +98,13 @@ class McpGate:
             return await _send_json(send, 401, {"error": "invalid_token", "error_description": text},
                                     [(b"www-authenticate", www_authenticate("invalid_token", text).encode())])
         principal = result
+        origin = _header(scope, "origin")
+        if origin is not None and not same_origin(origin, _header(scope, "host")):
+            # spec §4.2: browsers may only call /mcp from the web UI's own origin (whatever port it was served on)
+            self.recorder.record(status="protocol_error", error_code="http_403", http_status=403, ip=ip,
+                                 token_id=principal.token_id, protocol_version=pv, ts=ts)
+            return await _send_json(send, 403, {"error": "forbidden_origin",
+                                                "error_description": "Cross-origin requests are not allowed"})
         if scope["method"] == "GET":                   # spike S12: stateless mode never sends on the standalone stream
             self.recorder.record(status="protocol_error", error_code="http_405", http_status=405, ip=ip,
                                  token_id=principal.token_id, protocol_version=pv, ts=ts)

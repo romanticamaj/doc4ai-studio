@@ -121,7 +121,9 @@ def _hosts_for(cfg, bind_host: str) -> list[str]:
 def transport_security_for(cfg, bind_host: str, port: int) -> TransportSecuritySettings:
     hosts = _hosts_for(cfg, bind_host)
     allowed_hosts = [f"{h}:*" for h in hosts] + [f"{h}:{port}" for h in hosts] + hosts
-    origins = [f"http://{h}:{port}" for h in hosts] + [f"http://{h}" for h in hosts]    # the web UI's own origin only
+    # the gate already refused any Origin that is not the request's own Host (the web UI's origin, whatever port it
+    # was served on); the SDK list only has to admit those same-origin values
+    origins = [f"http://{h}:{port}" for h in hosts] + [f"http://{h}:*" for h in hosts] + [f"http://{h}" for h in hosts]
     return TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=allowed_hosts, allowed_origins=origins)
 
 

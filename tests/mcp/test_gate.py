@@ -192,3 +192,14 @@ def test_get_stream_is_405_after_auth(gate_client):
     assert r.status_code == 405 and r.headers["allow"] == "POST" and r.json()["error"] == "method_not_allowed"
     row = _rows(ctx)[0]
     assert row["status"] == "protocol_error" and row["error_code"] == "http_405" and row["token_id"] == tid
+
+
+def test_origin_must_match_host(gate_client):
+    c, ctx = gate_client
+    raw, tid = _issue(ctx)
+    h = {**MODERN, "Authorization": f"Bearer {raw}"}
+    assert c.post("/mcp", content=b"{}", headers={**h, "Origin": "http://127.0.0.1:8765"}).status_code == 200
+    r = c.post("/mcp", content=b"{}", headers={**h, "Origin": "http://127.0.0.1:9999"})
+    assert r.status_code == 403 and r.json()["error"] == "forbidden_origin"
+    assert _rows(ctx)[0]["error_code"] == "http_403" and _rows(ctx)[0]["token_id"] == tid
+    assert c.post("/mcp", content=b"{}", headers={**h, "Origin": "http://evil.example"}).status_code == 403
