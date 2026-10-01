@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/states";
 import { TokensTab } from "@/features/mcp/TokensTab";
 import { OverviewTab } from "@/features/mcp/OverviewTab";
+import { ClientsTab } from "@/features/mcp/ClientsTab";
 
 const TABS = ["overview", "tokens", "clients", "calls"] as const;
 type Tab = (typeof TABS)[number];
@@ -30,7 +31,7 @@ export default function McpPage() {
         </TabsList>
         <TabsContent value="overview"><OverviewTab /></TabsContent>
         <TabsContent value="tokens"><TokensTab /></TabsContent>
-        <TabsContent value="clients"><EmptyState title="連線（Task 31）" /></TabsContent>
+        <TabsContent value="clients"><ClientsTab /></TabsContent>
         <TabsContent value="calls"><EmptyState title="呼叫紀錄（Task 32）" /></TabsContent>
       </Tabs>
     </Page>
