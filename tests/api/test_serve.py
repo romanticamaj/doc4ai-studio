@@ -198,3 +198,19 @@ def test_in_process_convert_holds_the_cli_run_lock(tmp_root, fixtures, monkeypat
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
     assert main(["convert", str(tmp_root / "t.pdf")]) == 0
     assert seen == [1] and clilock.active_cli_runs(paths.data_dir()) == 0
+
+
+def test_maintenance_prunes_mcp_calls(ctx):
+    import time
+
+    from aidoc.server.maintenance import Maintenance
+    old = time.time() - 40 * 86400
+    for i in range(5):
+        ctx.store.insert_mcp_call(ts=old + i, status="ok", method="tools/list")
+    for i in range(3):
+        ctx.store.insert_mcp_call(status="ok", method="tools/list")
+    ctx.config.mcp.call_log_retention_days = 30
+    ctx.config.mcp.call_log_max_rows = 2
+    res = Maintenance(ctx).run_once()
+    assert res["mcp_calls_pruned"] == 6                      # 5 by age + 1 by the row cap
+    assert ctx.store.count_mcp_calls(since=0) == 2

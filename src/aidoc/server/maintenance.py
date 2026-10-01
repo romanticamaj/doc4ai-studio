@@ -62,6 +62,9 @@ class Maintenance:
                "work_copies_purged": purge_expired_work_copies(ctx.store, now),
                "work_dirs_removed": purge_stale_work_dirs(ctx.store, ctx.config.data_dir,
                                                           ctx.config.general.work_retention_days, now)}
+        mcp = ctx.config.mcp
+        res["mcp_calls_pruned"] = ctx.store.prune_mcp_calls(older_than_ts=now - mcp.call_log_retention_days * 86400,
+                                                            max_rows=mcp.call_log_max_rows)
         ctx.store.prune_events(keep=self.keep_events)
         ctx.bus.publish("system.updated", None, {"maintenance": res})
         return res
