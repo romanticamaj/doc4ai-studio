@@ -53,7 +53,7 @@ def test_query_token_rejected_on_mcp(mcp_server, mcp_env):
 def test_token_never_persisted_or_streamed(mcp_server, mcp_env, make_doc, caplog):
     caplog.set_level(logging.DEBUG)
     make_doc("d", pages=2)
-    raw, tid = mcp_env.issue(scopes=SCOPES)
+    raw, _tid = mcp_env.issue(scopes=SCOPES)
     mcp_list_tools(mcp_server, raw)
     mcp_call(mcp_server, raw, "read_document", {"doc_id": "nope"})               # a tool error
     raw_post(mcp_server, raw[:-1] + "0", LIST)                                   # an auth failure with the prefix seen
@@ -125,7 +125,7 @@ def test_disabled_is_404(mcp_server, mcp_env):
 
 
 def test_sse_payloads_never_carry_tokens(mcp_server, mcp_env):
-    raw, tid = mcp_env.issue()
+    raw, _tid = mcp_env.issue()
     raw_post(mcp_server, raw, LIST)
     with httpx.Client(base_url=mcp_server, timeout=5) as c, c.stream("GET", "/api/events", headers={"Last-Event-ID": "0"}) as r:
         text = ""
