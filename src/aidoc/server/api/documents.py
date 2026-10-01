@@ -279,8 +279,13 @@ def reconvert(body: ReconvertIn, request: Request) -> dict:
     task_ids = []
     for doc, src, is_work_copy in plan:
         st = src.stat()
-        tid, _ = store.create_task(job_id, doc["source_path"], doc["sha256"], st.st_size, st.st_mtime,
-                                   doc.get("lang") or opts.lang, doc["output_dir"])
+        tid, reused = store.create_task(job_id, doc["source_path"], doc["sha256"], st.st_size, st.st_mtime,
+                                        doc.get("lang") or opts.lang, doc["output_dir"])
+        if reused:
+            # an unfinished earlier run (e.g. a cancelled reconvert) is not resumed: a reconvert starts over, so
+            # routing begins again with the first engine instead of the engine whose segments were left done
+            store.requeue_task(tid, reset_segments=True)
+            store.update_task(tid, tried=[], attempt=0, engine=None, quality=None)
         work_path = None
         if is_work_copy:                     # stage it into the new task's work dir, like an upload
             work_path = cfg.data_dir / "work" / tid / f"src{src.suffix.lower()}"

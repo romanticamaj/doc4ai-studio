@@ -138,3 +138,21 @@ def test_reconvert_source_missing(client, ctx, tmp_root, fixtures):
     _sh.rmtree(ctx.store.get_document(did)["work_copy_path"])
     r = client.post("/api/documents/reconvert", json={"ids": [did]})
     assert r.status_code == 410 and r.json()["error"] == "source_missing" and r.json()["id"] == did
+
+
+def test_reconvert_starts_over_when_a_cancelled_task_is_reused(client, ctx, tmp_root, fixtures):
+    """A cancelled reconvert keeps its row (index A14); a new reconvert must not resume its old engine's segments."""
+    from aidoc.models import Attempt
+    did = converted(client, ctx, tmp_root, fixtures)
+    job = client.post("/api/documents/reconvert", json={"ids": [did]}).json()["job"]
+    client.post(f"/api/jobs/{job['id']}/cancel")
+    store = ctx.store
+    tid = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]["id"]
+    for seg in store.list_segments(tid) or [store.get_segment(i) for i in store.create_segments(tid, [(1, 3)])]:
+        store.update_segment(seg["id"], status="done")
+    store.append_attempt(tid, Attempt(engine="mineru", attempt=1, score=None, reasons=[], error_kind="engine",
+                                      error_msg="segment quick check failed"))
+    job2 = client.post("/api/documents/reconvert", json={"ids": [did]}).json()["job"]
+    t = client.get(f"/api/jobs/{job2['id']}").json()["tasks"][0]
+    assert t["id"] == tid and t["tried"] == [] and t["engine"] is None
+    assert all(s["status"] == "queued" for s in store.list_segments(tid))
