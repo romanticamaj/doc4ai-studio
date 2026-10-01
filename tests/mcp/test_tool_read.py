@@ -167,3 +167,11 @@ def test_whole_result_fits_the_budget_in_both_representations(mcp_server, mcp_en
     assert estimate_tokens(text)[0] <= 8000
     assert estimate_tokens(structured)[0] <= 8000
     assert res.structured_content["truncated"] is True and res.structured_content["markdown"]
+
+
+def test_chunk_on_a_paged_document_is_refused_not_ignored(mcp_server, mcp_env, make_doc):
+    doc = make_doc("paged", pages=3)
+    raw, _ = mcp_env.issue()
+    res = mcp_call(mcp_server, raw, "read_document", {"doc_id": doc["id"], "chunk": 2})
+    assert res.is_error and res.structured_content["code"] == "invalid_arguments"
+    assert "pages" in res.structured_content["hint"]

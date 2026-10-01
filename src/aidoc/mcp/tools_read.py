@@ -245,6 +245,9 @@ def register_read_tools(mcp, ctx) -> None:
         budget = max(200, min(max_tokens, ctx.config.mcp.response_token_budget) - TEXT_RESERVE_TOKENS)   # room for the header
         if pages is not None and heading is not None:
             raise ToolFailure("invalid_arguments", "give either pages or heading, not both")
+        if chunk is not None and view.has_pages:              # never silently ignored
+            raise ToolFailure("invalid_arguments", "chunk applies only to documents without page markers",
+                              hint="this document has pages: read it with pages (and offset from next.offset)")
         job = D.stale_job(ctx, view.row)
 
         limit = min(max_tokens, ctx.config.mcp.response_token_budget)
