@@ -417,8 +417,12 @@ def _break_as_interrupt() -> None:
 def main(argv: list[str] | None = None) -> int:
     if argv is None:                          # the real console entry point (not a test calling main([...]))
         _break_as_interrupt()
+    from aidoc.config import ConfigError
     try:
         return _main(argv)
+    except ConfigError as e:                  # unsafe aidoc.toml value: say which, no traceback (exit 6, as serve)
+        print(f"error: {e}", file=sys.stderr)
+        return 6
     except KeyboardInterrupt:
         print("\ninterrupted; the running conversion was cancelled (re-run the same command to resume)",
               file=sys.stderr, flush=True)

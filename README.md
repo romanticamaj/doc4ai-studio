@@ -86,8 +86,7 @@ Doc4AI Studio serves an MCP endpoint at `/mcp` (Streamable HTTP, Bearer personal
 **Claude Code**
 
 ```bash
-claude mcp add --transport http doc4ai http://<host>:<port>/mcp \
-  --header "Authorization: Bearer <YOUR_TOKEN>"
+claude mcp add --transport http doc4ai http://<host>:<port>/mcp --header "Authorization: Bearer <YOUR_TOKEN>"
 ```
 
 **Cursor（~/.cursor/mcp.json）**
@@ -152,7 +151,7 @@ claude mcp add --transport http doc4ai http://<host>:<port>/mcp \
 }
 ```
 
-Tokens never go in the URL; the endpoint answers `401` with `WWW-Authenticate: Bearer realm="doc4ai"` when one is missing or revoked. Scopes: `doc4ai:read`, `doc4ai:convert`, `doc4ai:convert:local`, `doc4ai:manage`.
+Tokens never go in the URL; the endpoint answers `401` with `WWW-Authenticate: Bearer realm="doc4ai"` when one is missing or revoked (after 10 failures a minute from one address: `429` with the same reason, for a minute). Scopes: `doc4ai:read`, `doc4ai:convert`, `doc4ai:convert:local`, `doc4ai:manage`.
 
 ## License
 

@@ -72,3 +72,24 @@ def test_reconvert_jobs_count_toward_the_cap(mcp_server, mcp_env, fixtures, tmp_
     assert not mcp_call(mcp_server, raw, "convert_document", {"filename": "other.md", "content_base64": content}).is_error
     again = mcp_call(mcp_server, raw, "reconvert_document", {"doc_id": doc["id"]})
     assert again.is_error and again.structured_content["code"] == "too_many_jobs"
+
+
+def test_failed_reconvert_does_not_keep_a_slot(ctx, fixtures, tmp_root, monkeypatch):
+    import pytest
+
+    from aidoc.batch import register_source
+    from aidoc.mcp.tools_convert import reserve_job
+    from aidoc.server.api.documents import start_reconvert
+    src = tmp_root / "in.pdf"
+    shutil.copy(fixtures / "text.pdf", src)
+    opts = ConvertOptions(output_dir=ctx.config.output_root())
+    register_source(ctx.store, ctx.store.create_job(opts, "web"), src, opts)
+    ctx.queue.process_next()
+    doc = ctx.store.list_documents()[0]
+
+    def boom(*a, **k):
+        raise OSError("disk went away")
+    monkeypatch.setattr(ctx.store, "create_task", boom)
+    with pytest.raises(OSError):
+        start_reconvert(ctx, [doc["id"]], origin="mcp", create_job=lambda o: reserve_job(ctx, o, "t1"))
+    assert ctx.store.active_mcp_jobs("t1") == 0

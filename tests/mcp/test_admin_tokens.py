@@ -108,3 +108,11 @@ def test_admin_api_needs_admin_auth(token_ctx):
         assert c.get("/api/mcp/tokens").status_code == 401
         assert c.post("/api/mcp/tokens", json={"name": "x", "scopes": ["doc4ai:read"]}).status_code == 401
         assert c.get("/api/mcp/tokens", headers={"Authorization": "Bearer s3cret"}).status_code == 200
+
+
+def test_patch_rejects_bad_bodies_with_422(client, ctx):
+    tid = client.post("/api/mcp/tokens", json={"name": "a", "scopes": ["doc4ai:read"]}).json()["record"]["id"]
+    for body in ([1, 2], {"rate_limit_per_min": 0}, {"bogus": 1}, {"name": None}, {"name": ""}):
+        r = client.patch(f"/api/mcp/tokens/{tid}", json=body)
+        assert (r.status_code, r.json()["error"]) == (422, "validation_error"), (body, r.text)
+    assert client.get("/api/mcp/tokens").json()["tokens"][0]["name"] == "a"

@@ -343,25 +343,31 @@ def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | N
     # `create_job(opts) -> job_id`: MCP passes its per-token-capped reservation (tools_convert.reserve_job)
     job_id = create_job(opts) if create_job is not None else store.create_job(opts, origin)
     task_ids = []
-    for doc, src, is_work_copy in plan:
-        st = src.stat()
-        tid, reused = store.create_task(job_id, doc["source_path"], doc["sha256"], st.st_size, st.st_mtime,
-                                        doc.get("lang") or opts.lang, doc["output_dir"])
-        if reused:
-            # an unfinished earlier run (e.g. a cancelled reconvert) is not resumed: a reconvert starts over, so
-            # routing begins again with the first engine instead of the engine whose segments were left done
-            store.requeue_task(tid, reset_segments=True)
-            store.update_task(tid, tried=[], attempt=0, engine=None, quality=None)
-        work_path = None
-        if is_work_copy:                     # stage it into the new task's work dir, like an upload
-            work_path = cfg.data_dir / "work" / tid / f"src{src.suffix.lower()}"
-            _link_or_copy(src, work_path)
-            store.update_task(tid, work_path=str(work_path))
-        flags = {"force": True, "reconvert": True}
-        if engine is None:
-            flags["auto_engine"] = True
-        store.set_task_flags(tid, flags)
-        task_ids.append(tid)
+    try:
+        for doc, src, is_work_copy in plan:
+            st = src.stat()
+            tid, reused = store.create_task(job_id, doc["source_path"], doc["sha256"], st.st_size, st.st_mtime,
+                                            doc.get("lang") or opts.lang, doc["output_dir"])
+            if reused:
+                # an unfinished earlier run (e.g. a cancelled reconvert) is not resumed: a reconvert starts over, so
+                # routing begins again with the first engine instead of the engine whose segments were left done
+                store.requeue_task(tid, reset_segments=True)
+                store.update_task(tid, tried=[], attempt=0, engine=None, quality=None)
+            work_path = None
+            if is_work_copy:                     # stage it into the new task's work dir, like an upload
+                work_path = cfg.data_dir / "work" / tid / f"src{src.suffix.lower()}"
+                _link_or_copy(src, work_path)
+                store.update_task(tid, work_path=str(work_path))
+            flags = {"force": True, "reconvert": True}
+            if engine is None:
+                flags["auto_engine"] = True
+            store.set_task_flags(tid, flags)
+            task_ids.append(tid)
+    except BaseException:
+        # a half-built job must not run, nor hold a per-token MCP slot (a task-less job stays "queued" forever)
+        store.cancel_queued_tasks(job_id)
+        store.set_job_status(job_id, "cancelled")
+        raise
     store.refresh_job_status(job_id)
     for tid in task_ids:
         ctx.queue.publish_task(tid)

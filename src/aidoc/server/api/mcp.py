@@ -2,10 +2,11 @@
 loopback only (the `api` router's require_token); PATs are never valid here."""
 from __future__ import annotations
 
+import json
 import time
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aidoc.mcp import tokens as T
 from aidoc.mcp.principal import SCOPE_READ, SCOPES
@@ -168,7 +169,12 @@ async def patch_token(token_id: str, request: Request) -> dict:
         raise ApiError(422, "validation_error", detail="body is not JSON") from None
     if isinstance(data, dict) and "scopes" in data:
         raise ApiError(422, "scopes_immutable", detail="rotate or create a new token to change scopes")
-    body = TokenPatchIn.model_validate(data)
+    if isinstance(data, dict) and "name" in data and data["name"] is None:
+        raise ApiError(422, "validation_error", detail="name cannot be null")
+    try:
+        body = TokenPatchIn.model_validate(data)
+    except ValidationError as e:
+        raise ApiError(422, "validation_error", detail=json.loads(e.json(include_url=False))) from None
     fields = body.model_dump(exclude_unset=True)
     if fields:
         ctx.store.update_api_token(token_id, **fields)

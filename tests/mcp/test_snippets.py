@@ -13,6 +13,7 @@ def test_four_snippets_with_placeholder():
     assert all(PLACEHOLDER in x["text"] for x in s if x["client"] != "vscode")      # VS Code prompts for the token
     cc = s[0]["text"]
     assert cc.startswith("claude mcp add --transport http doc4ai " + URL) and '--header "Authorization: Bearer <YOUR_TOKEN>"' in cc
+    assert "\n" not in cc and "\\" not in cc             # one line: pastes into PowerShell and cmd as well as bash
     cursor = json.loads(s[1]["text"])
     assert cursor["mcpServers"]["doc4ai"] == {"url": URL, "headers": {"Authorization": f"Bearer {PLACEHOLDER}"}}
     vscode = json.loads(s[2]["text"])

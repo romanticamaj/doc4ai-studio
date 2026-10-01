@@ -92,3 +92,20 @@ def test_gate_turns_an_auth_flood_into_one_row_and_429(ctx):
     assert other.post("/mcp", headers={**LIST, "Authorization": "Bearer nope"}, json={"method": "tools/list"}).status_code == 401
     guard.sweep(now=time.time() + 6)
     assert json.loads(next(x for x in _rows(ctx) if x["error_code"] == "auth_failures")["args_summary"])["suppressed"] == 37
+
+
+def test_flood_429_still_says_why_the_token_failed(ctx):
+    rec = CallRecorder(ctx)
+    gate = McpGate(ctx, echo_inner, PatVerifier(ctx.store, SECRET), RateLimiter(lambda: 60), rec,
+                   guard=AuthFailureGuard(rec, limit=1, window_s=60, cooldown_s=30))
+    c = TestClient(gate, base_url="http://127.0.0.1:8765", client=("100.64.0.66", 1))
+    raw, tid = _issue(ctx)
+    ctx.store.revoke_api_token(tid, "test", at=time.time() - 1)
+    for _ in range(2):
+        r = c.post("/mcp", headers={**LIST, "Authorization": f"Bearer {raw}"}, json={"method": "tools/list"})
+    assert r.status_code == 429
+    body = r.json()
+    assert body["error"] == "too_many_auth_failures" and body["reason"] == "revoked"
+    assert "revoked" in body["error_description"] and r.headers["www-authenticate"].startswith('Bearer realm="doc4ai", error="invalid_token"')
+    r = c.post("/mcp?token=x", headers=LIST, json={"method": "tools/list"})
+    assert r.status_code == 429 and r.json()["reason"] == "token_in_query" and "Authorization header" in r.json()["error_description"]

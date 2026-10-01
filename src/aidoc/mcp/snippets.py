@@ -10,8 +10,8 @@ SERVER_ALIAS = "doc4ai"
 
 def render_snippets(endpoint_url: str, token: str = PLACEHOLDER) -> list[dict]:
     bearer = f"Bearer {token}"
-    claude_code = (f"claude mcp add --transport http {SERVER_ALIAS} {endpoint_url} \\\n"
-                   f'  --header "Authorization: {bearer}"')
+    # one line: a bash "\" continuation breaks when pasted into PowerShell or cmd (this project's host is Windows)
+    claude_code = f'claude mcp add --transport http {SERVER_ALIAS} {endpoint_url} --header "Authorization: {bearer}"'
     cursor = {"mcpServers": {SERVER_ALIAS: {"url": endpoint_url, "headers": {"Authorization": bearer}}}}
     vscode = {"servers": {SERVER_ALIAS: {"type": "http", "url": endpoint_url,
                                         "headers": {"Authorization": "Bearer ${input:doc4ai-token}"}}},
@@ -37,5 +37,6 @@ def readme_section(endpoint_url: str) -> str:
     for s in render_snippets(endpoint_url):
         parts += [f"**{s['title']}**", "", f"{fence}{s['language']}", s["text"], fence, ""]
     parts += [("Tokens never go in the URL; the endpoint answers `401` with `WWW-Authenticate: Bearer realm=\"doc4ai\"` when one "
-               "is missing or revoked. Scopes: `doc4ai:read`, `doc4ai:convert`, `doc4ai:convert:local`, `doc4ai:manage`."), ""]
+               "is missing or revoked (after 10 failures a minute from one address: `429` with the same reason, for a "
+               "minute). Scopes: `doc4ai:read`, `doc4ai:convert`, `doc4ai:convert:local`, `doc4ai:manage`."), ""]
     return "\n".join(parts)

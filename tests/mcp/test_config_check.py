@@ -60,3 +60,11 @@ def test_serve_prints_warnings_and_refuses_unsafe_roots(tmp_root, monkeypatch, c
 def test_status_reports_config_warnings(client, ctx):
     ctx.config.warnings = ["mcp.allowed_hosts entry 'x y' is not a host[:port|:*]; ignored"]
     assert client.get("/api/mcp/status").json()["config_warnings"] == ctx.config.warnings
+
+
+def test_other_commands_report_unsafe_config_without_a_traceback(tmp_root, capsys):
+    _write(tmp_root, "[mcp]\nlocal_path_roots = ['docs']\n")
+    (tmp_root / "x.pdf").write_bytes(b"%PDF-1.4")
+    assert main(["convert", str(tmp_root / "x.pdf")]) == 6
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and "local_path_roots" in err and "Traceback" not in err
