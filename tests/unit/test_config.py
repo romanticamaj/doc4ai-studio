@@ -61,3 +61,19 @@ def test_committed_aidoc_toml_has_mcp_section():
     from aidoc.config import load_config
     cfg = load_config(Path(__file__).resolve().parents[2] / "aidoc.toml")
     assert cfg.mcp.enabled is True and cfg.mcp.local_path_roots == []
+
+
+def test_save_config_keeps_crlf_line_endings(tmp_path):
+    """Item 14: saving Settings on Windows rewrote a CRLF aidoc.toml with LF (a whole-file diff)."""
+    from aidoc.config import load_config, save_config
+    p = tmp_path / "aidoc.toml"
+    p.write_bytes(b"# my settings\r\n[general]\r\nlang = \"cht\"\r\n\r\n[mcp]\r\nrate_limit_per_min = 60\r\n")
+    cfg = load_config(p)
+    save_config(cfg, p, {"mcp": {"rate_limit_per_min": 90}})
+    raw = p.read_bytes()
+    assert b"rate_limit_per_min = 90\r\n" in raw and b"# my settings\r\n" in raw
+    assert raw.count(b"\n") == raw.count(b"\r\n")                            # no bare LF anywhere
+    lf = tmp_path / "lf.toml"
+    lf.write_bytes(b"[mcp]\nrate_limit_per_min = 60\n")
+    save_config(load_config(lf), lf, {"mcp": {"rate_limit_per_min": 70}})
+    assert b"\r" not in lf.read_bytes()

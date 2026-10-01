@@ -186,9 +186,12 @@ def save_config(cfg: AidocConfig, path: Path | None = None, changes: dict | None
     (or is missing from it) is."""
     p = Path(path) if path else config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    newline = "\n"
     try:
-        doc = tomlkit.parse(p.read_text(encoding="utf-8")) if p.exists() else tomlkit.document()
-    except (OSError, tomlkit.exceptions.ParseError):
+        raw = p.read_bytes().decode("utf-8") if p.exists() else ""
+        newline = "\r\n" if "\r\n" in raw else "\n"           # keep the file's own line endings (no whole-file diff)
+        doc = tomlkit.parse(raw.replace("\r\n", "\n")) if raw else tomlkit.document()
+    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError):
         doc = tomlkit.document()
     for section, values in (changes if changes is not None else cfg.to_dict()).items():
         if section not in doc:
@@ -198,5 +201,5 @@ def save_config(cfg: AidocConfig, path: Path | None = None, changes: dict | None
             if key not in table or table[key] != val:
                 table[key] = val
     tmp = p.with_name(f".{p.name}.tmp")
-    tmp.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    tmp.write_text(tomlkit.dumps(doc).replace("\r\n", "\n"), encoding="utf-8", newline=newline)
     os.replace(tmp, p)
