@@ -625,3 +625,8 @@ class Store:
         rows = self._qa("SELECT doc_id, page, text, 0.0 AS rank FROM page_index WHERE "
                         f"instr(lower(text), lower(?)) > 0{f} LIMIT ?", [needle, *args, int(min(limit, scan_cap))])
         return rows
+
+    def active_mcp_jobs(self, token_id) -> int:
+        r = self._q1("SELECT COUNT(DISTINCT c.job_id) FROM mcp_calls c JOIN jobs j ON j.id = c.job_id "
+                     "WHERE c.token_id=? AND c.job_id IS NOT NULL AND j.status IN ('queued','running')", (token_id,))
+        return int(r[0]) if r else 0

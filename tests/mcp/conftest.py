@@ -96,6 +96,9 @@ def _unwrap(e: BaseException) -> BaseException:
 def mcp_call(base_url, token, tool, arguments=None, mode="auto", client_info=None, progress=None):
     async def go():
         async with mcp_client(base_url, token, mode, client_info) as s:
+            # like a real client: list first. Without it the SDK client fetches tools/list *after* the call (to
+            # validate structuredContent), and the call would not be the newest mcp_calls row.
+            await s.list_tools()
             return await s.call_tool(tool, arguments or {}, progress_callback=progress)
     return anyio.run(go)
 
