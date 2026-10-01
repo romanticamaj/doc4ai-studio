@@ -1,10 +1,21 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type PDFPageProxy, type RenderTask } from "pdfjs-dist";
+import {
+  getDocument,
+  GlobalWorkerOptions,
+  PDFDataRangeTransport,
+  PDFWorker,
+  version as pdfjsVersion,
+  type PDFDocumentLoadingTask,
+  type PDFDocumentProxy,
+  type PDFPageProxy,
+  type RenderTask,
+} from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Loader2 } from "lucide-react";
 import { getToken } from "@/api/client";
 import { estimateRatios, firstRatios } from "./pageRatios";
 import { buildTops, keepAnchor, rangeIn } from "./layout";
+import { loadOpenBundle, RangeLoader } from "./pdfSource";
 import { RenderQueue } from "./renderQueue";
 import { publishAnchors } from "./useScrollSync";
 
@@ -25,6 +36,15 @@ const PAD = 16;
 const OVERSCAN = 1;
 /** concurrent page renders */
 const RENDERS = 2;
+/**
+ * pdf.js range chunk size. Measured at 1 s RTT / 2 Mbit/s on a 473 MB, 1,192-page scanned book: what costs time
+ * is the number of *serial* round trips, and the open bundle already removes those; past that, bigger chunks only
+ * add bytes (open bundle 4.9 MB raw / 1.6 MB gzip at 64 KB vs 7.9 / 2.7 MB at 256 KB and 16 MB at 1 MB), and a page
+ * image is still one request (pdf.js asks for contiguous chunks together).
+ */
+const CHUNK = 64 * 1024;
+/** pdf.js fonts / character maps / decoders, in a folder named by the pdf.js version (cached as immutable) */
+const PDFJS_ASSETS = `/pdfjs/${pdfjsVersion}`;
 
 /**
  * pdf.js pages in one scroll container. Only the pages in view (±1) are mounted: their positions come from
@@ -49,39 +69,63 @@ export const PdfViewer = forwardRef<HTMLDivElement, Props>(function PdfViewer({ 
   // load
   useEffect(() => {
     let cancelled = false;
+    let task: PDFDocumentLoadingTask | null = null;
+    let loader: RangeLoader | null = null;
+    const ctrl = new AbortController();
     const t = getToken();
-    const task = getDocument({
-      url,
-      httpHeaders: t ? { Authorization: `Bearer ${t}` } : undefined,
-      // range requests only: nothing is fetched until a page needs it (a 470 MB PDF opens with a few MB)
-      disableAutoFetch: true,
-      disableStream: true,
-      rangeChunkSize: 256 * 1024,
-      // bundled with the app (vite.config.ts copies them): the 14 standard fonts and the CJK character maps (Q3)
-      standardFontDataUrl: "/pdfjs/standard_fonts/",
-      cMapUrl: "/pdfjs/cmaps/",
-      cMapPacked: true,
-      // JBIG2 / JPEG 2000 image decoders (scanned books use them; without these the images are left out)
-      wasmUrl: "/pdfjs/wasm/",
-      iccUrl: "/pdfjs/iccs/",
-    });
-    task.promise.then(
-      async (d) => {
-        if (cancelled) return;
-        known.current = await firstRatios(d, 3); // the rest are estimated, then corrected per page (M5)
-        if (cancelled) return;
-        setDoc(d);
-        onLoaded?.(d.numPages);
-      },
-      (e) => {
-        if (cancelled) return;
-        setFailed(true);
-        onError?.(e);
-      },
-    );
+    const headers = t ? { Authorization: `Bearer ${t}` } : undefined;
+    // the worker script (~1.3 MB) loads while the open bundle is on its way, not after it
+    const worker = new PDFWorker();
+    void (async () => {
+      // one round trip for everything pdf.js needs to open the file and draw the first pages (pdfSource.ts)
+      const bundle = await loadOpenBundle(url, CHUNK, headers, ctrl.signal);
+      if (cancelled) return;
+      let source: { url: string; httpHeaders?: Record<string, string> } | { range: PDFDataRangeTransport };
+      if (bundle) {
+        const transport = new PDFDataRangeTransport(bundle.size, bundle.head());
+        const l = new RangeLoader(url, headers, bundle, (begin, data) => transport.onDataRange(begin, data));
+        transport.requestDataRange = (begin, end) => l.request(begin, end);
+        transport.abort = () => l.abort();
+        loader = l;
+        source = { range: transport };
+      } else source = { url, httpHeaders: headers };
+      task = getDocument({
+        ...source,
+        worker,
+        // range requests only: nothing is fetched until a page needs it (a 470 MB PDF opens with a few MB)
+        disableAutoFetch: true,
+        disableStream: true,
+        rangeChunkSize: CHUNK,
+        // bundled with the app (vite.config.ts copies them to a versioned folder, cached as immutable): the 14
+        // standard fonts and the CJK character maps (Q3)
+        standardFontDataUrl: `${PDFJS_ASSETS}/standard_fonts/`,
+        cMapUrl: `${PDFJS_ASSETS}/cmaps/`,
+        cMapPacked: true,
+        // JBIG2 / JPEG 2000 image decoders (scanned books use them; without these the images are left out)
+        wasmUrl: `${PDFJS_ASSETS}/wasm/`,
+        iccUrl: `${PDFJS_ASSETS}/iccs/`,
+      });
+      task.promise.then(
+        async (d) => {
+          if (cancelled) return;
+          known.current = await firstRatios(d, 3); // the rest are estimated, then corrected per page (M5)
+          if (cancelled) return;
+          setDoc(d);
+          onLoaded?.(d.numPages);
+        },
+        (e) => {
+          if (cancelled) return;
+          setFailed(true);
+          onError?.(e);
+        },
+      );
+    })();
     return () => {
       cancelled = true;
-      void task.destroy();
+      ctrl.abort();
+      loader?.abort();
+      void task?.destroy().finally(() => worker.destroy());
+      if (!task) worker.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);

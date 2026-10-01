@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
 
@@ -18,6 +18,7 @@ from aidoc.config import AidocConfig
 from aidoc.server import auth
 from aidoc.server.auth import ApiError
 from aidoc.server.context import ServerContext
+from aidoc.server.transfer import CompressionMiddleware, dist_cache_control, etag_matches, file_etag
 from aidoc.store import Store
 
 WORKSPACE = "default"
@@ -147,6 +148,7 @@ def create_app(ctx: ServerContext) -> FastAPI:
     app.include_router(api)
     _mount_web(app, Path(ctx.config.root) / "web" / "dist")
     app.add_middleware(EnvelopeMiddleware)
+    app.add_middleware(CompressionMiddleware)       # outermost: compresses the enveloped JSON, never SSE / ranges
     return app
 
 
@@ -221,5 +223,14 @@ def _mount_web(app: FastAPI, dist: Path) -> None:
             return {"message": "web UI not built; run pnpm --dir web build"}
         rel = safe_relative(full_path)
         if rel is not None and rel in table and rel != "index.html":
-            return FileResponse(table[rel], headers={"X-Content-Type-Options": "nosniff"})
-        return FileResponse(table["index.html"], media_type="text/html", headers=SPA_HEADERS)
+            return _dist_file(request, table[rel], dist_cache_control(rel), {"X-Content-Type-Options": "nosniff"})
+        return _dist_file(request, table["index.html"], dist_cache_control("index.html"), SPA_HEADERS, "text/html")
+
+
+def _dist_file(request: Request, path: Path, cache_control: str, headers: dict, media_type: str | None = None):
+    """A built file with its cache policy: hashed names are immutable, the rest revalidate (304 when unchanged)."""
+    etag = file_etag(path)
+    caching = {"ETag": etag, "Cache-Control": cache_control}
+    if etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers={**headers, **caching})
+    return FileResponse(path, media_type=media_type, headers={**headers, **caching})

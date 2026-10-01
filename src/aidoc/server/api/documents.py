@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,7 @@ from aidoc.names import file_sha256
 from aidoc.output import read_sidecar, sidecar_path
 from aidoc.server.auth import ApiError
 from aidoc.server.serialize import serialize_document, serialize_job
+from aidoc.server.transfer import etag_matches, file_etag
 
 router = APIRouter()
 
@@ -110,6 +111,49 @@ def get_source(doc_id: str, request: Request) -> Response:
     return safe_file_response(f, name, request)
 
 
+PDF_RANGES_TYPE = "application/vnd.aidoc.pdf-ranges"
+PREFETCH_VERSION = "1"
+
+
+@router.get("/documents/{doc_id}/source/open")
+def get_source_open(doc_id: str, request: Request,
+                    chunk: int = Query(..., ge=1024, le=4 * 1024 * 1024)) -> Response:
+    """The byte ranges pdf.js needs to open the source PDF and draw its first pages, in one response (one round
+    trip instead of one per xref section and object; aidoc.pdfprefetch). Body: those ranges back to back; header
+    X-Pdf-Ranges lists them (`begin-end`, end exclusive, aligned to `chunk` = the viewer's rangeChunkSize) and
+    X-Pdf-Size gives the file size. Revalidated like the source itself."""
+    from aidoc.pdfprefetch import open_ranges
+    doc = _doc(request, doc_id)
+    f = source_file(doc)
+    if f is None:
+        raise ApiError(410, "source_missing")
+    with f.open("rb") as fh:
+        if fh.read(1024).find(b"%PDF-") < 0:
+            raise ApiError(415, "not_pdf")
+    etag = '"' + hashlib.sha256(f"{file_etag(f)}-{chunk}-{PREFETCH_VERSION}".encode()).hexdigest()[:32] + '"'
+    caching = {"ETag": etag, "Cache-Control": REVALIDATE}
+    if _etag_matches(request, etag):
+        return Response(status_code=304, headers={**FILE_HEADERS, **caching})
+    size = f.stat().st_size
+    ranges = open_ranges(f, chunk)
+
+    def body():
+        with f.open("rb") as fh:
+            for b, e in ranges:
+                fh.seek(b)
+                left = e - b
+                while left > 0:
+                    data = fh.read(min(left, 1 << 20))
+                    if not data:
+                        return
+                    left -= len(data)
+                    yield data
+
+    return StreamingResponse(body(), media_type=PDF_RANGES_TYPE, headers={
+        **FILE_HEADERS, **caching, "Content-Length": str(sum(e - b for b, e in ranges)), "X-Pdf-Size": str(size),
+        "X-Pdf-Ranges": ",".join(f"{b}-{e}" for b, e in ranges)})
+
+
 # Converted documents come from anywhere: a source or asset must never run as a page on the aidoc origin (final
 # P4 check C1: an HTML source served inline read the API token from localStorage). Only types a browser cannot
 # execute are shown inline; everything else downloads as opaque bytes, and every file response is sandboxed.
@@ -123,16 +167,12 @@ FILE_HEADERS = {"X-Content-Type-Options": "nosniff",
 REVALIDATE = "no-cache"
 
 
-def _file_etag(path: Path) -> str:
-    st = path.stat()
-    return '"' + hashlib.sha256(f"{st.st_mtime_ns}-{st.st_size}".encode()).hexdigest()[:32] + '"'
+_file_etag = file_etag
 
 
 def _etag_matches(request: Request | None, etag: str) -> bool:
-    if request is None:
-        return False
-    sent = request.headers.get("if-none-match", "")
-    return any(t.strip() in (etag, "*") for t in sent.split(",")) if sent else False
+    # weak comparison: a gzipped response carried W/"<tag>" (transfer.CompressionMiddleware)
+    return request is not None and etag_matches(request.headers.get("if-none-match"), etag)
 
 
 def safe_file_response(path: Path, filename: str, request: Request | None = None) -> Response:
