@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from aidoc.mcp import docs as D
 from tests.mcp.conftest import mcp_call, page_md
 
@@ -62,7 +60,6 @@ def test_get_document_info_marks_stale_during_reconvert(mcp_server, mcp_env, mak
     assert out["stale"] is True and out["job_id"] == job
 
 
-@pytest.mark.xfail(strict=True, reason="read_document/get_chunks arrive in Tasks 17-18")
 def test_output_missing_is_a_tool_error(mcp_server, mcp_env, make_doc):
     doc = make_doc("lost", pages=1)
     (D.load_doc(mcp_env.ctx, doc["id"]).md_path).unlink()

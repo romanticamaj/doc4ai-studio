@@ -13,21 +13,27 @@ from aidoc.mcp.errors import ToolFailure
 from aidoc.mcp.principal import SCOPE_READ
 from aidoc.mcp.registry import TEXT_RESERVE_TOKENS, doc4ai_tool
 from aidoc.mcp.schemas import (
+    ChunkOut,
+    ChunksOut,
     DocInfoOut,
     DocSummary,
+    JobOut,
     ListDocumentsOut,
     ListFilters,
     NextRef,
     PageMapBrief,
     PageSpan,
+    Progress,
     QualityBrief,
     QualityFull,
     ReadOut,
     SearchFilters,
     SearchHit,
     SearchOut,
+    TaskBrief,
 )
 from aidoc.reassess import doc_flags
+from aidoc.server.serialize import serialize_task
 
 MAX_PAGES_PER_DOC = 3
 
@@ -252,3 +258,49 @@ def register_read_tools(mcp, ctx) -> None:
         return ReadOut(doc_id=view.doc_id, title=view.title, unit="pages", pages=PageSpan(start=start, end=last),
                        markdown=md, truncated=nxt is not None, next=nxt, page_warnings=D.page_warnings(view.row, start, last),
                        tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)
+
+    @doc4ai_tool(mcp, ctx, name="get_chunks", title="Get RAG chunks",
+                 description="Heading-aware chunks of one document (same algorithm as `aidoc chunk`), each with its heading "
+                             "path and page range. Paginated; the page is also cut to the response budget.",
+                 scope=SCOPE_READ, read_only=True, idempotent=True)
+    def get_chunks(doc_id: Annotated[str, Field(min_length=1, max_length=64)],
+                   max_tokens: Annotated[int, Field(ge=200, le=2000)] = 800,
+                   cursor: str | None = None,
+                   limit: Annotated[int, Field(ge=1, le=20)] = 10) -> ChunksOut:
+        view = D.load_doc(ctx, doc_id)
+        cur = _cursor(cursor, "i") or {"i": 0}
+        chunks = D.chunk_cache(view, max_tokens)
+        start = int(cur["i"])
+        budget = max(200, ctx.config.mcp.response_token_budget - TEXT_RESERVE_TOKENS)
+        out, used = [], 0
+        for c in chunks[start: start + limit]:
+            n = estimate_tokens(c.text)[0] + 40              # + the per-chunk header line of the text rendering
+            if out and used + n > budget:
+                break
+            out.append(ChunkOut(chunk_id=c.id, heading_path=list(c.heading_path), page_start=c.page_start,
+                                page_end=c.page_end, text=D.rewrite_assets(c.text, view.doc_id)))
+            used += n
+        nxt = encode_cursor({"i": start + len(out)}) if start + len(out) < len(chunks) else None
+        return ChunksOut(chunks=out, next_cursor=nxt, total=len(chunks))
+
+    @doc4ai_tool(mcp, ctx, name="get_job", title="Get conversion job",
+                 description="Status and progress of a conversion job started by convert_document / convert_path "
+                             "(or from the web UI), with the resulting doc_id per file once finished.",
+                 scope=SCOPE_READ, read_only=True)
+    def get_job(job_id: Annotated[str, Field(min_length=1, max_length=64)]) -> JobOut:
+        job = store.get_job(job_id)
+        if job is None:
+            raise ToolFailure("job_not_found", f"no job {job_id!r}", hint="job ids come from convert_document / convert_path")
+        tasks, done, total, first_error = [], 0, 0, None
+        for t in store.list_tasks(job_id):
+            st = serialize_task(store, t, with_segments=False)
+            done += st["progress"]["pages_done"]
+            total += st["progress"]["pages_total"] or 0
+            q = t.get("quality") or {}
+            if t.get("error_msg") and first_error is None:
+                first_error = f"{t.get('error_kind')}: {t['error_msg']}"
+            tasks.append(TaskBrief(task_id=t["id"], source_name=Path(str(t["source_path"]).replace("\\", "/")).name,
+                                   status=t["status"], engine=t.get("engine"), quality_level=q.get("level"),
+                                   doc_id=st.get("document_id"), error=t.get("error_msg")))
+        return JobOut(job_id=job_id, status=job["status"], origin=job["origin"], progress=Progress(pages_done=done, pages_total=total),
+                      tasks=tasks, error=first_error)
