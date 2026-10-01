@@ -53,6 +53,19 @@ def page_map(md: str, expected: int | None, method: str | None) -> dict | None:
     return out
 
 
+def invalid_markers(md: str, expected: int) -> int:
+    """Markers that break "one marker per page, in order": a page outside 1..expected, or a page number not greater
+    than the previous marker's (a duplicate or a decrease)."""
+    bad, prev = 0, 0
+    for m in MARKER.finditer(md):
+        n = int(m.group(1))
+        if not 1 <= n <= expected or n <= prev:
+            bad += 1
+        else:
+            prev = n
+    return bad
+
+
 def squash(s: str) -> str:
     """NFKC, drop soft hyphens and line-break hyphenation, lower-case, keep only alphanumerics (any script)."""
     s = unicodedata.normalize("NFKC", s).replace("\u00ad", "").replace("-\n", "")
@@ -113,6 +126,7 @@ def spot_check(md: str, pdf: Path, *, sample: int = 30, exclude: Iterable[int] =
     picked = _even_sample(cands, sample)
     decidable = aligned = 0
     misplaced: list[int] = []
+    run = max_run = 0                                  # consecutive misplaced decidable pages (a local shift)
     for p in picked:
         found = home = 0
         for probe in _probes(layers[p - 1], p, whole, win, k):
@@ -129,11 +143,14 @@ def spot_check(md: str, pdf: Path, *, sample: int = 30, exclude: Iterable[int] =
         decidable += 1
         if home * 2 > found:
             aligned += 1
+            run = 0
         else:
             misplaced.append(p)
+            run += 1
+            max_run = max(max_run, run)
     return {"sampled": len(picked), "decidable": decidable, "aligned": aligned,
             "ratio": round(aligned / decidable, 4) if decidable else None,
-            "misplaced": misplaced[:MISPLACED_LIST_MAX], "excluded_pages": len(excl)}
+            "misplaced": misplaced[:MISPLACED_LIST_MAX], "max_misplaced_run": max_run, "excluded_pages": len(excl)}
 
 
 def splice_pages(md: str, replacements: dict[int, str]) -> str:

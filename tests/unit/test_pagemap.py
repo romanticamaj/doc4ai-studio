@@ -67,3 +67,11 @@ def test_splice_pages_replaces_only_that_section():
     assert out == "<!-- page: 1 -->\n\nA\n\n<!-- page: 2 -->\n\nFixed text\n\n![](assets/p2_1.png)\n\n<!-- page: 3 -->\n\nC\n"
     with pytest.raises(KeyError):
         splice_pages(md, {9: "x"})
+
+
+def test_spot_check_reports_the_longest_run_of_misplaced_pages(pdf10):
+    assert spot_check(_md(), pdf10, sample=10)["max_misplaced_run"] == 0
+    # pages 3-6 written under the wrong markers (a local shift): 4 consecutive misplaced pages
+    md = "".join(f"<!-- page: {n} -->\n\n{_page_text({3: 4, 4: 5, 5: 6, 6: 3}.get(n, n))}\n\n" for n in range(1, 11))
+    r = spot_check(md, pdf10, sample=10)
+    assert r["max_misplaced_run"] == 4 and r["misplaced"] == [3, 4, 5, 6]

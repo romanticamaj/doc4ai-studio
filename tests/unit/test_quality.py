@@ -201,3 +201,43 @@ def test_segment_quick_check_only_catches_gross_misalignment(monkeypatch, tmp_pa
     assert "page_map_misaligned" in reasons()
     result.update(decidable=10, aligned=1, ratio=0.1, misplaced=list(range(2, 11)))   # a shifted map
     assert "page_map_misaligned" in reasons(quick=True)
+
+
+def _renum(md, f):
+    import re
+    return re.sub(r"<!-- page: (\d+) -->", lambda m: f"<!-- page: {f(int(m.group(1)))} -->", md)
+
+
+def test_marker_integrity_catches_local_relabelling():
+    """Verifier cases (2026-10-01): part of a segment shifted, neighbouring labels swapped, a segment relabelled with
+    the previous segment's numbers — each leaves duplicate or decreasing markers: page_map_invalid -> low."""
+    md = _doc([GOOD_EN] * 40)
+    cases = {
+        "first 25% shifted +1": _renum(md, lambda n: n + 1 if n <= 10 else n),
+        "first 40% shifted +1": _renum(md, lambda n: n + 1 if n <= 16 else n),
+        "15% swapped": _renum(md, lambda n: {3: 4, 4: 3, 11: 12, 12: 11, 21: 22, 22: 21}.get(n, n)),
+        "pages 21-40 relabelled as 1-20": _renum(md, lambda n: n - 20 if n > 20 else n),
+        "marker past the end": _renum(md, lambda n: 41 if n == 40 else n),
+    }
+    for name, text in cases.items():
+        for quick in (False, True):
+            q = assess(text, _probe(40), 40, page_map_method="x", quick=quick)
+            assert q.level == "low" and "page_map_invalid" in q.reasons, (name, quick, q.reasons)
+    q = assess(md, _probe(40), 40, page_map_method="x")
+    assert q.level == "ok" and q.page_map["invalid_markers"] == 0
+
+
+def test_a_run_of_three_misplaced_pages_is_misaligned(monkeypatch, tmp_path):
+    """A local shift misplaces consecutive pages; the legitimate misses on the real books were isolated (longest run
+    over every page: 2 in the orthopaedic book, 1 in Head First Android)."""
+    import aidoc.quality as qm
+    result = dict(sampled=40, decidable=39, aligned=35, ratio=0.8974, misplaced=[5, 6, 7, 8], max_misplaced_run=4,
+                  excluded_pages=0)
+    monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: dict(result))
+    md = _doc([GOOD_EN] * 40)
+    for quick in (True, False):
+        assert "page_map_misaligned" in assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x",
+                                               quick=quick).reasons
+    result.update(aligned=37, ratio=0.9487, misplaced=[5, 20], max_misplaced_run=1)
+    assert "page_map_misaligned" not in assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x",
+                                               quick=True).reasons

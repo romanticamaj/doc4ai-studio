@@ -75,3 +75,8 @@ def test_reassess_never_overwrites_a_newer_conversion(tmp_root, fixtures, monkey
     monkeypatch.setattr(ra, "assess", assess_while_converting)
     assert reassess_all(store, log=lambda s: None)["assessed"] == 0
     assert store.get_document(did)["quality"]["page_map"]["method"] == "mineru_render_plan"
+
+
+def test_invalid_page_map_is_flagged_like_an_incomplete_one():
+    doc = {"source_path": "a.pdf", "quality": {"reasons": ["page_map_invalid"], "page_check": 1, "pages_unrepaired": 0}}
+    assert doc_flags(doc) == ["page_map_incomplete"]

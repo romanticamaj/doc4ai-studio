@@ -26,7 +26,7 @@ def doc_flags(doc: dict) -> list[str]:
     q = doc.get("quality") or {}
     reasons = set(q.get("reasons") or [])
     out = []
-    if reasons & {"page_map_incomplete", "page_map_misaligned"}:
+    if reasons & {"page_map_incomplete", "page_map_misaligned", "page_map_invalid"}:
         out.append("page_map_incomplete")
     if (q.get("pages_unrepaired") or 0) > 0 or "pages_flagged" in reasons:
         out.append("page_quality")

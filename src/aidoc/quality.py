@@ -24,6 +24,9 @@ ALIGN_MIN_MISPLACED = 2
 # exercise / solution pages repeat each other's text score 0.80-0.89 (Head First Android, Docling); the document
 # check over 30 pages of the whole book keeps ALIGN_MIN (2026-10-01 acceptance)
 ALIGN_MIN_QUICK = 0.50
+# a local shift misplaces consecutive pages; legitimate misses are isolated (longest run over every page of the two
+# real books: 2 and 1). Applies to the segment and the document check (2026-10-01 verifier findings)
+ALIGN_MAX_RUN = 3
 FLAGGED_MAX_RATIO = 0.20
 PAGE_GARBAGE_MAX = 0.05
 PAGE_GARBAGE_MIN_CHARS = 50
@@ -188,15 +191,21 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     pm = pagemap.page_map(markdown, pages, page_map_method)
     if pm["coverage"] < COVERAGE_MIN:
         reasons.append("page_map_incomplete")
+    # runners emit one marker per page in order: a duplicate, a decrease or a page outside 1..pages means the map
+    # was relabelled somewhere (a shifted / swapped / repeated range) — deterministic, no sampling
+    pm["invalid_markers"] = pagemap.invalid_markers(markdown, pages)
+    if pm["invalid_markers"]:
+        reasons.append("page_map_invalid")
     if pdf is not None:
         # quick (segment) check: every page of the segment — a 10-page sample let one legitimately merged
         # cross-page paragraph read as 1/9 misaligned on a real book (2026-10-01 acceptance)
         al = pagemap.spot_check(markdown, pdf, sample=align_sample or (max(pages, 1) if quick else 30),
                                 exclude=probe.broken_font_pages, layers=layers)
         pm["alignment"] = al
-        if (al["decidable"] >= ALIGN_MIN_DECIDABLE and al["ratio"] is not None
-                and al["ratio"] < (ALIGN_MIN_QUICK if quick else ALIGN_MIN)
-                and al["decidable"] - al["aligned"] >= ALIGN_MIN_MISPLACED):
+        low_ratio = (al["decidable"] >= ALIGN_MIN_DECIDABLE and al["ratio"] is not None
+                     and al["ratio"] < (ALIGN_MIN_QUICK if quick else ALIGN_MIN)
+                     and al["decidable"] - al["aligned"] >= ALIGN_MIN_MISPLACED)
+        if low_ratio or al.get("max_misplaced_run", 0) >= ALIGN_MAX_RUN:
             reasons.append("page_map_misaligned")
     repaired = list(repaired or [])
     repaired_pages = {e["page"] for e in repaired}
