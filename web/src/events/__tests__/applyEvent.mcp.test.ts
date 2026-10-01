@@ -31,3 +31,22 @@ test("mcp.client upserts and mcp.token invalidates", () => {
   applyEvent(c, { kind: "mcp.token", seq: 4, payload: { id: "t", name: "a", prefix: "doc4ai_pat_AAAA", action: "revoked" } } as AidocEvent);
   expect(c.getQueryState(qk.mcp.tokens())?.isInvalidated).toBe(true);
 });
+
+test("mcp.call bumps the client's request count and last request, and the token's last use and 24h counts", () => {
+  const c = qc();
+  const client: McpClient = { id: "c9", token_id: "t9", token_name: "a", client_name: "cc", client_version: "1", protocol_version: "2026-07-28",
+    user_agent: null, first_seen: 1, last_seen: 1, last_ip: "::1", request_count: 4, active: true };
+  c.setQueryData(qk.mcp.clients({}), { clients: [client] });
+  c.setQueryData(qk.mcp.tokens(), [{ id: "t9", name: "a", last_used_at: 1, last_used_ip: null, calls_24h: 4, errors_24h: 0 }]);
+  const ev = (id: number, status = "ok") => ({ kind: "mcp.call", seq: id, payload: { id, ts: 500, token_id: "t9", token_name: "a", client_id: "c9",
+    client_name: "cc", method: "tools/call", tool_name: "read_document", status, error_code: null, http_status: 200, duration_ms: 3,
+    response_tokens_est: 2, job_id: null, ip: "100.64.0.9" } } as AidocEvent);
+  applyEvent(c, ev(901));
+  applyEvent(c, ev(901));                                       // the same row re-published (auth-flood aggregate) counts once
+  applyEvent(c, ev(902, "tool_error"));
+  const cl = c.getQueryData<{ clients: McpClient[] }>(qk.mcp.clients({}))!.clients[0];
+  expect(cl.request_count).toBe(6);
+  expect(cl.last_seen).toBe(500);
+  const tok = c.getQueryData<{ calls_24h: number; errors_24h: number; last_used_at: number; last_used_ip: string }[]>(qk.mcp.tokens())![0];
+  expect([tok.calls_24h, tok.errors_24h, tok.last_used_at, tok.last_used_ip]).toEqual([6, 1, 500, "100.64.0.9"]);
+});

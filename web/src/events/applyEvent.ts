@@ -1,11 +1,42 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { qk } from "@/api/queries";
 import { qk as mcpQk, type CallFilters } from "@/api/mcp";
-import type { AidocEvent, Job, JobDetail, McpCall, McpCallsPage, McpClient, Segment, SystemInfo, Task } from "@/api/types";
+import type { AidocEvent, Job, JobDetail, McpCall, McpCallsPage, McpClient, McpToken, Segment, SystemInfo, Task } from "@/api/types";
 import { mergeLiveCall } from "@/features/mcp/mergeCalls";
 import { logStore as defaultLogs, type LogStore } from "./useTaskLogs";
 
 let lastMcpBump = 0; // stats refetch throttle (mcp.call can arrive many times a second)
+const countedCalls = new Set<number>();
+
+/** Live 連線 / Tokens numbers: the call's client gets a request and a last-seen time, its token a last use and a
+ *  24 h call (and error) more. Exact values return on the next refetch. */
+function bumpClientAndToken(qc: QueryClient, call: McpCall): void {
+  if (call.client_id) {
+    for (const [key, data] of qc.getQueriesData<{ clients: McpClient[] }>({ queryKey: ["mcp", "clients"] })) {
+      if (!data?.clients?.some((c) => c.id === call.client_id)) continue;
+      qc.setQueryData(key, {
+        ...data,
+        clients: data.clients.map((c) =>
+          c.id === call.client_id
+            ? { ...c, request_count: c.request_count + 1, last_seen: Math.max(c.last_seen, call.ts), last_ip: call.ip ?? c.last_ip, active: true }
+            : c,
+        ),
+      });
+    }
+  }
+  if (call.token_id) {
+    qc.setQueryData<McpToken[]>(mcpQk.mcp.tokens(), (old) =>
+      Array.isArray(old)
+        ? old.map((t) =>
+            t.id === call.token_id
+              ? { ...t, last_used_at: Math.max(t.last_used_at ?? 0, call.ts), last_used_ip: call.ip ?? t.last_used_ip,
+                  calls_24h: t.calls_24h + 1, errors_24h: t.errors_24h + (call.status === "ok" ? 0 : 1) }
+              : t,
+          )
+        : old,
+    );
+  }
+}
 
 const TERMINAL = new Set(["done", "low", "failed", "skipped", "cancelled"]);
 
@@ -160,6 +191,12 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
         qc.invalidateQueries({ queryKey: ["mcp", "stats"] });
       }
       qc.invalidateQueries({ queryKey: mcpQk.mcp.status() });
+      if (!countedCalls.has(call.id)) {
+        // first sight of this row (an auth-flood aggregate is re-published under the same id): count it once
+        countedCalls.add(call.id);
+        if (countedCalls.size > 2000) countedCalls.delete(countedCalls.values().next().value as number);
+        bumpClientAndToken(qc, call);
+      }
       if (call.status === "auth_error") qc.invalidateQueries({ queryKey: mcpQk.mcp.tokens() });
       return;
     }
