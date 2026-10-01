@@ -73,7 +73,7 @@ def _repairing(req):
     return eo.get("backend") == "pypdfium" or eo.get("ocr_mode") == "ocr"
 
 
-def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False):
+def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, failing=False):
     out = Path(req["out_dir"])
     (out / "images").mkdir(parents=True, exist_ok=True)
     pages = req.get("pages")
@@ -85,10 +85,20 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False):
     else:
         n = sc.get("pages_per_doc", 3)
     garbled_pages = set(sc.get("garbled_pages", [])) if garbled and (sticky or not _repairing(req)) else set()
+    # partial success: scenario failed_pages are absolute pages; a repair run (pages.pdf) fails all its pages when sticky
+    failed = {}
+    if failing and (sticky or not _repairing(req)):
+        first = pages[0] if pages else 1
+        repair_src = os.path.basename(req["src"]) == "pages.pdf"
+        for i in range(1, n + 1):
+            if (repair_src and sticky) or (not repair_src and first - 1 + i in set(sc.get("failed_pages", []))):
+                failed[i] = "Page failed to parse."
     parts, images = [], []
     for i in range(1, n + 1):
         if with_pages:
             parts.append(f"<!-- page: {i + shift} -->")
+        if i in failed:                                 # the engine lost this page: an empty section
+            continue
         excerpt = ""
         if texts is not None and len(texts) == n:
             excerpt = " ".join(texts[i - 1][:400].split())
@@ -108,7 +118,9 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False):
     return {"markdown_path": str(md), "images": images, "has_page_markers": with_pages, "page_count": n,
             "first_table": {"page": 1, "n_cols": 2, "touches_edge": False},
             "last_table": {"page": n, "n_cols": 2, "touches_edge": False},
-            "page_map_method": "fake_per_page" if with_pages else "none"}
+            "page_map_method": "fake_per_page" if with_pages else "none",
+            "failed_pages": {str(k): v for k, v in failed.items()},
+            "errors": [f"p{k}: {v}" for k, v in failed.items()]}
 
 
 def handle(req):
@@ -127,6 +139,10 @@ def handle(req):
         return _write_ok(req, sc, garbled=True)
     if b == "garbled_sticky":                           # ... and the repair engines cannot fix it either
         return _write_ok(req, sc, garbled=True, sticky=True)
+    if b == "partial":                                  # PARTIAL_SUCCESS: scenario failed_pages come out empty
+        return _write_ok(req, sc, failing=True)
+    if b == "partial_sticky":                           # ... and the repair runs fail those pages too
+        return _write_ok(req, sc, failing=True, sticky=True)
     if b == "slow_ok":
         # index §6: slow_ok sleeps delay_s; `slow_s` (tests) overrides it for slow_ok only
         time.sleep(float(sc.get("slow_s", sc.get("delay_s", 0))))

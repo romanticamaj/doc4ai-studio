@@ -258,3 +258,21 @@ def test_forced_engine_repairs_even_many_broken_pages(env):
     assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
     q = _sidecar(env, "broken_tounicode")["quality"]
     assert q["level"] == "ok" and q["pages_flagged"] == 1 and q["pages"][0]["repaired_by"].startswith("docling:")
+
+
+def test_failed_pages_go_to_repair_and_into_the_sidecar(env, fixtures):
+    # docling reports page 3 failed (PARTIAL_SUCCESS): the page is repaired per page and recorded
+    write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "partial"}], failed_pages=[3])
+    tid = env["make"]("big.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    q = _sidecar(env, "big")["quality"]
+    assert q["level"] == "ok" and q["pages"][0]["page"] == 3
+    assert q["pages"][0]["reasons"] == ["page_conversion_failed"] and q["pages"][0]["repaired_by"].startswith("docling:")
+
+
+def test_unrepaired_failed_page_is_warn(env, fixtures):
+    write_scenario(env["sc"], default="partial_sticky", failed_pages=[3])
+    tid = env["make"]("big.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    q = _sidecar(env, "big")["quality"]
+    assert q["level"] == "warn" and q["pages_unrepaired"] == 1 and "error" in q["pages"][0]

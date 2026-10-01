@@ -40,7 +40,9 @@ def raw_from_result(res: dict, raw_dir: Path) -> RawResult:
                      has_page_markers=bool(res.get("has_page_markers")), page_count=res.get("page_count"),
                      first_table=TableEdge.from_json(ft) if ft else None,
                      last_table=TableEdge.from_json(lt) if lt else None,
-                     page_map_method=res.get("page_map_method"))
+                     page_map_method=res.get("page_map_method"),
+                     failed_pages={int(k): str(v) for k, v in (res.get("failed_pages") or {}).items()},
+                     engine_errors=[str(e) for e in (res.get("errors") or [])])
 
 
 class RunnerEngine:

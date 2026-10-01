@@ -87,6 +87,18 @@ def _replace_placeholders(md, links):
     return re.sub(r"<!-- image -->", sub, md)
 
 
+def conversion_errors(res):
+    """({page: first message}, ["p<page>: message" | "message"]) from a Docling result's errors (1-based page_no).
+    A PARTIAL_SUCCESS result still has a document, but its failed pages come out empty: report them."""
+    failed, errors = {}, []
+    for e in getattr(res, "errors", None) or []:
+        page, msg = getattr(e, "page_no", None), str(getattr(e, "error_message", "") or e)
+        errors.append(f"p{page}: {msg}" if page else msg)
+        if page and page not in failed:
+            failed[page] = msg[:300]
+    return failed, errors
+
+
 def _page_count(doc):
     n = getattr(doc, "num_pages", None)
     return n() if callable(n) else len(doc.pages)
@@ -106,6 +118,9 @@ def handle(req):
     if "failure" in status and res.document is None:
         raise _proto.RunnerError("engine", f"docling conversion failed: {getattr(res, 'errors', '')}")
     doc = res.document
+    failed, errors = conversion_errors(res)
+    if errors:
+        _proto.log(f"docling reported {len(errors)} error(s) ({status}); failed pages: {sorted(failed)}")
     n = _page_count(doc)
     paged = req.get("kind", "pdf") == "pdf"          # images are a single unnumbered page: no markers
     parts, images = [], []
@@ -128,7 +143,8 @@ def handle(req):
     md_path = out / "out.md"
     md_path.write_text("\n".join(parts), encoding="utf-8")
     return {"markdown_path": str(md_path), "images": images, "has_page_markers": paged, "page_count": n,
-            "first_table": first, "last_table": last, "page_map_method": "docling_per_page" if paged else None}
+            "first_table": first, "last_table": last, "page_map_method": "docling_per_page" if paged else None,
+            "failed_pages": {str(k): v for k, v in failed.items()}, "errors": errors[:50]}
 
 
 if __name__ == "__main__":

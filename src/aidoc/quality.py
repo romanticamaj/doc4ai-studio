@@ -180,6 +180,7 @@ def flag_pages(md: str, broken_font_pages: Iterable[int]) -> list[dict]:
 def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | None = None,
            page_map_method: str | None = None, quick: bool = False, flagged_before: int | None = None,
            repaired: list[dict] | None = None, align_sample: int | None = None, last_resort: bool = False,
+           failed_pages: dict[int, str] | None = None,
            layers: list[str] | None = None) -> QualityResult:
     """Document quality. Legacy rules for non-PDFs; PDFs add the page map, alignment spot check and flagged pages
     (spec 2026-10-01 §5.2: any document reason -> low; else unrepaired flagged pages -> warn; else ok)."""
@@ -210,6 +211,16 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     repaired = list(repaired or [])
     repaired_pages = {e["page"] for e in repaired}
     flagged = [e for e in flag_pages(markdown, probe.broken_font_pages) if e["page"] not in repaired_pages]
+    # pages the engine reported as failed and that were not repaired (their section is empty or partial)
+    by_page = {e["page"]: e for e in flagged}
+    for p, msg in sorted((failed_pages or {}).items()):
+        if p in repaired_pages or not 1 <= p <= pages:
+            continue
+        if p in by_page:
+            by_page[p] = {**by_page[p], "reasons": by_page[p]["reasons"] + ["page_conversion_failed"], "error": msg}
+        else:
+            by_page[p] = {"page": p, "reasons": ["page_conversion_failed"], "error": msg}
+    flagged = [by_page[p] for p in sorted(by_page)]
     missing = [{"page": p, "reasons": ["page_map_missing"]} for p in pm["missing"]]
     entries = sorted(flagged + repaired + missing, key=lambda e: e["page"])
     n_flagged = flagged_before if flagged_before is not None else len(flagged) + len(repaired)

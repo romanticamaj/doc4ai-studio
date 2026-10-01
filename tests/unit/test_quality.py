@@ -241,3 +241,15 @@ def test_a_run_of_three_misplaced_pages_is_misaligned(monkeypatch, tmp_path):
     result.update(aligned=37, ratio=0.9487, misplaced=[5, 20], max_misplaced_run=1)
     assert "page_map_misaligned" not in assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x",
                                                quick=True).reasons
+
+
+def test_pages_the_engine_failed_on_are_flagged():
+    """Docling PARTIAL_SUCCESS: a failed page comes out empty and would only read as 'undecidable' (verifier)."""
+    md = _doc([GOOD_EN, GOOD_EN, ""] + [GOOD_EN] * 7)
+    q = assess(md, _probe(10), 10, page_map_method="x", failed_pages={3: "Page failed to parse."})
+    assert q.level == "warn" and q.pages == [{"page": 3, "reasons": ["page_conversion_failed"],
+                                              "error": "Page failed to parse."}]
+    entry = {**q.pages[0], "repaired_by": "mineru:ocr"}
+    q2 = assess(_doc([GOOD_EN] * 10), _probe(10), 10, page_map_method="x", failed_pages={3: "x"},
+                flagged_before=1, repaired=[entry])
+    assert q2.level == "ok" and q2.pages == [entry]

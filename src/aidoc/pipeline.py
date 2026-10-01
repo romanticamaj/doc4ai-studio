@@ -170,6 +170,7 @@ def save_segment_part(seg_dir: Path, part: SegmentPart) -> None:
     fsops.atomic_write_json(seg_dir / "edges.json", {
         "engine": part.engine, "opts_key": part.opts_key, "has_page_markers": part.has_page_markers,
         "page_count": part.page_count, "page_map_method": part.page_map_method,
+        "failed_pages": {str(k): v for k, v in part.failed_pages.items()},
         "first_table": part.first_table.to_json() if part.first_table else None,
         "last_table": part.last_table.to_json() if part.last_table else None})
 
@@ -191,7 +192,8 @@ def load_segment_part(seg_dir: Path, seg_row: dict) -> SegmentPart | None:
                        first_table=TableEdge.from_json(ft) if ft else None,
                        last_table=TableEdge.from_json(lt) if lt else None,
                        page_count=edges.get("page_count"), engine=edges.get("engine"),
-                       opts_key=edges.get("opts_key"), page_map_method=edges.get("page_map_method"))
+                       opts_key=edges.get("opts_key"), page_map_method=edges.get("page_map_method"),
+                       failed_pages={int(k): v for k, v in (edges.get("failed_pages") or {}).items()})
 
 
 def _discard_segments(ctx: PipelineContext) -> None:
@@ -218,7 +220,8 @@ def _segment_probe(probe: ProbeResult, page_start: int, page_end: int) -> ProbeR
 
 
 def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedResult,
-                   method: str | None, last_resort: bool = False) -> tuple[NormalizedResult, QualityResult]:
+                   method: str | None, last_resort: bool = False,
+                   failed: dict[int, str] | None = None) -> tuple[NormalizedResult, QualityResult]:
     """Whole-document check (spec 2026-10-01 §5, §8.2): flag broken pages, repair them page by page when they are
     few (more than 20 % of the non-blank pages means the engine is wrong for this file: no repair, reason
     pages_flagged), then assess with the page map and the alignment spot check. `last_resort` (no engine to fall
@@ -226,9 +229,19 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     probe = ctx.probe
     if probe.kind != "pdf" or probe.pages is None:
         return merged, assess(merged.markdown, probe, probe.pages, page_map_method=method)
+    failed = dict(failed or {})
     flagged = flag_pages(merged.markdown, probe.broken_font_pages)
+    # pages the engine reported as failed (empty sections) are repaired like broken pages (verifier finding)
+    by_page = {e["page"]: e for e in flagged}
+    for p, msg in failed.items():
+        if p in by_page:
+            by_page[p] = {**by_page[p], "reasons": by_page[p]["reasons"] + ["page_conversion_failed"], "error": msg}
+        else:
+            by_page[p] = {"page": p, "reasons": ["page_conversion_failed"], "error": msg}
+    flagged = [by_page[p] for p in sorted(by_page)]
     effective = max(1, probe.pages - len(probe.blank_pages))
     repaired: list[dict] = []
+    outcome_repaired: dict[int, str] = {}
     if flagged and (last_resort or len(flagged) <= FLAGGED_MAX_RATIO * effective) and ctx.engines:
         outcome = repair_pages(ctx, ctx.engines, merged, [e["page"] for e in flagged], engine_name)
         merged = NormalizedResult(markdown=outcome.markdown, assets=outcome.assets)
@@ -237,10 +250,12 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
                 + (f" with {', '.join(labels)}" if labels else "")
                 + (f"; unrepaired: {outcome.unrepaired[:20]}" if outcome.unrepaired else ""))
         repaired = [{**e, "repaired_by": outcome.repaired[e["page"]]} for e in flagged if e["page"] in outcome.repaired]
+        outcome_repaired = outcome.repaired
     elif flagged:
         ctx.log(f"{len(flagged)} of {effective} pages have a broken text layer or garbage: not repaired page by page")
     q = assess(merged.markdown, probe, probe.pages, pdf=ctx.work_src, page_map_method=method,
-               flagged_before=len(flagged), repaired=repaired, last_resort=last_resort)
+               flagged_before=len(flagged), repaired=repaired, last_resort=last_resort,
+               failed_pages={p: m for p, m in failed.items() if p not in outcome_repaired})
     if q.page_map and q.page_map.get("alignment"):
         al = q.page_map["alignment"]
         ctx.log(f"page map {q.page_map['found']}/{q.page_map['expected']} ({q.page_map.get('method')}); "
@@ -304,14 +319,15 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
             norm = normalize(raw, offset, seg["idx"])
             if multi and quick_check and ps is not None:
                 q = assess(_relative_markers(norm.markdown, offset), _segment_probe(probe, ps, pe), seg_pages,
-                           pdf=seg_src, page_map_method=raw.page_map_method, quick=True)
+                           pdf=seg_src, page_map_method=raw.page_map_method, quick=True, failed_pages=raw.failed_pages)
                 if q.level == "low":
                     raise EngineError(ErrorKind.engine, f"segment {seg['idx']} quick check failed: "
                                                         f"{', '.join(q.reasons)}")
             part = SegmentPart(idx=seg["idx"], page_start=ps, page_end=pe, markdown=norm.markdown, assets=norm.assets,
                                has_page_markers=raw.has_page_markers, first_table=raw.first_table,
                                last_table=raw.last_table, page_count=raw.page_count, engine=engine.name,
-                               opts_key=options_key(opts), page_map_method=raw.page_map_method)
+                               opts_key=options_key(opts), page_map_method=raw.page_map_method,
+                               failed_pages={p + offset: m for p, m in raw.failed_pages.items()})
             save_segment_part(sd, part)
             store.update_segment(seg["id"], status=SegmentStatus.done, output_path=str(sd))
             ctx.segment_updated(seg["id"])
@@ -326,7 +342,8 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
     else:
         merged = NormalizedResult(markdown=parts[0].markdown, assets=parts[0].assets)
     page_count = probe.pages if probe.pages is not None else parts[0].page_count
-    merged, q = check_document(ctx, engine.name, merged, parts[0].page_map_method, last_resort=last)
+    failed = {p: m for part in parts for p, m in part.failed_pages.items()}
+    merged, q = check_document(ctx, engine.name, merged, parts[0].page_map_method, last_resort=last, failed=failed)
     return merged, q, page_count
 
 
