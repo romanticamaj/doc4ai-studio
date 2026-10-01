@@ -8,18 +8,21 @@ from pydantic import Field
 
 from aidoc import pageindex
 from aidoc.mcp import docs as D
-from aidoc.mcp.budget import CursorError, decode_cursor, encode_cursor
+from aidoc.mcp.budget import CursorError, cut_to_budget, decode_cursor, encode_cursor, estimate_tokens
 from aidoc.mcp.errors import ToolFailure
 from aidoc.mcp.principal import SCOPE_READ
-from aidoc.mcp.registry import doc4ai_tool
+from aidoc.mcp.registry import TEXT_RESERVE_TOKENS, doc4ai_tool
 from aidoc.mcp.schemas import (
     DocInfoOut,
     DocSummary,
     ListDocumentsOut,
     ListFilters,
+    NextRef,
     PageMapBrief,
+    PageSpan,
     QualityBrief,
     QualityFull,
+    ReadOut,
     SearchFilters,
     SearchHit,
     SearchOut,
@@ -172,3 +175,80 @@ def register_read_tools(mcp, ctx) -> None:
                           outline=items, outline_truncated=trunc, token_estimate=D.token_ranges(view),
                           chunks=len(D.chunk_cache(view, 800)), resources=D.resources_for(view.doc_id),
                           stale=job is not None, job_id=job)
+
+    @doc4ai_tool(mcp, ctx, name="read_document", title="Read document pages",
+                 description="Markdown of a page range (\"12\" or \"12-15\") or of the section under a heading. Responses are "
+                             "capped (default 6,000 tokens, max 8,000): when `truncated` is true, call again with `next.pages` "
+                             "(and `next.offset` when one page had to be cut). Documents without page markers are read as "
+                             "chunks: use `chunk` from `next.chunk` to continue. Images are given as doc4ai:// resource URIs. "
+                             "Page markers <!-- page: N --> are kept so you can cite pages.",
+                 scope=SCOPE_READ, read_only=True, idempotent=True)
+    def read_document(doc_id: Annotated[str, Field(min_length=1, max_length=64)],
+                      pages: Annotated[str, Field(max_length=20)] | None = None,
+                      heading: Annotated[str, Field(max_length=200)] | None = None,
+                      chunk: Annotated[int, Field(ge=0)] | None = None,
+                      offset: Annotated[int, Field(ge=0)] | None = None,
+                      max_tokens: Annotated[int, Field(ge=500, le=8000)] = 6000) -> ReadOut:
+        view = D.load_doc(ctx, doc_id)
+        budget = max(200, min(max_tokens, ctx.config.mcp.response_token_budget) - TEXT_RESERVE_TOKENS)   # room for the header
+        if pages is not None and heading is not None:
+            raise ToolFailure("invalid_arguments", "give either pages or heading, not both")
+        job = D.stale_job(ctx, view.row)
+        if not view.has_pages:                                 # chunk mode (spec §5.3, §9)
+            if pages is not None or heading is not None:
+                raise ToolFailure("page_range_invalid", "this document has no page markers; read it by chunk",
+                                  hint="omit pages/heading and follow next.chunk", pages=None)
+            chunks = D.chunk_cache(view, 800)
+            start = chunk or 0
+            if start >= len(chunks):
+                raise ToolFailure("invalid_arguments", f"chunk {start} is past the end ({len(chunks)} chunks)")
+            parts, used, i, nxt = [], 0, start, None
+            while i < len(chunks):
+                text = (D.chunk_markdown_text(chunks[i])[offset or 0:] if i == start
+                        else D.chunk_markdown_text(chunks[i], chunks[i - 1]))
+                n = estimate_tokens(text)[0]
+                if used + n <= budget:
+                    parts.append(text)
+                    used += n
+                    i += 1
+                    continue
+                if not parts:
+                    kept, cut = cut_to_budget(text, budget)
+                    parts.append(kept)
+                    nxt = NextRef(chunk=i, offset=(offset or 0) + (cut or 0))
+                else:
+                    nxt = NextRef(chunk=i)
+                break
+            md = D.rewrite_assets("\n\n".join(parts), view.doc_id)
+            return ReadOut(doc_id=view.doc_id, title=view.title, unit="chunks", pages=None, markdown=md, truncated=nxt is not None,
+                           next=nxt, page_warnings=[], tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)
+        total = view.pages
+        if heading is not None:
+            start, end, _ = D.heading_span(view, heading)
+        elif pages is not None:
+            start, end = D.parse_pages(pages, total)
+        else:
+            start, end = 1, total
+        parts, used, nxt, last = [], 0, None, start - 1
+        for p in range(start, end + 1):
+            block = view.page_block(p)
+            if p == start and offset:
+                block = block[offset:]
+            n = estimate_tokens(block)[0]
+            if used + n <= budget:
+                parts.append(block)
+                used += n
+                last = p
+                continue
+            if not parts:                                      # one page bigger than the budget: slice it
+                kept, cut = cut_to_budget(block, budget)
+                parts.append(kept)
+                last = p
+                nxt = NextRef(pages=f"{p}-{end}" if end > p else str(p), offset=(offset or 0) + (cut or 0))
+            else:
+                nxt = NextRef(pages=f"{p}-{end}" if end > p else str(p))
+            break
+        md = D.rewrite_assets("".join(parts), view.doc_id)
+        return ReadOut(doc_id=view.doc_id, title=view.title, unit="pages", pages=PageSpan(start=start, end=last),
+                       markdown=md, truncated=nxt is not None, next=nxt, page_warnings=D.page_warnings(view.row, start, last),
+                       tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)

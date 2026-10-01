@@ -2,6 +2,7 @@
 warnings (spec 2026-10-01 per-page quality) and the "stale while reconverting" check (MCP spec §9)."""
 from __future__ import annotations
 
+import difflib
 import re
 import threading
 from collections import OrderedDict
@@ -212,3 +213,47 @@ def chunk_cache(view: DocView, max_tokens: int) -> list:
         while len(_chunk_cache) > 16:
             _chunk_cache.pop(next(iter(_chunk_cache)))
     return _chunk_cache[key]
+
+
+_RANGE = re.compile(r"^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$")
+
+
+def parse_pages(spec: str, total: int | None) -> tuple[int, int]:
+    m = _RANGE.match(spec or "")
+    hint = f"use get_document_info; this document has {total} pages" if total else "this document has no page markers"
+    if not m:
+        raise ToolFailure("page_range_invalid", f"pages must look like \"12\" or \"12-15\", got {spec!r}", hint=hint, pages=total)
+    a = int(m.group(1))
+    b = int(m.group(2)) if m.group(2) else a
+    if a < 1 or b < a or (total is not None and b > total):
+        raise ToolFailure("page_range_invalid", f"page range {a}-{b} is outside 1-{total}", hint=hint, pages=total)
+    return a, b
+
+
+def heading_span(view: DocView, heading: str) -> tuple[int, int, str]:
+    items, _ = outline(view, limit=10_000)
+    want = heading.strip().lower()
+    paged = [i for i in items if i.page is not None]
+    match = next((i for i in paged if i.title.lower() == want), None) or next((i for i in paged if want in i.title.lower()), None)
+    if match is None:
+        titles = list(dict.fromkeys(i.title for i in items))
+        by_low = {t.lower(): t for t in reversed(titles)}
+        closest = [by_low[t] for t in difflib.get_close_matches(want, list(by_low), n=3, cutoff=0)]
+        raise ToolFailure("heading_not_found", f"no heading matches {heading!r}", hint="pick one of `closest` or use pages",
+                          closest=closest)
+    idx = paged.index(match)
+    end = view.pages or match.page
+    for later in paged[idx + 1:]:
+        if later.level <= match.level and later.page is not None:
+            end = max(match.page, later.page - 1) if later.page > match.page else match.page
+            break
+    return match.page, end, match.title
+
+
+def chunk_markdown_text(chunk, previous=None) -> str:
+    """A chunk as readable Markdown: chunk texts carry no heading lines (the path is separate), so the heading is
+    re-emitted whenever the path changes (always for the first chunk of a read)."""
+    path = list(chunk.heading_path or [])
+    if path and (previous is None or list(previous.heading_path or []) != path):
+        return f"{'#' * min(len(path), 6)} {path[-1]}\n\n{chunk.text}"
+    return chunk.text
