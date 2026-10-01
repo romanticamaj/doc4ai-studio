@@ -9,10 +9,14 @@ const REASON_LABEL: Record<string, string> = {
   chars_per_page: "每頁字數過少",
   garbage_ratio: "亂碼比例過高",
   missing_table: "原檔有表格但輸出沒有",
+  page_map_incomplete: "頁碼不完整",
+  page_map_misaligned: "頁碼與原檔對不上",
+  page_map_invalid: "頁碼順序錯亂（重複或倒退）",
+  pages_flagged: "問題頁過多",
 };
 
 export function reasonText(reasons: string[] | undefined): string {
-  return (reasons ?? []).map((r) => `${REASON_LABEL[r] ?? r} (${r})`).join("、");
+  return (reasons ?? []).map((r) => (REASON_LABEL[r] ? `${REASON_LABEL[r]} (${r})` : r)).join("、");
 }
 
 function attemptDetail(a: Attempt): string | undefined {

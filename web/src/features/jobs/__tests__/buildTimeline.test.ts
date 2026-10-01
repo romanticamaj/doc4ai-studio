@@ -83,3 +83,10 @@ test("a duplicate input says which input it duplicates (M2)", () => {
   expect(fin.detail).toContain("D:\in\a\text.pdf");
   expect(fin.detail).toContain("內容相同");
 });
+
+test("reason labels: human text + code once; an unknown code is not repeated", async () => {
+  const { reasonText } = await import("../buildTimeline");
+  expect(reasonText(["page_map_incomplete"])).toBe("頁碼不完整 (page_map_incomplete)");
+  for (const r of ["page_map_misaligned", "page_map_invalid", "pages_flagged"]) expect(reasonText([r])).not.toBe(`${r} (${r})`);
+  expect(reasonText(["something_new"])).toBe("something_new");
+});

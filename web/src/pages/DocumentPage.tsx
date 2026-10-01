@@ -17,7 +17,7 @@ import { useScrollSync } from "@/features/document/useScrollSync";
 import { GoToPage } from "@/features/document/GoToPage";
 import { pageWarnings } from "@/features/document/pageWarnings";
 import { PageBadges } from "@/features/library/PageBadges";
-import { needsReconvert } from "@/features/library/badges";
+import { reconvertControl } from "@/features/document/reconvertControl";
 import { describeError } from "@/lib/errors";
 import { reasonText } from "@/features/jobs/buildTimeline";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -204,9 +204,13 @@ export default function DocumentPage() {
                 <span className="flex-1">
                   頁碼不完整（找到 {doc.page_summary?.found ?? 0}／{doc.page_summary?.expected ?? doc.pages ?? "?"} 頁），左右同步可能失準。
                 </span>
-                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => doReconvert(doc.id)} disabled={reconvert.isPending}>
-                  <RefreshCw /> 重新轉換
-                </Button>
+                {d.source_available ? (
+                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => doReconvert(doc.id)} disabled={reconvert.isPending}>
+                    <RefreshCw /> 重新轉換
+                  </Button>
+                ) : (
+                  <span data-testid="source-gone-hint" className="shrink-0 text-muted-foreground">原始檔不在了，請重新上傳</span>
+                )}
               </div>
             )}
             <TabsContent value="markdown" className="relative min-h-0 flex-1 overflow-auto px-6 py-5 sm:px-8" ref={right}>
@@ -251,7 +255,10 @@ export default function DocumentPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {kind === "pdf" && (doc.pages ?? 0) > 0 && wide && tab === "markdown" && <GoToPage pages={doc.pages ?? 1} onGo={goTo} />}
-          {needsReconvert(doc) && !doc.flags?.includes("page_map_incomplete") && (
+          {reconvertControl(doc, d.source_available) === "source_gone" && !doc.flags?.includes("page_map_incomplete") && (
+            <span data-testid="source-gone-hint" className="text-xs text-muted-foreground">原始檔不在了，請重新上傳後再轉換</span>
+          )}
+          {reconvertControl(doc, d.source_available) === "offer" && !doc.flags?.includes("page_map_incomplete") && (
             <Button variant="outline" size="sm" onClick={() => doReconvert(doc.id)} disabled={reconvert.isPending}>
               <RefreshCw /> 重新轉換
             </Button>
