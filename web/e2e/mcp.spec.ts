@@ -73,3 +73,18 @@ test("MCP page works at phone width without horizontal scroll", async ({ page })
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   expect(overflow).toBe(false);
 });
+
+test("copy buttons work without navigator.clipboard (plain-HTTP tailnet origin)", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // http://<tailnet-ip>:3333 is not a secure context, so navigator.clipboard is undefined there; simulate that here
+  await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true }));
+  await page.goto("/mcp-admin");
+  expect(await page.evaluate(() => typeof navigator.clipboard)).toBe("undefined");
+  const firstEndpoint = (await page.locator("li code, li button[aria-pressed]").first().innerText()).trim();
+  await page.getByRole("button", { name: "複製" }).first().click();
+  await expect(page.getByText("已複製").first()).toBeVisible();
+  const reader = await context.newPage();
+  await reader.goto("/mcp-admin");
+  expect(await reader.evaluate(() => navigator.clipboard.readText())).toBe(firstEndpoint);
+  await reader.close();
+});

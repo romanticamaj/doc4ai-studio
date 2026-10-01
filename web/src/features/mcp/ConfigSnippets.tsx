@@ -6,15 +6,51 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
-export async function copyText(text: string): Promise<boolean> {
+/** execCommand("copy") through an off-screen textarea: works on plain-HTTP origins (the tailnet URL), where
+ *  `navigator.clipboard` does not exist. Focus and the user's selection are put back afterwards. */
+function legacyCopy(text: string): boolean {
+  const active = document.activeElement as HTMLElement | null;
+  const selection = document.getSelection();
+  const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i)) : [];
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.setAttribute("aria-hidden", "true");
+  ta.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0;pointer-events:none";
+  document.body.appendChild(ta);
+  let ok = false;
   try {
-    await navigator.clipboard.writeText(text);
-    toast.success("已複製");
-    return true;
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    ok = document.execCommand("copy");
   } catch {
-    toast.error("無法存取剪貼簿，請手動選取複製");
-    return false;
+    ok = false;
+  } finally {
+    ta.remove();
+    if (selection) {
+      selection.removeAllRanges();
+      for (const r of ranges) selection.addRange(r);
+    }
+    active?.focus?.();
   }
+  return ok;
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  let ok = false;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      ok = false;
+    }
+  }
+  if (!ok) ok = legacyCopy(text);
+  if (ok) toast.success("已複製");
+  else toast.error("無法存取剪貼簿，請手動選取複製");
+  return ok;
 }
 
 export function CopyButton({ text, label = "複製", className }: { text: string; label?: string; className?: string }) {
