@@ -13,10 +13,13 @@ from aidoc.mcp.errors import ToolFailure
 from aidoc.mcp.principal import SCOPE_READ
 from aidoc.mcp.registry import doc4ai_tool
 from aidoc.mcp.schemas import (
+    DocInfoOut,
     DocSummary,
     ListDocumentsOut,
     ListFilters,
+    PageMapBrief,
     QualityBrief,
+    QualityFull,
     SearchFilters,
     SearchHit,
     SearchOut,
@@ -143,3 +146,29 @@ def register_read_tools(mcp, ctx) -> None:
                           flagged_pages=D.flagged_count(d), updated_at=float(d["created_at"] or 0)) for d in page]
         nxt = encode_cursor({"k": key(page[-1]), "id": page[-1]["id"]}) if page and start + limit < len(docs) else None
         return ListDocumentsOut(documents=out, next_cursor=nxt, total=len(docs))
+
+    @doc4ai_tool(mcp, ctx, name="get_document_info", title="Get document info",
+                 description="Metadata for one document: page count, quality level and flagged pages, outline (headings "
+                             "with page numbers, max 200), token estimate per 20-page range, chunk count and resource URIs. "
+                             "Call this before read_document to plan which pages to read.",
+                 scope=SCOPE_READ, read_only=True, idempotent=True)
+    def get_document_info(doc_id: Annotated[str, Field(min_length=1, max_length=64)]) -> DocInfoOut:
+        view = D.load_doc(ctx, doc_id)
+        row, q = view.row, view.row.get("quality") or {}
+        items, trunc = D.outline(view)
+        pm = q.get("page_map") or None
+        page_map = None
+        if pm:
+            al = pm.get("alignment") or {}
+            page_map = PageMapBrief(expected=pm.get("expected"), found=pm.get("found"), coverage=pm.get("coverage"),
+                                    alignment=al.get("ratio") if isinstance(al, dict) else None)
+        flagged = D.page_warnings(row)
+        job = D.stale_job(ctx, row)
+        return DocInfoOut(doc_id=view.doc_id, title=view.title, source_name=view.source_name, pages=view.pages,
+                          engine=row["engine"], lang=row.get("lang") or "cht",
+                          quality=QualityFull(level=q.get("level", row["status"]), score=float(q.get("score", 0.0)),
+                                              reasons=list(q.get("reasons") or [])),
+                          page_map=page_map, flagged_pages=flagged[:D.FLAGGED_MAX], flagged_pages_truncated=len(flagged) > D.FLAGGED_MAX,
+                          outline=items, outline_truncated=trunc, token_estimate=D.token_ranges(view),
+                          chunks=len(D.chunk_cache(view, 800)), resources=D.resources_for(view.doc_id),
+                          stale=job is not None, job_id=job)
