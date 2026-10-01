@@ -48,7 +48,24 @@ class Server:
     token: str = ""
 
 
-_SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server}
+@dataclass
+class Mcp:
+    """[mcp] (spec 2026-10-01 MCP §10)."""
+    enabled: bool = True
+    allowed_hosts: list[str] = field(default_factory=list)      # extra Host values; the bound interface is added
+    local_path_roots: list[str] = field(default_factory=list)   # convert_path whitelist; empty = tool hidden
+    default_token_ttl_days: int = 90
+    max_token_ttl_days: int = 365
+    allow_no_expiry: bool = False
+    rate_limit_per_min: int = 60
+    max_concurrent_jobs_per_token: int = 3
+    max_upload_mb: int = 20
+    response_token_budget: int = 8000
+    call_log_retention_days: int = 30
+    call_log_max_rows: int = 200000
+
+
+_SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp}
 
 
 @dataclass
@@ -57,6 +74,7 @@ class AidocConfig:
     engines: Engines = field(default_factory=Engines)
     limits: Limits = field(default_factory=Limits)
     server: Server = field(default_factory=Server)
+    mcp: Mcp = field(default_factory=Mcp)
     root: Path = field(default_factory=paths.project_root)
     data_dir: Path = field(default_factory=paths.data_dir)
 

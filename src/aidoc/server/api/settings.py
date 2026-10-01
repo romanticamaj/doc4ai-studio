@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import copy
+import re
 from dataclasses import fields
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
@@ -20,6 +22,33 @@ _MAX = {("server", "port"): 65535, ("limits", "upload_max_bytes"): 2 ** 40,     
         ("engines", "docling_page_batch_size"): 1024, ("limits", "disk_space_factor"): 100000,
         ("general", "work_retention_days"): 3650}
 _INT_MAX = 10 ** 9                      # any other int (timeouts in seconds): ~30 years is already absurd
+
+# [mcp] (MCP spec §10, plan index §4 §7)
+_HOST_RE = re.compile(r"^[A-Za-z0-9.\-\[\]:*]+$")
+_MIN.update({("mcp", "default_token_ttl_days"): 1, ("mcp", "max_token_ttl_days"): 1, ("mcp", "rate_limit_per_min"): 1,
+             ("mcp", "max_concurrent_jobs_per_token"): 1, ("mcp", "max_upload_mb"): 1,
+             ("mcp", "response_token_budget"): 500, ("mcp", "call_log_max_rows"): 1000,
+             ("mcp", "call_log_retention_days"): 0})
+_MAX.update({("mcp", "max_upload_mb"): 2048, ("mcp", "response_token_budget"): 25000,
+             ("mcp", "max_token_ttl_days"): 3650, ("mcp", "default_token_ttl_days"): 3650})
+
+
+def _validate_mcp_lists(key: str, val) -> None:
+    if not isinstance(val, list) or not all(isinstance(v, str) for v in val):
+        raise ApiError(422, "invalid_settings", detail=f"mcp.{key} must be a list of strings")
+    for v in val:
+        if key == "allowed_hosts":
+            if not v or not _HOST_RE.match(v):
+                raise ApiError(422, "invalid_settings", detail=f"mcp.allowed_hosts entry {v!r} is not a host[:port|:*]")
+        else:                                   # local_path_roots
+            s = v.replace("\\", "/")
+            if s.startswith("//") or v.startswith("\\\\?\\"):
+                raise ApiError(422, "invalid_settings", detail=f"mcp.local_path_roots entry {v!r} must be a local path")
+            p = Path(v)
+            if not p.is_absolute():
+                raise ApiError(422, "invalid_settings", detail=f"mcp.local_path_roots entry {v!r} must be absolute")
+            if not p.is_dir():
+                raise ApiError(422, "invalid_settings", detail=f"mcp.local_path_roots entry {v!r} does not exist")
 
 
 def masked(ctx) -> dict:
@@ -45,7 +74,11 @@ def _validate(body: dict, cfg) -> dict:
                 if val in ("***", cur):              # the masked or unchanged value a settings form echoes back
                     continue
                 raise ApiError(403, "token_readonly")
-            ok = type(val) is type(cur) or (type(cur) is int and type(val) is int)
+            if section == "mcp" and key in ("allowed_hosts", "local_path_roots"):
+                _validate_mcp_lists(key, val)
+                clean.setdefault(section, {})[key] = val
+                continue
+            ok =type(val) is type(cur) or (type(cur) is int and type(val) is int)
             if not ok:
                 raise ApiError(422, "invalid_settings", detail=f"{section}.{key} must be {type(cur).__name__}")
             if (section, key) in _CHOICES and val not in _CHOICES[(section, key)]:
@@ -67,6 +100,12 @@ def _validate(body: dict, cfg) -> dict:
                     continue
                 raise ApiError(403, "server_readonly", detail=f"{section}.{key} is set when aidoc serve starts")
             clean.setdefault(section, {})[key] = val
+    if "mcp" in clean:
+        m = clean["mcp"]
+        default_ttl = m.get("default_token_ttl_days", cfg.mcp.default_token_ttl_days)
+        max_ttl = m.get("max_token_ttl_days", cfg.mcp.max_token_ttl_days)
+        if default_ttl > max_ttl:
+            raise ApiError(422, "invalid_settings", detail="mcp.default_token_ttl_days must be <= mcp.max_token_ttl_days")
     return clean
 
 

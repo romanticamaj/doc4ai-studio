@@ -19,3 +19,17 @@ disk_space_factor = 3
 host = "127.0.0.1"
 port = 8765
 token = ""
+
+[mcp]
+enabled = true
+allowed_hosts = []                 # extra Host names (e.g. the MagicDNS name); the bound interface is added automatically
+local_path_roots = []              # convert_path whitelist; empty = the tool is hidden
+default_token_ttl_days = 90
+max_token_ttl_days = 365
+allow_no_expiry = false
+rate_limit_per_min = 60
+max_concurrent_jobs_per_token = 3
+max_upload_mb = 20
+response_token_budget = 8000
+call_log_retention_days = 30
+call_log_max_rows = 200000

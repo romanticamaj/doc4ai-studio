@@ -97,3 +97,36 @@ def test_settings_token_masked(token_ctx):
     with TestClient(create_app(token_ctx)) as c:
         s = c.get("/api/settings", headers={"Authorization": "Bearer s3cret"}).json()["settings"]
         assert s["server"]["token"] == "***"
+
+
+def test_settings_mcp_section_roundtrip(client, tmp_root):
+    s = client.get("/api/settings").json()["settings"]
+    assert s["mcp"]["response_token_budget"] == 8000 and s["mcp"]["local_path_roots"] == []
+    roots = tmp_root / "shared"
+    roots.mkdir()
+    r = client.put("/api/settings", json={"mcp": {"response_token_budget": 6000, "local_path_roots": [str(roots)],
+                                                  "allowed_hosts": ["box.tail0.ts.net", "100.64.0.9:*"]}})
+    assert r.status_code == 200, r.text
+    got = r.json()["settings"]["mcp"]
+    assert got["response_token_budget"] == 6000 and got["local_path_roots"] == [str(roots)]
+    assert got["allowed_hosts"] == ["box.tail0.ts.net", "100.64.0.9:*"]
+
+
+def test_settings_mcp_rejects_bad_values(client, tmp_root):
+    bad = [
+        {"local_path_roots": ["\\\\nas\\share"]},                    # UNC
+        {"local_path_roots": ["relative/dir"]},                     # not absolute
+        {"local_path_roots": [str(tmp_root / "nope")]},             # does not exist
+        {"local_path_roots": ["\\\\?\\C:\\x"]},                      # \\?\ prefix
+        {"local_path_roots": "C:/x"},                                # not a list
+        {"allowed_hosts": ["http://box"]},                           # scheme not allowed
+        {"allowed_hosts": ["a b"]},                                  # space
+        {"rate_limit_per_min": 0},
+        {"max_upload_mb": 0},
+        {"default_token_ttl_days": 400},                             # > max_token_ttl_days (365)
+        {"call_log_retention_days": -1},
+        {"enabled": 1},                                              # bool, not int
+    ]
+    for body in bad:
+        r = client.put("/api/settings", json={"mcp": body})
+        assert r.status_code == 422 and r.json()["error"] == "invalid_settings", (body, r.text)
