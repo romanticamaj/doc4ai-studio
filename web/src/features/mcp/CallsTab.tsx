@@ -76,7 +76,7 @@ export function CallsTab() {
           options={toolNames.map((t) => ({ value: t, label: t }))} onChange={(v) => set({ tool: pick(v) })} />
         <FilterSelect label="篩選狀態" allLabel="全部狀態" value={filters.status ?? ALL}
           options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))} onChange={(v) => set({ status: pick(v) })} />
-        <div role="radiogroup" aria-label="時間範圍" className="flex rounded-lg border p-0.5">
+        <div role="radiogroup" aria-label="時間篩選" className="flex rounded-lg border p-0.5">
           {RANGE_OPTIONS.map((r) => (
             <button
               key={r.label}
@@ -113,7 +113,7 @@ export function CallsTab() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table aria-label="呼叫紀錄" className="w-full min-w-[860px] text-[13px]">
                 <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                   <tr>
@@ -158,7 +158,7 @@ export function CallsTab() {
           title="每個 tool"
           description="呼叫數、錯誤率與延遲；只算 tools/call。"
           actions={
-            <div role="radiogroup" aria-label="統計範圍" className="flex rounded-lg border p-0.5">
+            <div role="radiogroup" aria-label="統計區間" className="flex rounded-lg border p-0.5">
               {(["24h", "7d"] as const).map((w) => (
                 <button
                   key={w}
@@ -179,7 +179,7 @@ export function CallsTab() {
             <ErrorState title="無法讀取統計" error={stats.error} onRetry={() => stats.refetch()} />
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table aria-label="每個 tool 的統計" className="w-full min-w-[560px] text-[13px]">
               <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                 <tr>
@@ -237,7 +237,8 @@ function CallRow({ c, open, onToggle }: { c: McpCall; open: boolean; onToggle: (
         <td className="py-2 pl-3 text-muted-foreground">{open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}</td>
         <td className="px-3 py-2 text-xs whitespace-nowrap tabular">{formatDateTime(c.ts).slice(5)}<span className="text-muted-foreground">:{String(new Date(c.ts * 1000).getSeconds()).padStart(2, "0")}</span></td>
         <td className="max-w-[10rem] truncate px-3 py-2 text-xs">
-          {c.token_name ?? (c.token_prefix_seen ? <span className="font-mono text-muted-foreground">{c.token_prefix_seen}…</span> : <span className="text-muted-foreground">—</span>)}
+          {c.token_name ?? (!c.token_prefix_seen && <span className="text-muted-foreground">—</span>)}
+          {c.token_prefix_seen && <span className="block font-mono text-[11px] text-muted-foreground">{c.token_prefix_seen}…</span>}
         </td>
         <td className="max-w-[10rem] truncate px-3 py-2 text-xs">{c.client_name ?? <span className="text-muted-foreground">—</span>}</td>
         <td className="px-3 py-2 font-mono text-xs">

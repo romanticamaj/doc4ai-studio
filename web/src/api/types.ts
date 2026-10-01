@@ -325,7 +325,7 @@ export interface McpTokenCreated { token: string; record: McpToken; snippets: Mc
 export interface McpClient {
   id: string; token_id: string | null; token_name: string | null; client_name: string; client_version: string | null;
   protocol_version: string | null; user_agent: string | null; first_seen: number; last_seen: number; last_ip: string | null;
-  request_count: number; active: boolean;
+  request_count: number; active: boolean; token_status?: "active" | "expired" | "revoked" | null;
 }
 export interface McpCall {
   id: number; ts: number; token_id: string | null; token_prefix_seen: string | null; client_id: string | null; method: string | null;

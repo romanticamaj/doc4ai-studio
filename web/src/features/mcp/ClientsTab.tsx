@@ -81,8 +81,8 @@ export function ClientsTab() {
             {active.length ? "沒有其他 client。" : "還沒有 client 連過"}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table aria-label="歷史 client" className="w-full min-w-[720px] text-[13px]">
+          <div className="relative overflow-x-auto">
+            <table aria-label="歷史 client" className="w-full min-w-[780px] text-[13px]">
               <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2 font-medium">client</th>
@@ -92,6 +92,7 @@ export function ClientsTab() {
                   <th className="px-3 py-2 font-medium">第一次</th>
                   <th className="px-3 py-2 font-medium">最後</th>
                   <th className="px-3 py-2 text-right font-medium">請求數</th>
+                  <th className="px-3 py-2 font-medium">狀態</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -106,6 +107,15 @@ export function ClientsTab() {
                       {formatRelative(c.last_seen, now)}
                     </td>
                     <td className="px-3 py-2 text-right text-xs tabular">{c.request_count}</td>
+                    <td className="px-3 py-2">
+                      {c.token_status === "revoked" ? (
+                        <StatusBadge status="revoked">已撤銷</StatusBadge>
+                      ) : c.token_status === "expired" ? (
+                        <StatusBadge status="expired">已過期</StatusBadge>
+                      ) : (
+                        <StatusBadge status="idle">閒置</StatusBadge>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -126,7 +136,7 @@ function ClientCard({ c, now }: { c: McpClient; now: number }) {
           <h3 className="truncate text-[13px] font-semibold">{label}</h3>
           <p className="truncate text-xs text-muted-foreground">{c.token_name ? `token：${c.token_name}` : "token 已刪除"}</p>
         </div>
-        <StatusBadge status="active" />
+        <StatusBadge status="active">活躍</StatusBadge>
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted-foreground">協定</dt>

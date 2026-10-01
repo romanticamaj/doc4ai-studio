@@ -211,10 +211,19 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
       qc.invalidateQueries({ queryKey: mcpQk.mcp.status() });
       return;
     }
-    case "mcp.token":
+    case "mcp.token": {
+      const t = ev.payload as { id: string; action: string };
+      if (t.action === "revoked" || t.action === "rotated") {
+        // the old token's clients cannot call any more: out of 活躍 now, not at the next refetch
+        for (const [key, data] of qc.getQueriesData<{ clients: McpClient[] }>({ queryKey: ["mcp", "clients"] })) {
+          if (!data?.clients?.some((c) => c.token_id === t.id)) continue;
+          qc.setQueryData(key, { ...data, clients: data.clients.map((c) => (c.token_id === t.id ? { ...c, token_status: "revoked" as const, active: false } : c)) });
+        }
+      }
       qc.invalidateQueries({ queryKey: mcpQk.mcp.tokens() });
       qc.invalidateQueries({ queryKey: mcpQk.mcp.status() });
       return;
+    }
 
   }
 }

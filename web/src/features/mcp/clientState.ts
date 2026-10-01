@@ -2,7 +2,8 @@ import type { McpClient } from "@/api/types";
 
 export const ACTIVE_WINDOW_S = 300;
 
-export const isActive = (c: McpClient, nowS: number) => nowS - c.last_seen <= ACTIVE_WINDOW_S;
+/** Seen within 5 minutes, and its token still valid (a revoked token's clients leave 活躍 at once). */
+export const isActive = (c: McpClient, nowS: number) => c.token_status !== "revoked" && nowS - c.last_seen <= ACTIVE_WINDOW_S;
 
 export function splitClients(clients: McpClient[], nowS: number): { active: McpClient[]; history: McpClient[] } {
   const byRecent = (a: McpClient, b: McpClient) => b.last_seen - a.last_seen;

@@ -32,7 +32,7 @@ test("create token → SDK call → live connection and log → revoke → 401 l
   await expect(page.getByRole("tab", { name: "Claude Code" })).toBeVisible();
   await page.getByRole("button", { name: "我已複製，關閉" }).click();
   const row = page.getByRole("row", { name: /e2e laptop/ });
-  await expect(row).toContainText("active");
+  await expect(row).toContainText("有效");
   await expect(row).toContainText(token.slice(0, 15));
   await expect(page.locator("body")).not.toContainText(token);              // the plaintext is gone after close
 
@@ -51,7 +51,7 @@ test("create token → SDK call → live connection and log → revoke → 401 l
   await page.getByRole("menuitem", { name: "撤銷" }).click();
   await page.getByLabel("原因").fill("e2e");
   await page.getByRole("button", { name: "確認撤銷" }).click();
-  await expect(page.getByRole("row", { name: /e2e laptop/ })).toContainText("revoked");
+  await expect(page.getByRole("row", { name: /e2e laptop/ })).toContainText("已撤銷");
 
   const second = sdkCall(token);
   expect(second.code).toBe(1);
@@ -67,11 +67,16 @@ test("create token → SDK call → live connection and log → revoke → 401 l
 });
 
 test("MCP page works at phone width without horizontal scroll", async ({ page }) => {
-  await page.setViewportSize({ width: 400, height: 800 });
-  await page.goto("/mcp-admin");
-  await expect(page.getByRole("heading", { name: "MCP" })).toBeVisible();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-  expect(overflow).toBe(false);
+  for (const width of [400, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const tab of ["", "?tab=tokens", "?tab=clients", "?tab=calls"]) {
+      await page.goto(`/mcp-admin${tab}`);
+      await expect(page.getByRole("heading", { name: "MCP" })).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+      expect(overflow, `${width}px ${tab || "overview"}`).toBe(false);
+    }
+  }
 });
 
 test("copy buttons work without navigator.clipboard (plain-HTTP tailnet origin)", async ({ page, context }) => {

@@ -33,14 +33,16 @@ export function TokenRevealDialog({ result, onClose }: { result: McpTokenCreated
           <label htmlFor="mcp-token-plain" className="text-xs text-muted-foreground">
             token
           </label>
-          <div className="mt-1 flex items-center gap-2">
-            <input
+          <div className="mt-1 flex items-start gap-2">
+            <textarea
               id="mcp-token-plain"
               readOnly
+              rows={2}
               aria-label="新的 token"
               value={result.token}
+              spellCheck={false}
               onFocus={(e) => e.currentTarget.select()}
-              className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-[12px] tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="min-w-0 flex-1 resize-none rounded-md border bg-background px-2 py-1.5 font-mono text-[12px] leading-snug tracking-tight break-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:[field-sizing:content]"
             />
             <CopyButton text={result.token} />
           </div>

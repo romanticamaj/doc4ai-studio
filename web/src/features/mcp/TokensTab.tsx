@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { CreateTokenDialog } from "./CreateTokenDialog";
 import { ScopeBadges } from "./ScopeBadges";
 import { TokenRevealDialog } from "./TokenRevealDialog";
-import { expiryState } from "./tokenStatus";
+import { expiryState, TOKEN_STATUS_LABEL } from "./tokenStatus";
 
 const TONE_TEXT = { ok: "text-muted-foreground", warn: "text-warn", danger: "text-danger", neutral: "text-muted-foreground" } as const;
 
@@ -86,7 +86,7 @@ export function TokensTab() {
 
 function TokenTable({ tokens, onAction }: { tokens: McpToken[]; onAction: (p: Pending) => void }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full min-w-[880px] text-[13px]">
         <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
           <tr>
@@ -143,7 +143,7 @@ function TokenTable({ tokens, onAction }: { tokens: McpToken[]; onAction: (p: Pe
                   {t.errors_24h > 0 && <span className="ml-1 text-danger">（{t.errors_24h} 錯誤）</span>}
                 </td>
                 <td className="px-3 py-2.5">
-                  <StatusBadge status={t.status} />
+                  <StatusBadge status={t.status}>{TOKEN_STATUS_LABEL[t.status]}</StatusBadge>
                 </td>
                 <td className="px-3 py-2 text-right">
                   <DropdownMenu>

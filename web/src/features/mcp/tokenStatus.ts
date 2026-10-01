@@ -3,6 +3,7 @@ import type { McpScope, McpToken } from "@/api/types";
 export const DAY = 86400;
 export const EXPIRING_SOON_DAYS = 14;
 export const DEFAULT_SCOPES: McpScope[] = ["doc4ai:read"];
+export const TOKEN_STATUS_LABEL: Record<McpToken["status"], string> = { active: "有效", expired: "已過期", revoked: "已撤銷" };
 export const TTL_CHOICES = [30, 90, 180, 365] as const;
 
 export const SCOPE_META: Record<McpScope, { label: string; risk: "low" | "medium" | "high"; hint: string }> = {
