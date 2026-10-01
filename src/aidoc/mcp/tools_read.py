@@ -1,6 +1,8 @@
 """Read-only tools (MCP spec §5.3). Each body is a plain function; registry.doc4ai_tool adds scope checks."""
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from pathlib import Path
 from typing import Annotated, Literal
@@ -39,14 +41,38 @@ from aidoc.server.serialize import serialize_task
 MAX_PAGES_PER_DOC = 3
 
 
-def _cursor(cursor: str | None, *keys: str) -> dict | None:
+def fingerprint(*parts) -> str:
+    """Ties a cursor to the query/sort/filters it was issued for: reusing it with others is refused."""
+    raw = json.dumps(parts, sort_keys=True, default=str, ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10]
+
+
+def _bad_cursor(msg: str) -> ToolFailure:
+    return ToolFailure("invalid_cursor", msg, hint="start again without a cursor")
+
+
+def _cursor(cursor: str | None, spec: dict, fp: str) -> dict | None:
+    """Decode a cursor and check it: exactly the keys in `spec` plus the fingerprint, each of the expected type
+    (ints never negative)."""
     try:
         d = decode_cursor(cursor)
     except CursorError:
-        raise ToolFailure("invalid_cursor", "the cursor is not one this server issued", hint="start again without a cursor") from None
-    if d is not None and set(d) != set(keys):
-        raise ToolFailure("invalid_cursor", "the cursor belongs to another tool", hint="start again without a cursor")
+        raise _bad_cursor("the cursor is not one this server issued") from None
+    if d is None:
+        return None
+    if set(d) != set(spec) | {"f"}:
+        raise _bad_cursor("the cursor belongs to another tool")
+    if d["f"] != fp:
+        raise _bad_cursor("the cursor was issued for a different query, sort or filters")
+    for k, typ in spec.items():
+        v = d[k]
+        if isinstance(v, bool) or not isinstance(v, typ) or (isinstance(v, int) and v < 0):
+            raise _bad_cursor(f"the cursor's {k!r} is malformed")
     return d
+
+
+def _next(fp: str, **values) -> str:
+    return encode_cursor({**values, "f": fp})
 
 
 def _score(rank) -> float:
@@ -102,8 +128,9 @@ def register_read_tools(mcp, ctx) -> None:
                        filters: SearchFilters | None = None,
                        limit: Annotated[int, Field(ge=1, le=20)] = 10,
                        cursor: str | None = None) -> SearchOut:
-        cur = _cursor(cursor, "skip") or {"skip": 0}
         f = filters or SearchFilters()
+        fp = fingerprint("search_library", query, f.model_dump())
+        cur = _cursor(cursor, {"skip": int}, fp) or {"skip": 0}
         allowed = None
         if f.engine or f.level or f.flagged is not None or f.doc_ids:
             allowed = [d["id"] for d in _filtered_docs(store, f.engine, f.level, f.flagged, None, f.doc_ids)]
@@ -136,7 +163,7 @@ def register_read_tools(mcp, ctx) -> None:
                                   more_in_doc=max(0, len(lst) - MAX_PAGES_PER_DOC) if lst.index(r) == 0 else 0, uri=uri))
         skip = int(cur["skip"])
         page = hits[skip: skip + limit]
-        nxt = encode_cursor({"skip": skip + limit}) if skip + limit < len(hits) else None
+        nxt = _next(fp, skip=skip + limit) if skip + limit < len(hits) else None
         return SearchOut(hits=page, next_cursor=nxt, query=query)
 
     @doc4ai_tool(mcp, ctx, name="list_documents", title="List documents",
@@ -147,8 +174,9 @@ def register_read_tools(mcp, ctx) -> None:
                        limit: Annotated[int, Field(ge=1, le=25)] = 25,
                        sort: Literal["updated_desc", "title_asc"] = "updated_desc",
                        filters: ListFilters | None = None) -> ListDocumentsOut:
-        cur = _cursor(cursor, "k", "id")
         f = filters or ListFilters()
+        fp = fingerprint("list_documents", sort, f.model_dump())
+        cur = _cursor(cursor, {"k": str if sort == "title_asc" else (int, float), "id": str}, fp)
         docs = _filtered_docs(store, f.engine, f.level, f.flagged, f.q)
         if sort == "title_asc":
             docs.sort(key=lambda d: (Path(d["output_dir"]).name.lower(), d["id"]))
@@ -169,7 +197,7 @@ def register_read_tools(mcp, ctx) -> None:
                           quality=QualityBrief(level=(d.get("quality") or {}).get("level", d["status"]),
                                                score=float((d.get("quality") or {}).get("score", 0.0))),
                           flagged_pages=D.flagged_count(d), updated_at=float(d["created_at"] or 0)) for d in page]
-        nxt = encode_cursor({"k": key(page[-1]), "id": page[-1]["id"]}) if page and start + limit < len(docs) else None
+        nxt = _next(fp, k=key(page[-1]), id=page[-1]["id"]) if page and start + limit < len(docs) else None
         return ListDocumentsOut(documents=out, next_cursor=nxt, total=len(docs))
 
     @doc4ai_tool(mcp, ctx, name="get_document_info", title="Get document info",
@@ -289,7 +317,8 @@ def register_read_tools(mcp, ctx) -> None:
                    cursor: str | None = None,
                    limit: Annotated[int, Field(ge=1, le=20)] = 10) -> ChunksOut:
         view = D.load_doc(ctx, doc_id)
-        cur = _cursor(cursor, "i") or {"i": 0}
+        fp = fingerprint("get_chunks", doc_id, max_tokens)
+        cur = _cursor(cursor, {"i": int}, fp) or {"i": 0}
         chunks = D.chunk_cache(view, max_tokens)
         start = int(cur["i"])
         budget = max(200, ctx.config.mcp.response_token_budget - TEXT_RESERVE_TOKENS)
@@ -301,7 +330,7 @@ def register_read_tools(mcp, ctx) -> None:
             out.append(ChunkOut(chunk_id=D.chunk_uri_id(start + len(out), max_tokens), heading_path=list(c.heading_path), page_start=c.page_start,
                                 page_end=c.page_end, text=D.rewrite_assets(c.text, view.doc_id)))
             used += n
-        nxt = encode_cursor({"i": start + len(out)}) if start + len(out) < len(chunks) else None
+        nxt = _next(fp, i=start + len(out)) if start + len(out) < len(chunks) else None
         return ChunksOut(chunks=out, next_cursor=nxt, total=len(chunks))
 
     @doc4ai_tool(mcp, ctx, name="get_job", title="Get conversion job",

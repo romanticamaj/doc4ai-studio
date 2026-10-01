@@ -176,6 +176,8 @@ def build_mcp(ctx) -> McpRuntime:
     tools_convert.register_convert_tools(mcp, ctx)
     tools_manage.register_manage_tools(mcp, ctx)
     resources.register_resources(mcp, ctx)
+    from aidoc.mcp.registry import install_call_guard
+    install_call_guard(mcp, ctx)
     bind_host = str(ctx.extras.get("bind_host") or cfg.server.host)
     port = int(ctx.extras.get("bind_port") or cfg.server.port)
     inner = mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True, json_response=False,

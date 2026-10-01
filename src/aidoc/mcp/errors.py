@@ -5,7 +5,7 @@ ERROR_CODES = frozenset({
     "forbidden_scope", "tool_disabled", "invalid_arguments", "invalid_cursor", "document_not_found", "output_missing",
     "page_range_invalid", "heading_not_found", "job_not_found", "file_too_large", "invalid_base64", "unsupported_file",
     "insufficient_disk", "too_many_jobs", "path_not_allowed", "path_not_found", "source_missing", "already_converting",
-    "tokenizer_unavailable", "search_unavailable",
+    "tokenizer_unavailable", "search_unavailable", "unknown_tool", "internal_error",
 })
 
 

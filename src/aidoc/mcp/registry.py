@@ -11,6 +11,7 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+import logging
 
 import anyio
 from mcp.types import CallToolResult, ResourceLink, TextContent, ToolAnnotations
@@ -20,6 +21,7 @@ from aidoc.mcp.errors import ToolFailure
 from aidoc.mcp.principal import current_principal
 from aidoc.mcp.redact import redact_text, redact_value
 
+log = logging.getLogger("aidoc.mcp")
 TEXT_RESERVE_TOKENS = 100          # header/footer lines around budgeted Markdown (tools cut to budget minus this)
 
 
@@ -100,9 +102,47 @@ def doc4ai_tool(mcp, ctx, *, name: str, title: str, description: str, scope: str
                 return success_result(await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs)))
             except ToolFailure as f:
                 return failure_result(f)
+            except Exception:
+                log.exception("tool %s raised an unexpected exception", name)
+                return failure_result(internal_error())
 
         mcp.tool(name=name, title=title, description=description, structured_output=True,
                  annotations=ToolAnnotations(title=title, read_only_hint=read_only, destructive_hint=destructive,
                                              idempotent_hint=idempotent, open_world_hint=open_world))(wrapper)
         return fn
     return deco
+
+
+def internal_error() -> ToolFailure:
+    return ToolFailure("internal_error", "the server hit an unexpected error while running this tool",
+                       hint="try again; if it keeps failing, the Doc4AI Studio admin can find the details in the server log")
+
+
+def install_call_guard(mcp, ctx) -> None:
+    """Spec 5.1 shape for what happens before or around our tool functions: an unknown tool name, arguments that
+    fail the input schema (the SDK raises ToolError from a pydantic ValidationError) and anything unexpected."""
+    from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+    from pydantic import ValidationError
+
+    from aidoc.mcp.middleware import visible_tools
+    original = mcp.call_tool
+
+    async def call_tool(name, arguments, context=None):
+        known = sorted(t.name for t in await mcp.list_tools())
+        if name not in known:
+            visible = visible_tools(known, current_principal.get(), ctx.config)
+            return failure_result(ToolFailure("unknown_tool", f"there is no tool named {name!r}",
+                                              hint="available tools: " + ", ".join(visible)))
+        try:
+            return await original(name, arguments, context)
+        except ToolError as exc:
+            cause = exc.__cause__
+            if isinstance(exc, UnexpectedToolError) or not isinstance(cause, ValidationError):
+                log.error("tool %s failed outside its handler", name, exc_info=exc)
+                return failure_result(internal_error())
+            errs = cause.errors(include_url=False, include_input=False)
+            locs = [".".join(str(p) for p in e["loc"]) or "arguments" for e in errs]
+            detail = "; ".join(f"{loc}: {e['msg']}" for loc, e in list(zip(locs, errs))[:8])
+            return failure_result(ToolFailure("invalid_arguments", "the arguments do not match this tool's input schema",
+                                              hint=detail, fields=sorted(set(locs))))
+    mcp.call_tool = call_tool
