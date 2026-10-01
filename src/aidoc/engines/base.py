@@ -39,7 +39,8 @@ def raw_from_result(res: dict, raw_dir: Path) -> RawResult:
     return RawResult(markdown=md, image_paths=[Path(p) for p in res.get("images", [])], raw_dir=raw_dir,
                      has_page_markers=bool(res.get("has_page_markers")), page_count=res.get("page_count"),
                      first_table=TableEdge.from_json(ft) if ft else None,
-                     last_table=TableEdge.from_json(lt) if lt else None)
+                     last_table=TableEdge.from_json(lt) if lt else None,
+                     page_map_method=res.get("page_map_method"))
 
 
 class RunnerEngine:

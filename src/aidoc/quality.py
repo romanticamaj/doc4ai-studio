@@ -24,8 +24,7 @@ SHIFT_HITS_MIN = 3
 PAGE_CHECK_VERSION = 1
 SHIFT = 29                     # TrueType standard Mac glyph order: glyph id = char code - 29 (glyph 3 = space)
 COMMON_WORDS = frozenset(
-    "the and you that it is to of in for on with this be are your can if what there but was as at by from or an "
-    "not have will all so do just like how app".split())
+    ["the", "and", "you", "that", "it", "is", "to", "of", "in", "for", "on", "with", "this", "be", "are", "your", "can", "if", "what", "there", "but", "was", "as", "at", "by", "from", "or", "an", "not", "have", "will", "all", "so", "do", "just", "like", "how", "app"])
 
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
@@ -118,8 +117,8 @@ def _assess_base(markdown: str, probe: ProbeResult, pages: int | None) -> Qualit
 
 # ---- per-page signals (spec 2026-10-01 §5.1, §8.1)
 
-_FFFD_BETWEEN = re.compile(r"(?<=\S)�(?=\S)")
-_ASCII_RUN = re.compile(r"[!-~]+")
+_FFFD_BETWEEN = re.compile(r"(?<=\S)\N{REPLACEMENT CHARACTER}(?=\S)")
+_ASCII_RUN = re.compile(r"[\x21-\x7e]+")
 
 
 def _shift_hits(text: str) -> int:

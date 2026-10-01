@@ -44,7 +44,7 @@ def test_probe_and_quality_json():
     assert q.to_json() == {"score": 0.9, "level": "ok", "reasons": [], "metrics": {}}
 
 
-from aidoc.models import DocStatus, RawResult  # noqa: E402
+from aidoc.models import DocStatus, RawResult
 
 
 def test_warn_level_and_doc_status():

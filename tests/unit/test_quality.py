@@ -77,12 +77,12 @@ def test_broken_sequences_are_garbage():
     assert garbage_ratio("abc͸͹΀") > 0.05                  # unassigned code points
 
 
-from aidoc.quality import flag_page, flag_pages, page_signals  # noqa: E402
+from aidoc.quality import flag_page, flag_pages, page_signals
 
 R = "\N{REPLACEMENT CHARACTER}"
 GOOD_EN = "This is an ordinary English paragraph with plenty of normal words for the quality gate. " * 4
 # T-001 cover as Docling printed it (glyph ids, +29 shift, glyph-3 spaces -> U+FFFD)
-GARBLED = f":RXOGQ·W{R}LW{R}EH{R}GUHDP\{R}LI{R}WKHUH{R}ZDV{R}D{R}ERRN{R}RQ{R}$QGURLG"
+GARBLED = f":RXOGQ·W{R}LW{R}EH{R}GUHDP\\{R}LI{R}WKHUH{R}ZDV{R}D{R}ERRN{R}RQ{R}$QGURLG"
 
 
 def _probe(pages, broken=()):

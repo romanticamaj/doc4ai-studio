@@ -28,7 +28,8 @@ The same script copies self-check samples into `src/aidoc/engines/runner/samples
 | `bad.exe` | 10 bytes | unsupported type |
 | `paged_furniture.pdf` | 8 pages A4, Helvetica: running header `Chapter 2 - Testing Pages` + footer page number on every non-blank page; page 2 table of contents with dot leaders; page 4 blank; a paragraph runs from the bottom of page 5 onto page 6; page 7 drawn figure + caption `Figure 7.1 A drawn box`; ≥ 600 chars of unique English per body page | probe (blank page, no broken fonts), MinerU per-page render plan (recorded `mineru_recorded/furniture8/`), page-map slow tests (spec 2026-10-01) |
 | `broken_tounicode.pdf` | 2 pages; Helvetica heading + 6 lines; page 1 also has `Wouldn't it be dreamy if there was a book on Android …` in PyMuPDF's built-in `cjk` font (Type0/Identity-H) with `/ToUnicode` deleted, page 2 uses that font only for a footer `7` — the text layer is glyph ids (T-001 reproduction) | probe broken fonts, T-001 detection/repair tests (Docling pypdfium backend, auto-routing fallback) |
-| `mineru_recorded/book12/` | real MinerU 4.0.7 `markdown.md` + `structured_content.json` of a 12-page image-only book (page-number footer, blank page 5); recorded, not generated | MinerU page-marker mapping unit test |
+| `mineru_recorded/furniture8/` | real MinerU 4.0.7 `markdown.md` + `middle_json.json` of `paged_furniture.pdf` (8 pages, page 4 blank); recorded with `tests/fixtures/_tmp` + `mineru.parser.parse(..., tier="basic", ocr_mode="auto").save(...)`, not generated | MinerU per-page render plan test (`tests/integration/test_mineru_pages_env.py`) |
 
-Real scanned documents may be placed in `tests/fixtures/manual/` (gitignored) and are picked up by
-`tests/integration/test_manual_fixtures.py` when present.
+Real samples live in `tests/fixtures/manual/` (gitignored, never committed — copyrighted books). They are listed in the
+committed `manual_samples.json` and obtained through `tests/manual.py` (`manual_sample(name)`, `require_engine(name)`):
+missing samples skip normally and **fail** with `AIDOC_REQUIRE_MANUAL=1` (spec 2026-10-01 §10).

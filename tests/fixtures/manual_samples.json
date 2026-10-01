@@ -1,0 +1,22 @@
+[
+  {"name": "ortho_p1-80.pdf",
+   "source_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
+   "source_hint": "A System of Orthopaedic Medicine, 3rd Edition.pdf", "pages": "1-80",
+   "purpose": "MinerU page map: cover, copyright, blank page 3, table of contents, chapter starts, running header + page numbers; real-sample sync e2e"},
+  {"name": "ortho_p300-340.pdf",
+   "source_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
+   "source_hint": "A System of Orthopaedic Medicine, 3rd Edition.pdf", "pages": "300-340",
+   "purpose": "MinerU/MarkItDown page map: body text, tables, display equation, figures + captions, running header/footer/page number/aside"},
+  {"name": "ortho_blanks.pdf",
+   "source_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
+   "source_hint": "A System of Orthopaedic Medicine, 3rd Edition.pdf", "pages": [41, 42, "blank", "blank", 43, "blank"],
+   "purpose": "blank pages get their markers (6 pages, 3 blank)"},
+  {"name": "hfad_cover_p1.pdf",
+   "source_sha256": "184392c5363a8026e8466358e619df977a9dd53b48e77abc2ace7818cfaf06da",
+   "source_hint": "Head First Android Development.pdf", "pages": "1",
+   "purpose": "T-001: the real cover that FULL_PAGE OCR alone cannot repair (needs the pypdfium backend)"},
+  {"name": "hfad_garbled_mix.pdf",
+   "source_sha256": "184392c5363a8026e8466358e619df977a9dd53b48e77abc2ace7818cfaf06da",
+   "source_hint": "Head First Android Development.pdf", "pages": [1, 16, 17, 25, 31, 61, 108, 20, 45],
+   "purpose": "T-001 detection (7 garbled pages + 2 controls with broken fonts but clean text) and per-page repair"}
+]

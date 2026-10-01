@@ -1,0 +1,549 @@
+{
+  "metadata": {
+    "file_suffix": "pdf",
+    "producer": {
+      "name": "mineru",
+      "version": "4.0.7"
+    },
+    "document": {
+      "page_count": 8,
+      "page_count_kind": "physical"
+    }
+  },
+  "extensions": {
+    "mineru": {
+      "tier": "basic",
+      "parse_mode": "txt"
+    },
+    "docvortex_layout": {
+      "version": 1,
+      "pages": [
+        {
+          "page_idx": 0,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 1,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 2,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 3,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 4,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 5,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 6,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 7,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        }
+      ]
+    }
+  },
+  "pages": [
+    {
+      "page_idx": 0,
+      "blocks": [
+        {
+          "type": "header",
+          "index": 0,
+          "bbox": [
+            0.118,
+            0.037,
+            0.3,
+            0.051
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Chapter 2 - Testing Pages"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "index": 1,
+          "bbox": [
+            0.116,
+            0.083,
+            0.873,
+            0.267
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Body text of page 1: tendon1a pattern examination gradual hip painful ankle wrist sudden warmth knee sudden pattern1b evening tendon joint full sign full limited warmth stiffness pattern test stiffness1c resisted joint sudden movement swelling ankle range active movement friction spine morning1d ligament onset gradual knee examination traction elbow painful knee muscle resisted movement1e evening lesion patient spine morning shoulder pattern active onset nerve lesion sudden1f muscle tendon wrist spine capsular passive limited elbow history lesion muscle stiffness1g examination treatment history morning wrist dura joint weakness nerve tendon warmth active1h resisted passive dura warmth friction friction movement joint treatment passive sign pattern1i gradual history wrist movement ligament stiffness shoulder history posture dura joint root1j friction shoulder sign knee traction test onset shoulder full lesion movement traction1k active test capsular ligament lesion friction gradual traction ligament."
+            }
+          ]
+        },
+        {
+          "type": "page_number",
+          "index": 2,
+          "bbox": [
+            0.486,
+            0.958,
+            0.496,
+            0.97
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "page_idx": 1,
+      "blocks": [
+        {
+          "type": "header",
+          "index": 0,
+          "bbox": [
+            0.117,
+            0.036,
+            0.3,
+            0.052
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Chapter 2 - Testing Pages"
+            }
+          ]
+        },
+        {
+          "type": "paragraph_title",
+          "index": 1,
+          "bbox": [
+            0.117,
+            0.089,
+            0.232,
+            0.111
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Contents"
+            }
+          ],
+          "level": 2
+        },
+        {
+          "type": "text",
+          "index": 2,
+          "bbox": [
+            0.116,
+            0.126,
+            0.527,
+            0.244
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Introduction . 3 Examination of the joint 5 Spanning paragraph . 6 Figures . 7 Summary . . 8"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "index": 3,
+          "bbox": [
+            0.115,
+            0.272,
+            0.866,
+            0.425
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Body text of page 2: history2a evening ankle treatment resisted active massage dura active swelling morning stiffness examination2b full spine test tendon injection treatment muscle ankle joint sudden gradual range2c active morning painful traction root warmth warmth massage examination history morning warmth2d limited nerve stiffness manipulation limited ligament movement spine full examination warmth ligament2e knee posture evening resisted evening ankle ligament sign examination history gradual capsular2f muscle movement examination spine ligament dura tendon sign massage joint tendon lesion2g capsular full passive morning examination examination injection patient injection tendon treatment sign2h posture swelling knee dura painful manipulation pattern knee onset joint evening spine2i resisted muscle examination."
+            }
+          ]
+        },
+        {
+          "type": "page_number",
+          "index": 4,
+          "bbox": [
+            0.485,
+            0.957,
+            0.497,
+            0.97
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "2"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "page_idx": 2,
+      "blocks": [
+        {
+          "type": "header",
+          "index": 0,
+          "bbox": [
+            0.117,
+            0.037,
+            0.3,
+            0.051
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Chapter 2 - Testing Pages"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "index": 1,
+          "bbox": [
+            0.115,
+            0.083,
+            0.864,
+            0.251
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Body text of page 3: sign3a gradual wrist treatment root nerve onset root knee joint limited shoulder ligament3b dura test nerve test examination manipulation shoulder morning test full weakness limited3c muscle warmth treatment range onset onset tendon posture treatment range gradual gradual3d patient active knee shoulder muscle onset injection limited hip tendon massage knee3e active friction hip spine pattern pattern friction root pattern range active active3f morning stiffness friction capsular joint hip pattern shoulder nerve swelling wrist resisted3g gradual test spine hip movement pattern tendon limited spine capsular test massage3h test injection ligament nerve spine spine swelling full posture limited knee evening3i sudden active gradual patient full test root patient tendon shoulder swelling painful3j injection hip test knee full dura onset full evening patient lesion nerve3k sudden swelling elbow range ankle spine ankle capsular traction."
+            }
+          ]
+        },
+        {
+          "type": "page_number",
+          "index": 2,
+          "bbox": [
+            0.485,
+            0.958,
+            0.498,
+            0.97
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "3"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "page_idx": 3
+    },
+    {
+      "page_idx": 4,
+      "blocks": [
+        {
+          "type": "header",
+          "index": 0,
+          "bbox": [
+            0.117,
+            0.037,
+            0.3,
+            0.052
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Chapter 2 - Testing Pages"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "index": 1,
+          "bbox": [
+            0.115,
+            0.083,
+            0.877,
+            0.268
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Body text of page 5: dura5a knee onset ankle sudden swelling traction elbow gradual weakness capsular sign passive5b sudden posture wrist lesion muscle weakness weakness morning muscle traction tendon shoulder5c sign movement friction treatment examination manipulation warmth passive dura lesion evening knee5d elbow full onset tendon massage range weakness traction massage ankle evening dura5e root nerve shoulder test manipulation evening movement joint wrist stiffness knee manipulation5f gradual wrist sudden pattern stiffness root onset range limited swelling resisted muscle5g history patient root joint muscle lesion active nerve ligament injection root dura5h pattern shoulder painful treatment painful manipulation warmth hip swelling root elbow dura5i full onset muscle spine spine onset injection ligament root elbow shoulder treatment5j history lesion knee evening treatment range morning sudden hip pattern swelling wrist5k weakness tendon stiffness morning spine friction passive morning posture."
+            }
+          ]
+        },
+        {
+          "type": "footer",
+          "index": 2,
+          "bbox": [
+            0.116,
+            0.903,
+            0.879,
+            0.936
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Spanning paragraph begins here and keeps describing the capsular pattern of the shoulder joint while the page runs out of room at the very bottom margin of the"
+            }
+          ]
+        },
+        {
+          "type": "page_number",
+          "index": 3,
+          "bbox": [
+            0.485,
+            0.958,
+            0.498,
+            0.97
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "page_idx": 5,
+      "blocks": [
+        {
+          "type": "paragraph_title",
+          "index": 0,
+          "bbox": [
+            0.117,
+            0.037,
+            0.3,
+            0.052
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Chapter 2 - Testing Pages"
+            }
+          ],
+          "level": 2
+        },
+        {
+          "type": "text",
+          "index": 1,
+          "bbox": [
+            0.116,
+            0.059,
+            0.878,
+            0.268
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "sheet, so the reader continues on the next page where the spanning paragraph finally ends with a full Body text of page 6: elbow6a tendon treatment nerve patient lesion sudden posture weakness patientstop. lesion history traction6b swelling resisted morning ligament knee joint traction patient massage tendon traction patient6c muscle friction manipulation examination examination stiffness hip patient nerve hip sign elbow6d posture knee movement history ankle swelling sudden warmth capsular full limited root6e friction gradual evening history spine movement pattern morning ligament history hip pattern6f painful active wrist examination limited patient examination test tendon test dura shoulder6g sudden wrist resisted injection muscle knee examination muscle sign root nerve examination6h posture hip tendon injection posture ankle root capsular patient hip root evening6i treatment sudden stiffness ligament stiffness sign movement warmth elbow root patient lesion6j massage onset morning swelling sign active traction friction painful examination history passive6k capsular knee ligament massage patient tendon history hip onset."
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "index": 2,
+          "bbox": [
+            0.116,
+            0.29,
+            0.864,
+            0.357
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Body text of page 66: nerve66a history root sudden knee weakness test onset manipulation range gradual morning resisted66b tendon knee weakness full gradual dura manipulation test elbow ankle full capsular66c tendon treatment full patient muscle wrist patient elbow muscle ankle resisted painful66d examination history sign."
+            }
+          ]
+        },
+        {
+          "type": "page_number",
+          "index": 3,
+          "bbox": [
+            0.485,
+            0.958,
+            0.498,
+            0.97
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "page_idx": 6,
+      "blocks": [
+        {
+          "type": "header",
+          "index": 0,
+          "bbox": [
+            0.117,
+            0.037,
+            0.3,
+            0.052
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Chapter 2 - Testing Pages"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "index": 1,
+          "bbox": [
+            0.115,
+            0.083,
+            0.874,
+            0.268
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Body text of page 7: muscle7a evening capsular traction full capsular treatment history tendon swelling pattern gradual tendon7b nerve morning manipulation stiffness muscle muscle spine pattern injection full ligament passive7c weakness swelling tendon massage limited warmth spine manipulation manipulation treatment swelling joint7d shoulder sudden posture examination injection patient tendon morning nerve passive root knee7e manipulation spine massage muscle hip massage ankle capsular pattern joint history sign7f root evening capsular dura pattern passive injection ligament wrist posture wrist patient7g capsular history resisted swelling friction full stiffness hip lesion gradual manipulation movement7h range friction tendon treatment capsular posture evening warmth injection wrist tendon onset7i passive root root knee posture root lesion morning stiffness ligament manipulation swelling7j morning pattern joint onset sign massage nerve friction shoulder history dura range7k capsular active manipulation joint treatment traction movement limited nerve."
+            }
+          ]
+        },
+        {
+          "type": "image",
+          "index": 2,
+          "bbox": [
+            0.25,
+            0.299,
+            0.757,
+            0.54
+          ],
+          "content": [
+            {
+              "type": "image_body",
+              "index": 2,
+              "bbox": [
+                0.25,
+                0.299,
+                0.757,
+                0.54
+              ],
+              "image_path": "images/page_6_image_2.jpg",
+              "content": ""
+            },
+            {
+              "type": "image_caption",
+              "index": 3,
+              "bbox": [
+                0.249,
+                0.552,
+                0.43,
+                0.567
+              ],
+              "content": [
+                {
+                  "type": "text",
+                  "content": "Figure 7.1 A drawn box"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "page_number",
+          "index": 4,
+          "bbox": [
+            0.485,
+            0.958,
+            0.498,
+            0.97
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "7"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "page_idx": 7,
+      "blocks": [
+        {
+          "type": "header",
+          "index": 0,
+          "bbox": [
+            0.118,
+            0.037,
+            0.3,
+            0.051
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Chapter 2 - Testing Pages"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "index": 1,
+          "bbox": [
+            0.115,
+            0.083,
+            0.878,
+            0.267
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "Body text of page 8: history8a nerve shoulder examination full movement tendon weakness full resisted range morning passive8b morning elbow weakness patient onset posture friction treatment sign resisted onset muscle8c lesion resisted movement treatment hip elbow movement movement resisted treatment wrist injection8d treatment movement nerve nerve traction shoulder active nerve wrist root sudden posture8e range ankle weakness wrist sudden elbow ankle elbow tendon onset test injection8f sign resisted traction tendon treatment sign massage posture nerve weakness sign sign8g root treatment onset warmth muscle limited passive movement gradual dura friction muscle8h examination resisted tendon test painful sign spine swelling elbow injection history manipulation8i range movement painful painful posture lesion ankle examination joint elbow swelling weakness8j limited gradual resisted patient hip lesion resisted shoulder spine onset gradual morning8k friction tendon full weakness weakness shoulder friction injection sign."
+            }
+          ]
+        },
+        {
+          "type": "page_number",
+          "index": 2,
+          "bbox": [
+            0.485,
+            0.958,
+            0.497,
+            0.97
+          ],
+          "content": [
+            {
+              "type": "text",
+              "content": "8"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "is_full_document": true,
+  "schema": "docvortex.middle",
+  "schema_version": "2.0"
+}

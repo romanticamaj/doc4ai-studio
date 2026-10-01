@@ -19,110 +19,47 @@ import _proto
 _IMG_LINK = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
 
 
-def _needles(item):
-    """Candidate substrings (longest first) that locate this item in the rendered markdown."""
-    t = item.get("type")
-    img = item.get("img_path") or item.get("image_source")
-    if t in ("image", "chart", "figure") and isinstance(img, str) and not img.startswith("data:"):
-        return [os.path.basename(img)]
-    text = item.get("text")
-    if not isinstance(text, str) or not text.strip():
-        text = item.get("content") if isinstance(item.get("content"), str) else ""
-    text = text.strip()
-    if text:
-        first_line = text.splitlines()[0].strip()
-        cands = [first_line[:40], first_line[:15], first_line[:6]]
-        return [c for i, c in enumerate(cands) if c and c not in cands[:i]]
-    if t == "table":
-        return ["<table"]
-    return []
+def _plan_pages(middle_json):
+    """MinerU's own Markdown renderer, page by page (spec 2026-10-01 §3.2 method P): the DEFAULT render plan of
+    docvortex, each page rendered with the same arguments `render_markdown()` uses. Internal API, locked by
+    envs/mineru/uv.lock; `render_pages` verifies the result byte for byte."""
+    from docvortex.render._internal.common.planner import build_render_plan
+    from docvortex.render._internal.markdown import renderer as R
+    from docvortex.render.contracts import RenderMode
+    from mineru.config import config
+    planned = build_render_plan(middle_json, RenderMode.DEFAULT)
+    targets = R._collect_markdown_anchor_targets(middle_json)
+    emitted: set = set()
+    return [R._render_page(p, mode=RenderMode.DEFAULT, delimiters=config.render.latex_delimiters, asset_base_url="",
+                           image_renderer=None, anchor_targets=targets, emitted_anchors=emitted) for p in planned]
 
 
-def _full_text(item):
-    for key in ("text", "content"):
-        v = item.get(key)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return ""
+def _single_pages(middle_json):
+    """Public API fallback: render a one-page MiddleJson per page (100 % coverage, no cross-page merges)."""
+    from mineru.render import render_markdown
+    return [render_markdown(middle_json.model_copy(update={"pages": [pg]})) for pg in middle_json.pages]
 
 
-def insert_page_markers(md, items, n_pages=None):
-    """Insert `<!-- page: N -->` before the first element of every page 0..max(n_pages, last page_idx + 1) - 1.
-
-    Furniture blocks (page numbers, running headers/footers) are not in MinerU's markdown and are never used to
-    locate a page: their 1-3 char needles matched far ahead ("1" inside "Chapter 10") and lost every later page.
-    A page with nothing locatable (blank, image-only, or text that differs from the markdown) still gets its marker,
-    right before the next located page's marker (page sync needs every page). None when fewer than half of the
-    pages with content can be located: the mapping is wrong and stacked guesses would be worse than no markers."""
-    by_page: dict[int, list] = {}
-    seen: set[int] = set()
-    for it in items:
-        page = it.get("page_idx")
-        if page is None:
-            continue
-        seen.add(page)
-        if it.get("type") in _proto.FURNITURE_TYPES:
-            continue
-        by_page.setdefault(page, []).append(it)
-    if not seen:
-        return None
-    pages = range(max(n_pages or 0, max(seen) + 1))
-    content_pages = [p for p in pages if any(_needles(it) for it in by_page.get(p, []))]
-    if not content_pages:
-        return None
-    cursor = 0
-    located: dict[int, int] = {}
-    for page in content_pages:
-        first = None
-        for it in by_page[page]:
-            # walk every item of the page so the cursor ends after the page's content: a short needle may
-            # otherwise re-match inside the same page (repeated paragraphs, identical pages)
-            for needle in _needles(it):
-                pos = md.find(needle, cursor)
-                if pos < 0:
-                    continue
-                full = _full_text(it)
-                cursor = pos + (len(full) if full and md.startswith(full, pos) else len(needle))
-                if first is None:
-                    first = pos
-                break
-        if first is None:
-            continue                             # text differs from the markdown: placed like a blank page below
-        line_start = md.rfind("\n", 0, first) + 1
-        if located and line_start < max(located.values()):
-            line_start = max(located.values())
-        located[page] = line_start
-    if len(located) * 2 < len(content_pages):
-        return None
-    if md and not md.endswith("\n"):
-        md += "\n"                               # trailing blank pages put their markers on their own line
-    cuts: list[tuple[int, int]] = []
-    for i, page in enumerate(pages):
-        at = located.get(page)
-        if at is None:                           # blank / unlocatable: just before the next located page
-            at = next((located[p] for p in pages[i + 1:] if p in located), len(md))
-        cuts.append((page, at))
-    out, prev = [], 0
-    for page, at in cuts:
-        out.append(md[prev:at])
-        out.append(f"<!-- page: {page + 1} -->\n")
-        prev = at
-    out.append(md[prev:])
-    return "".join(out)
+def render_pages(middle_json, *, reference, plan=None, single=None):
+    """(pages, method): the render plan when its pages, joined like MinerU joins them, equal markdown.md byte for
+    byte; otherwise (mismatch or any error) the public single-page render."""
+    plan = plan or _plan_pages
+    single = single or _single_pages
+    try:
+        pages = plan(middle_json)
+        if "\n\n".join(p for p in pages if p) == reference:
+            return pages, "mineru_render_plan"
+        reason = "per-page render differs from markdown.md"
+    except Exception as e:  # noqa: BLE001  internal API moved / changed: fall back, never lose page markers
+        reason = f"{type(e).__name__}: {e}"
+    _proto.log(f"mineru page map: render plan not usable ({reason}); using single-page render")
+    return single(middle_json), "mineru_single_page"
 
 
-def flatten_structured(sc):
-    """structured_content.json -> flat item list with page_idx (MinerU 4 groups blocks per page)."""
-    if isinstance(sc, list):
-        return sc
-    if isinstance(sc, dict) and "pages" in sc:
-        items = []
-        for k, p in enumerate(sc["pages"]):
-            for i in p.get("blocks", p.get("items", p.get("content", []))) or []:
-                if isinstance(i, dict):
-                    items.append(dict(i, page_idx=p.get("page_idx", k)))
-        return items
-    return []
+def assemble(pages):
+    """Every page gets its marker, blank pages included."""
+    return "".join(f"<!-- page: {i} -->\n\n" + (p.strip("\n") + "\n\n" if p.strip() else "")
+                   for i, p in enumerate(pages, 1))
 
 
 def _html_cols(html):
@@ -190,34 +127,38 @@ def table_edges(middle):
 
 
 def handle(req):
-    from mineru.parser import parse
+    from mineru.parser import ParseResult, parse
     from mineru.parser.writer import FileBasedDataWriter
     out = Path(req["out_dir"])
     base = out / "mineru"
     base.mkdir(parents=True, exist_ok=True)
     tier = req["engine_opts"].get("tier", "basic")
-    result = parse(req["src"], tier=tier, ocr_mode="auto")
+    ocr_mode = req["engine_opts"].get("ocr_mode", "auto")
+    result = parse(req["src"], tier=tier, ocr_mode=ocr_mode)
     result.save(FileBasedDataWriter(str(base)))
     md = (base / "markdown.md").read_text(encoding="utf-8")
-    sc = json.loads((base / "structured_content.json").read_text(encoding="utf-8"))
-    items = flatten_structured(sc)
-    total = None
-    if isinstance(sc, dict):
-        total = ((sc.get("metadata") or {}).get("document") or {}).get("page_count") or len(sc.get("pages") or []) or None
+    mj = base / "middle_json.json"
+    mj_text = mj.read_text(encoding="utf-8") if mj.exists() else ""
+    middle = json.loads(mj_text) if mj_text else {}
+    total = ((middle.get("metadata") or {}).get("document") or {}).get("page_count") \
+        or len(middle.get("pages") or []) or None
+    method = None
+    has_pages = False
     # page markers only make sense for paged input (PDF); an image is a single unnumbered page
-    marked = insert_page_markers(md, items, n_pages=total) if req.get("kind", "pdf") == "pdf" else None
-    has_pages = marked is not None
-    md = marked or md
+    if req.get("kind", "pdf") == "pdf" and mj_text:
+        pr = ParseResult.from_json(mj_text)            # the saved version: image paths match markdown.md
+        pages, method = render_pages(pr.middle_json, reference=md)
+        md = assemble(pages)
+        has_pages = True
+        total = total or len(pages)
     referenced = {os.path.basename(m.group(1)) for m in _IMG_LINK.finditer(md)}
     images = [str(p) for p in sorted((base / "images").glob("*")) if p.is_file() and p.name in referenced]
-    mj = base / "middle_json.json"
-    middle = json.loads(mj.read_text(encoding="utf-8")) if mj.exists() else {}
     first, last = table_edges(middle)
     md_path = out / "out.md"
     md_path.write_text(md, encoding="utf-8")
     _proto.progress(total or 1, total or 1)
     return {"markdown_path": str(md_path), "images": images, "has_page_markers": has_pages, "page_count": total,
-            "first_table": first, "last_table": last}
+            "first_table": first, "last_table": last, "page_map_method": method}
 
 
 if __name__ == "__main__":
