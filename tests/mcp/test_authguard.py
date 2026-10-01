@@ -84,7 +84,7 @@ def test_gate_turns_an_auth_flood_into_one_row_and_429(ctx):
     assert [x["status"] for x in rows].count("auth_error") == 5 and [x["error_code"] for x in rows].count("auth_failures") == 1
     assert len(rows) == 6
     # a valid token from the same address still works during the cool-down
-    raw, tid = _issue(ctx)
+    raw, _tid = _issue(ctx)
     ok = attacker.post("/mcp", headers={**LIST, "Authorization": f"Bearer {raw}"}, json={"method": "tools/list"})
     assert ok.status_code == 200
     # another address is not blocked
