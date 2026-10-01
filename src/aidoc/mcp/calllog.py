@@ -86,6 +86,9 @@ class CallRecorder:
         return {**{k: row[k] for k in ("id", "token_id", "client_name", "client_version", "protocol_version", "user_agent",
                                       "first_seen", "last_seen", "last_ip", "request_count")},
                 "token_name": token["name"] if token else None, "state": state,
+                "token_status": ("revoked" if token["revoked_at"] is not None and token["revoked_at"] <= time.time()
+                                 else "expired" if token["expires_at"] is not None and token["expires_at"] <= time.time()
+                                 else "active") if token else None,
                 "active": state != "idle"}
 
     def note_client(self, *, token_id, client_name, client_version, protocol_version, user_agent, ip, now=None) -> str:

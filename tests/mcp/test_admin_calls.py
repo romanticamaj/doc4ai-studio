@@ -93,3 +93,13 @@ def test_auth_failure_of_a_known_revoked_token_shows_its_name(client, ctx):
     client.post("/mcp", headers={"Authorization": f"Bearer {unknown}", "Content-Type": "application/json",
                                  "Accept": "application/json, text/event-stream"}, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     assert client.get("/api/mcp/calls?status=auth_error").json()["calls"][0]["token_name"] is None
+
+
+def test_clients_carry_their_token_status(client, ctx):
+    tid = _token(client, "laptop")
+    ctx.store.upsert_mcp_client(token_id=tid, client_name="cc", client_version="1", protocol_version=None, user_agent=None,
+                                ip=None, now=time.time())
+    assert client.get("/api/mcp/clients").json()["clients"][0]["token_status"] == "active"
+    client.post(f"/api/mcp/tokens/{tid}/revoke", json={})
+    c = client.get("/api/mcp/clients").json()["clients"][0]
+    assert c["token_status"] == "revoked"

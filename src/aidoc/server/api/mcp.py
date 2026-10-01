@@ -217,13 +217,14 @@ def rotate_token(token_id: str, request: Request) -> dict:
 ACTIVE_WINDOW_S = 300
 
 
-def serialize_client(store, row: dict, now: float, token_names: dict | None = None) -> dict:
-    names = token_names if token_names is not None else {}
-    tname = names.get(row["token_id"]) if row.get("token_id") else None
-    if tname is None and row.get("token_id"):
+def serialize_client(store, row: dict, now: float, tokens: dict | None = None) -> dict:
+    """`tokens`: id -> api_tokens row (one listing for many clients). `token_status` lets the UI move the clients of a
+    revoked token out of 活躍 at once."""
+    t = (tokens or {}).get(row["token_id"]) if row.get("token_id") else None
+    if t is None and row.get("token_id"):
         t = store.get_api_token(row["token_id"])
-        tname = t["name"] if t else None
-    return {**row, "token_name": tname, "active": (now - row["last_seen"]) <= ACTIVE_WINDOW_S}
+    return {**row, "token_name": t["name"] if t else None, "token_status": token_status(t, now) if t else None,
+            "active": (now - row["last_seen"]) <= ACTIVE_WINDOW_S}
 
 
 @router.get("/mcp/clients")
@@ -231,8 +232,8 @@ def list_clients(request: Request, active: int = 0, token_id: str | None = None)
     store = _ctx(request).store
     now = time.time()
     rows = store.list_mcp_clients(token_id=token_id, active_since=now - ACTIVE_WINDOW_S if active else None)
-    names = {t["id"]: t["name"] for t in store.list_api_tokens()}
-    return {"clients": [serialize_client(store, r, now, names) for r in rows]}
+    tokens = {t["id"]: t for t in store.list_api_tokens()}
+    return {"clients": [serialize_client(store, r, now, tokens) for r in rows]}
 
 
 def serialize_call(row: dict, token_names: dict, client_names: dict) -> dict:
