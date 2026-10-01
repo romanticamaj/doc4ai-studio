@@ -124,6 +124,7 @@ def create_app(ctx: ServerContext) -> FastAPI:
     from aidoc.mcp.server import build_mcp
     from aidoc.server import sse
     from aidoc.server.api import chunks, documents, jobs, settings, system, uploads
+    from aidoc.server.api import mcp as mcp_api
     rt = build_mcp(ctx)                                 # MCP spec §4.1: Streamable HTTP at /mcp on the same port
     ctx.extras["mcp"] = rt
 
@@ -163,6 +164,7 @@ def create_app(ctx: ServerContext) -> FastAPI:
     api.include_router(documents.router)
     api.include_router(chunks.router)
     api.include_router(settings.router)
+    api.include_router(mcp_api.router)
     app.include_router(api)
     app.add_route("/mcp", rt.app, methods=["GET", "POST", "DELETE"])     # before the SPA catch-all (D2, spike S2)
     _mount_web(app, Path(ctx.config.root) / "web" / "dist")
