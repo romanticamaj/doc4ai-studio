@@ -79,6 +79,81 @@ pnpm --dir web e2e              # Playwright
 
 Design spec and implementation plans live in `docs/superpowers/`.
 
+## MCP
+
+Doc4AI Studio serves an MCP endpoint at `/mcp` (Streamable HTTP, Bearer personal access tokens). Create a token in the web UI (MCP → Tokens); it is shown once. Then connect a client:
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http doc4ai http://<host>:<port>/mcp \
+  --header "Authorization: Bearer <YOUR_TOKEN>"
+```
+
+**Cursor（~/.cursor/mcp.json）**
+
+```json
+{
+  "mcpServers": {
+    "doc4ai": {
+      "url": "http://<host>:<port>/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+**VS Code（.vscode/mcp.json）**
+
+```json
+{
+  "servers": {
+    "doc4ai": {
+      "type": "http",
+      "url": "http://<host>:<port>/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:doc4ai-token}"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "doc4ai-token",
+      "type": "promptString",
+      "password": true,
+      "description": "Doc4AI Studio token"
+    }
+  ]
+}
+```
+
+**Claude Desktop（claude_desktop_config.json，經 mcp-remote）**
+
+```json
+{
+  "mcpServers": {
+    "doc4ai": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://<host>:<port>/mcp",
+        "--header",
+        "Authorization:${DOC4AI_TOKEN}",
+        "--allow-http"
+      ],
+      "env": {
+        "DOC4AI_TOKEN": "Bearer <YOUR_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+Tokens never go in the URL; the endpoint answers `401` with `WWW-Authenticate: Bearer realm="doc4ai"` when one is missing or revoked. Scopes: `doc4ai:read`, `doc4ai:convert`, `doc4ai:convert:local`, `doc4ai:manage`.
+
 ## License
 
 [AGPL-3.0](LICENSE). The engines are separate projects with their own licenses — notably MinerU's license has additional conditions for large-scale or online-service use; check each project before redistributing or offering this as a service.

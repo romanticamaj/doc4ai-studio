@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from aidoc.mcp import tokens as T
 from aidoc.mcp.principal import SCOPE_READ, SCOPES
 from aidoc.mcp.server import PROTOCOL_VERSIONS, SDK_VERSION, endpoint_urls, transport_security_for
+from aidoc.mcp.snippets import render_snippets
 from aidoc.server.auth import ApiError
 
 router = APIRouter()
@@ -94,14 +95,28 @@ def _publish_token(ctx, row: dict, action: str) -> None:
     ctx.bus.publish("mcp.token", row["id"], {"id": row["id"], "name": row["name"], "prefix": row["prefix"], "action": action})
 
 
-def _snippets_for(ctx, token: str) -> list[dict]:
-    try:
-        from aidoc.mcp.snippets import render_snippets  # Task 27
-    except ImportError:
-        return []
+def _default_endpoint(ctx) -> tuple[list[str], str]:
     urls = endpoint_urls(ctx.config, str(ctx.extras.get("bind_host") or ctx.config.server.host),
                          int(ctx.extras.get("bind_port") or ctx.config.server.port))
-    return render_snippets(urls[-1] if len(urls) > 1 else urls[0], token)
+    public = [u for u in urls if not any(h in u for h in ("127.0.0.1", "localhost", "[::1]"))]
+    return urls, (public[-1] if public else urls[0])
+
+
+@router.get("/mcp/config-snippets")
+def config_snippets(request: Request, token_id: str | None = None, endpoint: str | None = None) -> dict:
+    ctx = _ctx(request)
+    if token_id is not None and ctx.store.get_api_token(token_id) is None:
+        raise ApiError(404, "not_found")
+    urls, chosen = _default_endpoint(ctx)
+    if endpoint is not None:
+        if endpoint not in urls:
+            raise ApiError(422, "unknown_endpoint", endpoint_urls=urls)
+        chosen = endpoint
+    return {"endpoint_url": chosen, "snippets": render_snippets(chosen)}
+
+
+def _snippets_for(ctx, token: str) -> list[dict]:
+    return render_snippets(_default_endpoint(ctx)[1], token)
 
 
 @router.get("/mcp/status")
