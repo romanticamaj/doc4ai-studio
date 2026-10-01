@@ -79,3 +79,23 @@ def test_chunk_ids_are_uri_safe_and_resolve_per_chunk_size(mcp_server, mcp_env, 
     assert cid == "c0001m200"
     text = _read(mcp_server, raw, f"doc4ai://chunks/{doc['id']}/{cid}").contents[0].text
     assert small[1]["text"] in text
+
+
+def test_resources_need_the_read_scope(mcp_server, mcp_env, make_doc):
+    """Defense in depth (S-phase finding 3): the admin API never issues a token without doc4ai:read, but a token
+    row without it (hand-made, future scope sets) must not read through resources either."""
+    from mcp.shared.exceptions import MCPError
+    doc = make_doc("scoped", pages=2)
+    raw, _ = mcp_env.issue(scopes=("doc4ai:convert",))
+    listed, templates = _list(mcp_server, raw)
+    assert listed.resources == [] and templates.resource_templates == []
+    for uri in (f"doc4ai://documents/{doc['id']}", f"doc4ai://documents/{doc['id']}/pages/1",
+                f"doc4ai://documents/{doc['id']}/metadata", f"doc4ai://documents/{doc['id']}/assets/p1_1.png",
+                f"doc4ai://chunks/{doc['id']}/c0000"):
+        with pytest.raises(MCPError) as e:
+            _read(mcp_server, raw, uri)
+        assert "forbidden_scope" in str(e.value)
+    rows = mcp_env.ctx.store.list_mcp_calls(limit=5)
+    assert rows[0]["method"] == "resources/read" and rows[0]["status"] == "forbidden_scope"
+    ok, _ = mcp_env.issue()
+    assert _read(mcp_server, ok, f"doc4ai://documents/{doc['id']}/pages/1").contents[0].text.startswith("<!-- page: 1 -->")

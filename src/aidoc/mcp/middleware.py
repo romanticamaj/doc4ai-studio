@@ -150,7 +150,11 @@ def make_middleware(ctx, recorder):
                 status, error_code = classify_tool_error(result)
             return result
         except MCPError as e:
-            status, error_code = "protocol_error", str(getattr(e.error, "code", "mcp_error"))
+            data = getattr(e.error, "data", None)
+            if isinstance(data, dict) and data.get("code") == "forbidden_scope":
+                status, error_code = "forbidden_scope", "forbidden_scope"
+            else:
+                status, error_code = "protocol_error", str(getattr(e.error, "code", "mcp_error"))
             raise
         except Exception as e:
             status, error_code = "protocol_error", type(e).__name__

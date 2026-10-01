@@ -10,14 +10,23 @@ from pathlib import Path
 
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.mcpserver.exceptions import ResourceNotFoundError
+from mcp.shared.exceptions import MCPError
 from mcp.types import Resource
 
 from aidoc.mcp import docs as D
 from aidoc.mcp.errors import ToolFailure
+from aidoc.mcp.principal import SCOPE_READ, current_principal
 from aidoc.output import read_sidecar
 from aidoc.server.app import safe_relative
 
 LIST_MAX = 100
+FORBIDDEN = -32003                  # implementation-defined JSON-RPC server error: the token lacks a scope
+
+
+def _may_read() -> bool:
+    """Resources are doc4ai:read (spec §6). Every issued token has it, but the check is enforced here too."""
+    p = current_principal.get()
+    return p is not None and p.has(SCOPE_READ)
 
 
 def _guard(fn):
@@ -83,6 +92,8 @@ def register_resources(mcp, ctx) -> None:
 
     # resources/list: documents only (per spike S9 — pagination if the SDK forwards the cursor, else the newest 100)
     async def list_resources():
+        if not _may_read():
+            return []
         docs = sorted(D.visible_docs(ctx.store), key=lambda d: -(d["created_at"] or 0))[:LIST_MAX]
         return [Resource(uri=f"doc4ai://documents/{d['id']}", name=Path(d["output_dir"]).name, mime_type="text/markdown",
                          description=f"{d.get('pages') or '?'} pages, {d['engine']}") for d in docs]
@@ -90,8 +101,16 @@ def register_resources(mcp, ctx) -> None:
 
     # a template has one fixed mimeType; an asset's real type comes from its file name
     original_read = mcp.read_resource
+    original_templates = mcp.list_resource_templates
+
+    async def list_resource_templates():
+        return await original_templates() if _may_read() else []
+    mcp.list_resource_templates = list_resource_templates
 
     async def read_resource(uri, context=None):
+        if not _may_read():
+            raise MCPError(code=FORBIDDEN, message=f"forbidden_scope: this token lacks the {SCOPE_READ} scope",
+                           data={"code": "forbidden_scope", "uri": str(uri)})
         results = await original_read(uri, context)
         if "/assets/" not in str(uri) or not isinstance(results, list | tuple):
             return results
