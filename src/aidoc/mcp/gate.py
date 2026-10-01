@@ -84,10 +84,11 @@ class McpGate:
         ip = scope["client"][0] if scope.get("client") else None
         ua = _header(scope, "user-agent")
         pv = _header(scope, "mcp-protocol-version")
-        qs = parse_qs(scope.get("query_string", b"").decode("latin-1"))
-        if "token" in qs:                           # spec: tokens never travel in the URL
+        qs = {k.lower(): v for k, v in parse_qs(scope.get("query_string", b"").decode("latin-1")).items()}
+        in_url = qs.get("token") or qs.get("access_token")
+        if in_url is not None:                      # spec: tokens never travel in the URL (RFC 6750 form included)
             self.recorder.record(status="auth_error", error_code="token_in_query", http_status=400, ip=ip,
-                                 token_prefix_seen=T.prefix_seen((qs["token"] or [None])[0]), protocol_version=pv, ts=ts)
+                                 token_prefix_seen=T.prefix_seen(in_url[0] if in_url else None), protocol_version=pv, ts=ts)
             return await _send_json(send, 400, {"error": "token_in_query",
                                                 "error_description": "Send the token in the Authorization header"})
         result = self.verifier.verify(parse_bearer(_header(scope, "authorization")))
@@ -112,25 +113,41 @@ class McpGate:
                                                 "error_description": "This server is stateless: POST JSON-RPC to /mcp"},
                                     [(b"allow", b"POST")])
         # read the body once (bounded), learn the method, replay it to the SDK (D5)
-        body, limit = b"", max_body_bytes(cfg)
+        parts, size, limit = [], 0, max_body_bytes(cfg)       # a list + one join: linear, not body += chunk
         while True:
             msg = await receive()
             if msg["type"] == "http.disconnect":
                 return
-            body += msg.get("body", b"")
-            if len(body) > limit:
+            chunk = msg.get("body", b"")
+            parts.append(chunk)
+            size += len(chunk)
+            if size > limit:
                 self.recorder.record(status="protocol_error", error_code="payload_too_large", http_status=413, ip=ip,
                                      token_id=principal.token_id, protocol_version=pv, ts=ts)
                 return await _send_json(send, 413, {"error": "payload_too_large", "max_bytes": limit})
             if not msg.get("more_body"):
                 break
-        method = _header(scope, "mcp-method")
-        if method is None and scope["method"] == "POST" and body:
+        body = b"".join(parts)
+        del parts
+        # the body decides the method (D5); a client-supplied Mcp-Method header that disagrees is refused, so it
+        # can never relabel a tools/call to dodge the rate limit or the audit row (the SDK checks the header
+        # against the body only in the 2026-07-28 era)
+        header_method = _header(scope, "mcp-method")
+        body_method = None
+        if scope["method"] == "POST" and body:
             try:
                 parsed = json.loads(body)
-                method = parsed.get("method") if isinstance(parsed, dict) else None
+                body_method = parsed.get("method") if isinstance(parsed, dict) else None
             except ValueError:
-                method = None
+                body_method = None
+            if not isinstance(body_method, str):
+                body_method = None
+        if header_method is not None and body_method is not None and header_method != body_method:
+            self.recorder.record(status="protocol_error", error_code="method_mismatch", http_status=400, ip=ip,
+                                 token_id=principal.token_id, method=body_method, protocol_version=pv, ts=ts)
+            return await _send_json(send, 400, {"error": "method_mismatch",
+                                                "error_description": "Mcp-Method does not match the JSON-RPC method"})
+        method = body_method or header_method
         if method == "tools/call":
             ok, retry = self.limiter.acquire(principal.token_id or principal.subject, principal.rate_limit_per_min)
             if not ok:

@@ -599,10 +599,17 @@ class Store:
         return self._page_index_tokenizer
 
     def replace_page_index(self, doc_id, pages: list[tuple[int | None, str]]) -> None:
+        """All or nothing, in one transaction (one commit instead of one per page; a failure keeps the old rows)."""
         with self.con.lock:
-            self.con.execute("DELETE FROM page_index WHERE doc_id=?", (doc_id,))
-            for page, text in pages:
-                self.con.execute("INSERT INTO page_index(doc_id, page, text) VALUES(?,?,?)", (doc_id, page, text))
+            self.con.execute("BEGIN")
+            try:
+                self.con.execute("DELETE FROM page_index WHERE doc_id=?", (doc_id,))
+                for page, text in pages:
+                    self.con.execute("INSERT INTO page_index(doc_id, page, text) VALUES(?,?,?)", (doc_id, page, text))
+            except BaseException:
+                self.con.execute("ROLLBACK")
+                raise
+            self.con.execute("COMMIT")
 
     def delete_page_index(self, doc_id) -> None:
         self.con.execute("DELETE FROM page_index WHERE doc_id=?", (doc_id,))

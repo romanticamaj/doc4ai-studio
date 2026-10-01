@@ -46,8 +46,17 @@ def index_document(store, doc: dict) -> int:
     return len(pages)
 
 
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def clean_query(q: str) -> str:
+    """User text made safe for SQLite: control characters (NUL ends an FTS5 string) become spaces and lone
+    surrogates (unencodable as UTF-8) are dropped."""
+    return _CONTROL.sub(" ", q.encode("utf-8", "ignore").decode("utf-8"))
+
+
 def _terms(q: str) -> list[str]:
-    return [t for t in _WS.split(q.strip()) if t]
+    return [t for t in _WS.split(clean_query(q).strip()) if t]
 
 
 def fts_query(q: str) -> str | None:

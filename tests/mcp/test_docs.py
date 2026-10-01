@@ -59,3 +59,24 @@ def test_stale_job_detects_live_reconvert(ctx, make_doc):
     assert D.stale_job(ctx, doc) == job
     ctx.store.update_task(tid, status="done")
     assert D.stale_job(ctx, doc) is None
+
+
+def test_estimate_and_chunk_caches_survive_concurrent_eviction(ctx, make_doc):
+    """Review finding: the caches were evicted without a lock from to_thread workers (KeyError / RuntimeError)."""
+    import threading
+    views = [D.load_doc(ctx, make_doc(f"v{i}", pages=1, md=page_md(1, body=f"text {i}"))["id"]) for i in range(40)]
+    errors = []
+
+    def hammer(k):
+        try:
+            for r in range(300):
+                v = views[(k * 7 + r) % len(views)]
+                v.mtime_ns += 1                        # a new cache identity every time: constant eviction
+                D.token_ranges(v)
+                D.chunk_cache(v, 800 + (r % 3) * 100)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+    threads = [threading.Thread(target=hammer, args=(k,)) for k in range(12)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert errors == []

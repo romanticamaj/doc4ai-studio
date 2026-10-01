@@ -1,6 +1,7 @@
 """Read-only tools (MCP spec §5.3). Each body is a plain function; registry.doc4ai_tool adds scope checks."""
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -11,7 +12,7 @@ from aidoc.mcp import docs as D
 from aidoc.mcp.budget import CursorError, cut_to_budget, decode_cursor, encode_cursor, estimate_tokens
 from aidoc.mcp.errors import ToolFailure
 from aidoc.mcp.principal import SCOPE_READ
-from aidoc.mcp.registry import TEXT_RESERVE_TOKENS, doc4ai_tool
+from aidoc.mcp.registry import TEXT_RESERVE_TOKENS, doc4ai_tool, render_text
 from aidoc.mcp.schemas import (
     ChunkOut,
     ChunksOut,
@@ -78,6 +79,17 @@ def _filtered_docs(store, engine=None, level=None, flagged=None, q=None, doc_ids
     return out
 
 
+def _fit_info(out: DocInfoOut, budget: int) -> DocInfoOut:
+    """Spec §1: every response ≤ the token budget. A long outline and a badly flagged scan can each be 200 entries;
+    halve the longer list (marking it truncated) until the text rendering fits."""
+    while estimate_tokens(render_text(out))[0] > budget and (len(out.outline) > 1 or len(out.flagged_pages) > 1):
+        if len(out.outline) >= len(out.flagged_pages):
+            out.outline, out.outline_truncated = out.outline[: len(out.outline) // 2], True
+        else:
+            out.flagged_pages, out.flagged_pages_truncated = out.flagged_pages[: len(out.flagged_pages) // 2], True
+    return out
+
+
 def register_read_tools(mcp, ctx) -> None:
     store = ctx.store
 
@@ -101,7 +113,11 @@ def register_read_tools(mcp, ctx) -> None:
             allowed = [d["id"] for d in D.visible_docs(store)]
             if not allowed:                              # an empty id list would mean "no filter" to the store
                 return SearchOut(hits=[], next_cursor=None, query=query)
-        rows = pageindex.search_pages(store, query, doc_ids=allowed, limit=400)
+        try:
+            rows = pageindex.search_pages(store, query, doc_ids=allowed, limit=400)
+        except sqlite3.Error as e:                      # never an UnexpectedToolError (review focus 2)
+            raise ToolFailure("search_unavailable", f"the search index could not run this query ({e})",
+                              hint="rephrase the query with plain words") from None
         per_doc: dict[str, list[dict]] = {}
         for r in rows:
             per_doc.setdefault(r["doc_id"], []).append(r)
@@ -173,14 +189,16 @@ def register_read_tools(mcp, ctx) -> None:
                                     alignment=al.get("ratio") if isinstance(al, dict) else None)
         flagged = D.page_warnings(row)
         job = D.stale_job(ctx, row)
-        return DocInfoOut(doc_id=view.doc_id, title=view.title, source_name=view.source_name, pages=view.pages,
-                          engine=row["engine"], lang=row.get("lang") or "cht",
-                          quality=QualityFull(level=q.get("level", row["status"]), score=float(q.get("score", 0.0)),
-                                              reasons=list(q.get("reasons") or [])),
-                          page_map=page_map, flagged_pages=flagged[:D.FLAGGED_MAX], flagged_pages_truncated=len(flagged) > D.FLAGGED_MAX,
-                          outline=items, outline_truncated=trunc, token_estimate=D.token_ranges(view),
-                          chunks=len(D.chunk_cache(view, 800)), resources=D.resources_for(view.doc_id),
-                          stale=job is not None, job_id=job)
+        out = DocInfoOut(doc_id=view.doc_id, title=view.title, source_name=view.source_name, pages=view.pages,
+                         engine=row["engine"], lang=row.get("lang") or "cht",
+                         quality=QualityFull(level=q.get("level", row["status"]), score=float(q.get("score", 0.0)),
+                                             reasons=list(q.get("reasons") or [])),
+                         page_map=page_map, flagged_pages=flagged[:D.FLAGGED_MAX],
+                         flagged_pages_truncated=len(flagged) > D.FLAGGED_MAX,
+                         outline=items, outline_truncated=trunc, token_estimate=D.token_ranges(view),
+                         chunks=len(D.chunk_cache(view, 800)), resources=D.resources_for(view.doc_id),
+                         stale=job is not None, job_id=job)
+        return _fit_info(out, ctx.config.mcp.response_token_budget)
 
     @doc4ai_tool(mcp, ctx, name="read_document", title="Read document pages",
                  description="Markdown of a page range (\"12\" or \"12-15\") or of the section under a heading. Responses are "
@@ -200,6 +218,29 @@ def register_read_tools(mcp, ctx) -> None:
         if pages is not None and heading is not None:
             raise ToolFailure("invalid_arguments", "give either pages or heading, not both")
         job = D.stale_job(ctx, view.row)
+
+        def collect(units: list, first_offset: int) -> tuple[list[str], int, int | None]:
+            """Whole units while they fit; a first unit bigger than the budget is sliced. Units are counted after the
+            asset URIs are rewritten (review: `](assets/x)` grows by ~45 characters each), and `offset` is a position in
+            that rewritten text. Returns (parts, units fully or partly read, offset to continue the next unit at)."""
+            parts, used = [], 0
+            for k, text in enumerate(units):
+                if k == 0 and first_offset:
+                    if first_offset >= len(text):
+                        raise ToolFailure("invalid_arguments", f"offset {first_offset} is past the end of this unit "
+                                          f"({len(text)} characters)", hint="use the offset from next.offset")
+                    text = text[first_offset:]
+                n = estimate_tokens(text)[0]
+                if used + n <= budget:
+                    parts.append(text)
+                    used += n
+                    continue
+                if not parts:                                  # one unit bigger than the budget: slice it
+                    kept, cut = cut_to_budget(text, budget)
+                    return [kept], 1, (first_offset if k == 0 else 0) + (cut or 0)
+                return parts, k, None
+            return parts, len(units), None
+
         if not view.has_pages:                                 # chunk mode (spec §5.3, §9)
             if pages is not None or heading is not None:
                 raise ToolFailure("page_range_invalid", "this document has no page markers; read it by chunk",
@@ -208,24 +249,15 @@ def register_read_tools(mcp, ctx) -> None:
             start = chunk or 0
             if start >= len(chunks):
                 raise ToolFailure("invalid_arguments", f"chunk {start} is past the end ({len(chunks)} chunks)")
-            parts, used, i, nxt = [], 0, start, None
-            while i < len(chunks):
-                text = (D.chunk_markdown_text(chunks[i])[offset or 0:] if i == start
-                        else D.chunk_markdown_text(chunks[i], chunks[i - 1]))
-                n = estimate_tokens(text)[0]
-                if used + n <= budget:
-                    parts.append(text)
-                    used += n
-                    i += 1
-                    continue
-                if not parts:
-                    kept, cut = cut_to_budget(text, budget)
-                    parts.append(kept)
-                    nxt = NextRef(chunk=i, offset=(offset or 0) + (cut or 0))
-                else:
-                    nxt = NextRef(chunk=i)
-                break
-            md = D.rewrite_assets("\n\n".join(parts), view.doc_id)
+            units = [D.rewrite_assets(D.chunk_markdown_text(chunks[i], None if i == start else chunks[i - 1]), view.doc_id)
+                     for i in range(start, len(chunks))]
+            parts, taken, cut_at = collect(units, offset or 0)
+            nxt = None
+            if cut_at is not None:
+                nxt = NextRef(chunk=start + taken - 1, offset=cut_at)
+            elif start + taken < len(chunks):
+                nxt = NextRef(chunk=start + taken)
+            md = "\n\n".join(parts)
             return ReadOut(doc_id=view.doc_id, title=view.title, unit="chunks", pages=None, markdown=md, truncated=nxt is not None,
                            next=nxt, page_warnings=[], tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)
         total = view.pages
@@ -235,26 +267,15 @@ def register_read_tools(mcp, ctx) -> None:
             start, end = D.parse_pages(pages, total)
         else:
             start, end = 1, total
-        parts, used, nxt, last = [], 0, None, start - 1
-        for p in range(start, end + 1):
-            block = view.page_block(p)
-            if p == start and offset:
-                block = block[offset:]
-            n = estimate_tokens(block)[0]
-            if used + n <= budget:
-                parts.append(block)
-                used += n
-                last = p
-                continue
-            if not parts:                                      # one page bigger than the budget: slice it
-                kept, cut = cut_to_budget(block, budget)
-                parts.append(kept)
-                last = p
-                nxt = NextRef(pages=f"{p}-{end}" if end > p else str(p), offset=(offset or 0) + (cut or 0))
-            else:
-                nxt = NextRef(pages=f"{p}-{end}" if end > p else str(p))
-            break
-        md = D.rewrite_assets("".join(parts), view.doc_id)
+        units = [D.rewrite_assets(view.page_block(p), view.doc_id) for p in range(start, end + 1)]
+        parts, taken, cut_at = collect(units, offset or 0)
+        last = start + taken - 1
+        nxt = None
+        if cut_at is not None:                                 # the page `last` was cut: continue inside it
+            nxt = NextRef(pages=f"{last}-{end}" if end > last else str(last), offset=cut_at)
+        elif last < end:
+            nxt = NextRef(pages=f"{last + 1}-{end}" if end > last + 1 else str(end))
+        md = "".join(parts)
         return ReadOut(doc_id=view.doc_id, title=view.title, unit="pages", pages=PageSpan(start=start, end=last),
                        markdown=md, truncated=nxt is not None, next=nxt, page_warnings=D.page_warnings(view.row, start, last),
                        tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)

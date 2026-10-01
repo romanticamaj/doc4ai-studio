@@ -78,7 +78,7 @@ def _validate(body: dict, cfg) -> dict:
                 _validate_mcp_lists(key, val)
                 clean.setdefault(section, {})[key] = val
                 continue
-            ok =type(val) is type(cur) or (type(cur) is int and type(val) is int)
+            ok = type(val) is type(cur) or (type(cur) is int and type(val) is int)
             if not ok:
                 raise ApiError(422, "invalid_settings", detail=f"{section}.{key} must be {type(cur).__name__}")
             if (section, key) in _CHOICES and val not in _CHOICES[(section, key)]:

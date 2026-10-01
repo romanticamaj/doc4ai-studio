@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import re
 
-_TOKEN_RE = re.compile(r"([?&]token=)[^&\s]*")
+_TOKEN_RE = re.compile(r"([?&](?:access_)?token=)[^&\s]*", re.IGNORECASE)        # ?token= and RFC 6750 ?access_token=
 
 
 def redact(text: str) -> str:

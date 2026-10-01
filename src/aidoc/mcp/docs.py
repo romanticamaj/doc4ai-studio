@@ -177,8 +177,10 @@ def _identity(view: DocView) -> tuple:
 
 def token_ranges(view: DocView) -> TokenEstimate:
     key = _identity(view)
-    if key in _est_cache:
-        return _est_cache[key]
+    with _cache_lock:
+        hit = _est_cache.get(key)
+    if hit is not None:
+        return hit
     if not view.has_pages:
         total, method = estimate_tokens(view.markdown)
         est = TokenEstimate(total=total, per_page_avg=None, ranges=[TokenRange(pages="all", tokens=total)], method=method)
@@ -195,24 +197,29 @@ def token_ranges(view: DocView) -> TokenEstimate:
             ranges.append(TokenRange(pages=f"{start}-{end}" if end > start else str(start), tokens=n))
             total += n
         est = TokenEstimate(total=total, per_page_avg=total // last if last else None, ranges=ranges, method=method)
-    _est_cache[key] = est
-    while len(_est_cache) > 32:
-        _est_cache.pop(next(iter(_est_cache)))
+    with _cache_lock:                              # tools run in worker threads: evict under the lock
+        _est_cache[key] = est
+        while len(_est_cache) > 32:
+            _est_cache.pop(next(iter(_est_cache)), None)
     return est
 
 
 def chunk_cache(view: DocView, max_tokens: int) -> list:
     key = (*_identity(view), max_tokens)
-    if key not in _chunk_cache:
-        try:
-            chunks = _chunk.chunk_markdown(view.markdown, _chunk.source_label(view.source_name), max_tokens,
-                                           _chunk.count_tokens, stem=view.title)
-        except _chunk.TokenizerUnavailable as e:
-            raise ToolFailure("tokenizer_unavailable", str(e), hint="run `aidoc setup` once with network access") from None
+    with _cache_lock:
+        hit = _chunk_cache.get(key)
+    if hit is not None:
+        return hit
+    try:
+        chunks = _chunk.chunk_markdown(view.markdown, _chunk.source_label(view.source_name), max_tokens,
+                                       _chunk.count_tokens, stem=view.title)
+    except _chunk.TokenizerUnavailable as e:
+        raise ToolFailure("tokenizer_unavailable", str(e), hint="run `aidoc setup` once with network access") from None
+    with _cache_lock:                              # never read back after eviction: return the local list
         _chunk_cache[key] = chunks
         while len(_chunk_cache) > 16:
-            _chunk_cache.pop(next(iter(_chunk_cache)))
-    return _chunk_cache[key]
+            _chunk_cache.pop(next(iter(_chunk_cache)), None)
+    return chunks
 
 
 _RANGE = re.compile(r"^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$")

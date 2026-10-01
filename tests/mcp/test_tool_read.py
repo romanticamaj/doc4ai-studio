@@ -130,3 +130,24 @@ def test_text_block_is_markdown_under_a_header_not_json(mcp_server, mcp_env, mak
     assert "\n<!-- page: 1 -->\n" in text and '"markdown"' not in text
     assert estimate_tokens(text)[0] <= 8000
     assert text.endswith(res.structured_content["markdown"])
+
+
+def test_image_heavy_page_stays_within_budget_after_uri_rewrite(mcp_server, mcp_env, make_doc):
+    """Review finding: tokens were counted before `](assets/x.png)` grew into `](doc4ai://documents/<id>/assets/x.png)`,
+    so an 800-image page read with max_tokens=2000 came back at ~7,000 tokens."""
+    figs = "\n\n".join(f"![f](assets/p1_{i}.png)" for i in range(800))
+    doc = make_doc("figs", pages=2, md=page_md(1, body=figs) + page_md(2, body="tail"))
+    raw, _ = mcp_env.issue()
+    out = _out(mcp_call(mcp_server, raw, "read_document", {"doc_id": doc["id"], "pages": "1-2", "max_tokens": 2000}))
+    assert estimate_tokens(out["markdown"])[0] <= 2000 and out["truncated"] is True and out["next"]["offset"]
+    assert "](assets/" not in out["markdown"] and "](doc4ai://" in out["markdown"]
+    cont = _out(mcp_call(mcp_server, raw, "read_document", {"doc_id": doc["id"], "pages": "1-2",
+                                                            "offset": out["next"]["offset"], "max_tokens": 2000}))
+    assert cont["markdown"].lstrip().startswith("![f](doc4ai://") and estimate_tokens(cont["markdown"])[0] <= 2000
+
+
+def test_offset_past_the_end_of_the_page_is_an_error_not_empty(mcp_server, mcp_env, make_doc):
+    doc = make_doc("short", pages=2)
+    raw, _ = mcp_env.issue()
+    e = _err(mcp_call(mcp_server, raw, "read_document", {"doc_id": doc["id"], "pages": "1-2", "offset": 10 ** 6}))
+    assert e["code"] == "invalid_arguments"

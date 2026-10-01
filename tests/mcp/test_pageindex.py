@@ -75,7 +75,8 @@ def test_missing_markdown_indexes_nothing_and_clears(store, tmp_path):
     assert store.page_index_doc_ids() == set()
 
 
-@pytest.mark.parametrize("q", ['"', "*", "(", "-x", "NEAR", "AND", "a", "學習", "學", '"機器" OR', "機器 OR 學習", "   "])
+@pytest.mark.parametrize("q", ['"', "*", "(", "-x", "NEAR", "AND", "a", "學習", "學", '"機器" OR', "機器 OR 學習", "   ",
+                               "abc\x00", "\x00", "gradient\x00descent", "\ud800abc", "ab\x07cdef"])   # review: NUL, surrogate
 def test_short_and_syntax_queries_never_error(store, tmp_path, q):
     doc = _doc(store, tmp_path, "ml", MD)
     PI.index_document(store, doc)
@@ -123,3 +124,14 @@ def test_delete_documents_drops_index_rows(store, tmp_path):
     store.set_document_status(a["id"], "orphaned")
     assert store.delete_documents("orphaned") == 1
     assert store.page_index_doc_ids() == set()
+
+
+def test_replace_page_index_is_all_or_nothing(store, tmp_path):
+    """Review finding: rows were replaced in autocommit, one commit per page; a failure midway left a partial index
+    that the startup backfill never repairs (the document already has rows)."""
+    doc = _doc(store, tmp_path, "ml", MD)
+    PI.index_document(store, doc)
+    with pytest.raises(Exception):  # noqa: B017  sqlite3 binding error on the second page
+        store.replace_page_index(doc["id"], [(1, "new page one"), (2, object())])
+    rows = store._qa("SELECT page, text FROM page_index WHERE doc_id=? ORDER BY page", (doc["id"],))
+    assert [r["page"] for r in rows] == [1, 2, 3] and "machine learning" in rows[0]["text"]

@@ -95,7 +95,7 @@ def test_query_token_rejected_even_when_valid(gate_client):
 def test_token_copy_paste_variants_accepted(gate_client, variant):
     c, ctx = gate_client
     raw, tid = _issue(ctx)
-    r = c.post("/mcp", content=b'{"method":"tools/list"}', headers={**MODERN, "Authorization": variant(raw)})
+    r = c.post("/mcp", content=b'{"method":"tools/list"}', headers={**MODERN, "Mcp-Method": "tools/list", "Authorization": variant(raw)})
     assert r.status_code == 200 and r.json()["token_id"] == tid
 
 
@@ -203,3 +203,62 @@ def test_origin_must_match_host(gate_client):
     assert r.status_code == 403 and r.json()["error"] == "forbidden_origin"
     assert _rows(ctx)[0]["error_code"] == "http_403" and _rows(ctx)[0]["token_id"] == tid
     assert c.post("/mcp", content=b"{}", headers={**h, "Origin": "http://evil.example"}).status_code == 403
+
+
+def test_method_comes_from_the_body_not_a_spoofed_header(gate_client):
+    """Review finding: a legacy POST with a tools/call body and `Mcp-Method: tools/list` must not dodge the rate
+    limit (or the audit row): the body decides, and a disagreeing header is refused."""
+    c, ctx = gate_client
+    raw, _tid = _issue(ctx, rate=1)
+    legacy = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
+              "Authorization": f"Bearer {raw}"}
+    call = b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"x","arguments":{}}}'
+    r = c.post("/mcp", content=call, headers={**legacy, "Mcp-Method": "tools/list"})
+    assert r.status_code == 400 and r.json()["error"] == "method_mismatch"
+    row = _rows(ctx)[0]
+    assert row["status"] == "protocol_error" and row["error_code"] == "method_mismatch" and row["method"] == "tools/call"
+    assert c.post("/mcp", content=call, headers=legacy).status_code == 200
+    assert c.post("/mcp", content=call, headers=legacy).status_code == 429          # the limit still applies
+
+
+def test_body_is_buffered_linearly(gate_client):
+    """Review finding: `body += chunk` was quadratic on the event loop for a 27 MB upload in small chunks."""
+    import asyncio
+    _c, ctx = gate_client
+    raw, _ = _issue(ctx)
+    seen = {}
+
+    async def inner(scope, receive, send):
+        m = await receive()
+        seen["len"] = len(m["body"])
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b"{}"})
+    gate = McpGate(ctx, inner, PatVerifier(ctx.store, SECRET), RateLimiter(lambda: 60), CallRecorder(ctx))
+    chunks = [b'{"method":"tools/list","pad":"'] + [b"A" * 4096] * 6000 + [b'"}']       # ~24 MB in 4 KiB chunks
+    msgs = [{"type": "http.request", "body": ch, "more_body": i < len(chunks) - 1} for i, ch in enumerate(chunks)]
+
+    async def receive():
+        return msgs.pop(0)
+    sent = []
+
+    async def send(m):
+        sent.append(m)
+    scope = {"type": "http", "method": "POST", "path": "/mcp", "query_string": b"", "client": ("1.2.3.4", 1),
+             "headers": [(b"authorization", f"Bearer {raw}".encode()), (b"content-type", b"application/json")]}
+    t0 = time.perf_counter()
+    asyncio.run(gate(scope, receive, send))
+    assert sent[0]["status"] == 200 and seen["len"] == sum(len(x) for x in chunks)
+    assert time.perf_counter() - t0 < 1.5
+
+
+def test_access_token_query_parameter_is_rejected_too(gate_client):
+    """Review finding: RFC 6750's `?access_token=` got a 401 but the raw PAT stayed in uvicorn's access log."""
+    from aidoc.server.logfilter import redact
+    c, ctx = gate_client
+    raw, _ = _issue(ctx)
+    for name in ("access_token", "Access_Token", "TOKEN"):
+        r = c.post(f"/mcp?{name}={raw}", content=b"{}", headers=MODERN)
+        assert r.status_code == 400 and r.json()["error"] == "token_in_query", name
+        assert _rows(ctx)[0]["token_prefix_seen"] == raw[:15]
+    line = f'1.2.3.4 - "POST /mcp?x=1&access_token={raw}&Token={raw} HTTP/1.1" 400'
+    assert raw not in redact(line)

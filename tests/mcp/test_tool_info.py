@@ -72,3 +72,18 @@ def test_output_missing_is_a_tool_error(mcp_server, mcp_env, make_doc):
         assert code == "output_missing", tool
     res = mcp_call(mcp_server, raw, "get_document_info", {"doc_id": "does-not-exist"})
     assert res.is_error and (res.structured_content or json.loads(res.content[0].text))["code"] == "document_not_found"
+
+
+def test_get_document_info_fits_the_budget_for_a_badly_flagged_book(mcp_server, mcp_env, make_doc):
+    """Review finding: 200 outline items + 200 flagged pages rendered to ~9,000 tokens (spec §1: ≤ 8,000)."""
+    from aidoc.mcp.budget import estimate_tokens
+    q = {"score": 0.4, "level": "low", "reasons": ["pages_flagged"],
+         "pages": [{"page": n, "reasons": ["broken_text_layer", "garbage"], "repaired_by": "docling"} for n in range(1, 401)]}
+    md = "".join(page_md(n, heading=f"Section {n}: a fairly long heading title for page {n}") for n in range(1, 401))
+    doc = make_doc("bad", pages=400, md=md, quality=q, status="low")
+    raw, _ = mcp_env.issue()
+    res = mcp_call(mcp_server, raw, "get_document_info", {"doc_id": doc["id"]})
+    out = _out(res)
+    assert estimate_tokens(res.content[0].text)[0] <= 8000
+    assert out["outline_truncated"] is True and out["flagged_pages_truncated"] is True
+    assert out["outline"] and out["flagged_pages"] and out["token_estimate"]["total"] > 0

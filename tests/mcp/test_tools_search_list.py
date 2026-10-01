@@ -82,3 +82,25 @@ def test_orphaned_documents_are_not_listed_or_searched(mcp_server, mcp_env, make
     raw, _ = mcp_env.issue()
     assert _out(mcp_call(mcp_server, raw, "list_documents", {}))["documents"] == []
     assert _out(mcp_call(mcp_server, raw, "search_library", {"query": "unique needle"}))["hits"] == []
+
+
+def test_search_with_nul_and_control_characters_is_not_a_crash(mcp_server, mcp_env, make_doc):
+    """Review finding: a NUL in the query raised sqlite3.OperationalError (UnexpectedToolError)."""
+    make_doc("n", pages=1, md=page_md(1, body="gradient descent here"))
+    raw, _ = mcp_env.issue()
+    for q in ("gradient\x00descent", "abc\x00", "\x07gradient"):
+        res = mcp_call(mcp_server, raw, "search_library", {"query": q})
+        assert res.is_error is not True, (q, res.content)
+    assert _out(mcp_call(mcp_server, raw, "search_library", {"query": "gradient\x00descent"}))["hits"]
+
+
+def test_search_store_error_is_a_tool_error(mcp_server, mcp_env, make_doc, monkeypatch):
+    import sqlite3
+    make_doc("n", pages=1, md=page_md(1, body="gradient descent here"))
+    raw, _ = mcp_env.issue()
+
+    def boom(*a, **kw):
+        raise sqlite3.OperationalError("fts5: syntax error")
+    monkeypatch.setattr(mcp_env.ctx.store, "search_page_index", boom)
+    res = mcp_call(mcp_server, raw, "search_library", {"query": "gradient"})
+    assert res.is_error is True and res.structured_content["code"] == "search_unavailable"
