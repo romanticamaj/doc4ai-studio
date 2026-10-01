@@ -234,8 +234,9 @@ def test_body_is_buffered_linearly(gate_client):
         await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": b"{}"})
     gate = McpGate(ctx, inner, PatVerifier(ctx.store, SECRET), RateLimiter(lambda: 60), CallRecorder(ctx))
-    chunks = ([b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"convert_document","arguments":'
-               b'{"filename":"a.pdf","content_base64":"'] + [b"A" * 4096] * 6000 + [b'"}}}'])   # ~24 MB in 4 KiB chunks
+    head = (b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"convert_document","arguments":'
+            b'{"filename":"a.pdf","content_base64":"')
+    chunks = [head] + [b"A" * 4096] * 6000 + [b'"}}}']                     # ~24 MB in 4 KiB chunks (an upload)
     msgs = [{"type": "http.request", "body": ch, "more_body": i < len(chunks) - 1} for i, ch in enumerate(chunks)]
 
     async def receive():
