@@ -76,10 +76,12 @@ def classify_tool_error(result) -> tuple[str, str | None]:
 
 
 def _filter_listing(result, allowed: set[str]):
+    """Keep the tools this principal may call, sorted by name (a stable listing caches well client-side)."""
     if isinstance(result, dict):
-        result["tools"] = [t for t in result.get("tools") or [] if t.get("name") in allowed]
+        result["tools"] = sorted((t for t in result.get("tools") or [] if t.get("name") in allowed),
+                                 key=lambda t: t["name"])
         return result
-    result.tools = [t for t in result.tools if t.name in allowed]
+    result.tools = sorted((t for t in result.tools if t.name in allowed), key=lambda t: t.name)
     return result
 
 

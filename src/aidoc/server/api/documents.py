@@ -314,13 +314,11 @@ def _link_or_copy(src: Path, dst: Path) -> None:
     os.replace(tmp, dst)
 
 
-@router.post("/documents/reconvert", status_code=201)
-def reconvert(body: ReconvertIn, request: Request) -> dict:
-    """One job, one forced auto-routed task per document, written back to the document's own output dir
-    (spec 2026-10-01 §9.2). Every id is checked before anything is created."""
-    ctx = request.app.state.ctx
+def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | None = None) -> dict:
+    """One job, one forced task per document, written back to the document's own output dir (spec 2026-10-01
+    §9.2). Every id is checked before anything is created; raises ApiError 404/410/409. `engine` forces that
+    engine (MCP reconvert_document); None lets routing choose (the web 「重新轉換」)."""
     store = ctx.store
-    ids = list(dict.fromkeys(body.ids))
     plan = []
     for doc_id in ids:
         doc = store.get_document(doc_id)
@@ -339,10 +337,10 @@ def reconvert(body: ReconvertIn, request: Request) -> dict:
         plan.append((doc, *found))
     cfg = ctx.config
     out_root = Path(plan[0][0]["output_dir"]).parent
-    opts = ConvertOptions(output_dir=out_root, engine=None, lang=plan[0][0].get("lang") or cfg.general.lang, force=True,
+    opts = ConvertOptions(output_dir=out_root, engine=engine, lang=plan[0][0].get("lang") or cfg.general.lang, force=True,
                           allow_online_audio=bool(cfg.general.enable_audio), mineru_tier=cfg.engines.mineru_tier,
                           docling_ocr=cfg.engines.docling_ocr)
-    job_id = store.create_job(opts, "web")
+    job_id = store.create_job(opts, origin)
     task_ids = []
     for doc, src, is_work_copy in plan:
         st = src.stat()
@@ -358,7 +356,10 @@ def reconvert(body: ReconvertIn, request: Request) -> dict:
             work_path = cfg.data_dir / "work" / tid / f"src{src.suffix.lower()}"
             _link_or_copy(src, work_path)
             store.update_task(tid, work_path=str(work_path))
-        store.set_task_flags(tid, {"force": True, "auto_engine": True, "reconvert": True})
+        flags = {"force": True, "reconvert": True}
+        if engine is None:
+            flags["auto_engine"] = True
+        store.set_task_flags(tid, flags)
         task_ids.append(tid)
     store.refresh_job_status(job_id)
     for tid in task_ids:
@@ -366,4 +367,9 @@ def reconvert(body: ReconvertIn, request: Request) -> dict:
     ctx.queue.publish_job(job_id)
     ctx.queue.publish_queue()
     ctx.queue.wake()
-    return {"job": serialize_job(store, store.get_job(job_id))}
+    return serialize_job(store, store.get_job(job_id))
+
+
+@router.post("/documents/reconvert", status_code=201)
+def reconvert(body: ReconvertIn, request: Request) -> dict:
+    return {"job": start_reconvert(request.app.state.ctx, list(dict.fromkeys(body.ids)))}

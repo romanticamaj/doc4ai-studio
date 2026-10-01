@@ -10,7 +10,6 @@ from tests.mcp.conftest import mcp_call, mcp_client, mcp_list_tools, raw_post
 READ_TOOLS = {"search_library", "list_documents", "get_document_info", "read_document", "get_chunks", "get_job"}
 
 
-@pytest.mark.xfail(strict=True, reason="tools arrive in Tasks 15-22")
 @pytest.mark.parametrize("mode,version", [("auto", "2026-07-28"), ("legacy", "2025-11-25")])
 def test_both_eras_list_tools(mcp_server, mcp_env, mode, version):
     raw, _ = mcp_env.issue()
@@ -38,7 +37,6 @@ def test_instructions_describe_the_flow(mcp_server, mcp_env):
     assert "search_library" in text and "get_document_info" in text and "read_document" in text and "8,000" in text
 
 
-@pytest.mark.xfail(strict=True, reason="tools arrive in Tasks 15-22")
 def test_tools_list_filtered_by_scope(mcp_server, mcp_env):
     raw, _ = mcp_env.issue(scopes=SCOPES)
     names = {t.name for t in mcp_list_tools(mcp_server, raw).tools}
@@ -51,7 +49,6 @@ def test_tools_list_filtered_by_scope(mcp_server, mcp_env):
     assert {t.name for t in mcp_list_tools(mcp_server, raw2).tools} == READ_TOOLS | {"convert_document"}
 
 
-@pytest.mark.xfail(strict=True, reason="tools arrive in Tasks 15-22")
 def test_every_tool_has_title_annotations_and_output_schema(mcp_server, mcp_env):
     raw, _ = mcp_env.issue(scopes=SCOPES)
     mcp_env.ctx.config.mcp.local_path_roots = [str(mcp_env.ctx.config.root)]
@@ -69,7 +66,6 @@ def test_every_tool_has_title_annotations_and_output_schema(mcp_server, mcp_env)
         assert t.annotations.open_world_hint is False
 
 
-@pytest.mark.xfail(strict=True, reason="tools arrive in Tasks 15-22")
 def test_forbidden_scope_hard_call_is_error_and_logged(mcp_server, mcp_env):
     raw, tid = mcp_env.issue()
     res = mcp_call(mcp_server, raw, "cancel_job", {"job_id": "x"})
