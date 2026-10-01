@@ -59,8 +59,7 @@ export function TokensTab() {
             <EmptyState
               icon={KeyRound}
               title="還沒有 token"
-              description="建立一把 token，再把它貼到 Claude Code、Cursor 或 VS Code 的 MCP 設定裡。"
-              action={createButton}
+              description="按右上角「建立 token」，再把它貼到 Claude Code、Cursor 或 VS Code 的 MCP 設定裡。"
             />
           </div>
         ) : (

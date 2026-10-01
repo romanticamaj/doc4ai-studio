@@ -62,7 +62,7 @@ export function CallsTab() {
   const rows = calls.data?.pages.flatMap((p) => p.calls) ?? [];
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <TokenSelect value={filters.token_id ?? ALL} onChange={(v) => set({ token_id: pick(v) })} />
         <FilterSelect

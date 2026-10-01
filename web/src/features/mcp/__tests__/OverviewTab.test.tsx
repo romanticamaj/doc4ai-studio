@@ -38,7 +38,7 @@ test("shows status, metrics, notices and snippets", async () => {
   expect(screen.getByRole("img", { name: /24 小時呼叫/ })).toBeInTheDocument();
   expect(screen.getByText(/明文傳輸/)).toBeInTheDocument();
   expect(screen.getByText(/未設定（convert_path 隱藏）/)).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /1 把 token 將在 14 天內到期/ })).toHaveAttribute("href", "/mcp?tab=tokens");
+  expect(screen.getByRole("link", { name: /1 把 token 將在 14 天內到期/ })).toHaveAttribute("href", "/mcp-admin?tab=tokens");
   await waitFor(() => expect(screen.getByRole("tab", { name: "Claude Code" })).toBeInTheDocument());
   expect(screen.getByText(/<YOUR_TOKEN>/)).toBeInTheDocument();
 });

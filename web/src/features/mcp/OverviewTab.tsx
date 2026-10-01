@@ -3,6 +3,7 @@ import { ShieldAlert, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { useConfigSnippets, useMcpStats, useMcpStatus } from "@/api/mcp";
 import type { McpStats, McpStatus } from "@/api/types";
+import { MCP_PAGE } from "@/components/layout/nav";
 import { Panel, PanelHeader } from "@/components/Panel";
 import { StatusBadge, Tag } from "@/components/StatusBadge";
 import { ErrorState } from "@/components/states";
@@ -29,8 +30,8 @@ export function OverviewTab() {
   const s = status.data;
 
   return (
-    <div className="grid gap-4">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <StatusPanel s={s} chosen={chosen} onChoose={setEndpoint} />
         <Notices s={s} />
       </div>
@@ -132,7 +133,7 @@ function Notices({ s }: { s: McpStatus }) {
     items.push({
       tone: "warn",
       body: (
-        <Link to="/mcp?tab=tokens" className="underline underline-offset-2 hover:text-foreground">
+        <Link to={`${MCP_PAGE}?tab=tokens`} className="underline underline-offset-2 hover:text-foreground">
           {s.tokens_expiring_soon} 把 token 將在 14 天內到期
         </Link>
       ),

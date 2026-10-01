@@ -45,7 +45,7 @@ export function ClientsTab() {
   const { active, history } = splitClients(clients.data?.clients ?? [], now);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground text-pretty">client 名稱與版本由用戶端自報，只供辨識，不是安全邊界。</p>
         <TokenSelect value={token} onChange={setToken} />

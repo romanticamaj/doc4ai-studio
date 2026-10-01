@@ -39,7 +39,10 @@ def test_record_auth_failure_without_token(ctx):
     rec.record(status="auth_error", token_prefix_seen="doc4ai_pat_3kX9", error_code="revoked", http_status=401, ip="::1")
     row = ctx.store.list_mcp_calls(limit=1)[0]
     assert row["token_id"] is None and row["token_prefix_seen"] == "doc4ai_pat_3kX9" and row["error_code"] == "revoked"
-    assert _events(ctx, "mcp.call")[0]["payload"]["token_name"] is None
+    p = _events(ctx, "mcp.call")[0]["payload"]
+    assert p["token_name"] is None
+    # the live log shows which token was tried (display prefix only), and where from
+    assert p["token_prefix_seen"] == "doc4ai_pat_3kX9" and p["ip"] == "::1"
 
 
 def test_note_client_states(ctx):

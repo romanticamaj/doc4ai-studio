@@ -68,8 +68,10 @@ class CallRecorder:
         token = store.get_api_token(row["token_id"]) if row["token_id"] else None
         client = store.get_mcp_client(row["client_id"]) if row["client_id"] else None
         self.ctx.bus.publish("mcp.call", str(row["id"]), {
+            # display fields only: the 15-char token prefix seen on failures, never args_summary or the token
             **{k: row[k] for k in ("id", "ts", "token_id", "client_id", "method", "tool_name", "status", "error_code",
-                                   "http_status", "duration_ms", "response_tokens_est", "job_id")},
+                                   "http_status", "duration_ms", "response_tokens_est", "job_id", "token_prefix_seen",
+                                   "ip", "protocol_version", "response_bytes", "resource_uri")},
             "token_name": token["name"] if token else None, "client_name": client["client_name"] if client else None})
 
     # ---- clients

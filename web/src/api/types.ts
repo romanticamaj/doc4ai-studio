@@ -340,4 +340,5 @@ export interface McpStats {
   series: { ts: number; calls: number; errors: number }[];
 }
 export type McpCallEvent = Pick<McpCall, "id" | "ts" | "token_id" | "token_name" | "client_id" | "client_name" | "method" | "tool_name" |
-  "status" | "error_code" | "http_status" | "duration_ms" | "response_tokens_est" | "job_id">;
+  "status" | "error_code" | "http_status" | "duration_ms" | "response_tokens_est" | "job_id" | "token_prefix_seen" | "ip" |
+  "protocol_version" | "response_bytes" | "resource_uri">;
