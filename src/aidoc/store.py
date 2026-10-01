@@ -172,6 +172,7 @@ class Store:
             self.con.execute("ALTER TABLE tasks ADD COLUMN flags_json TEXT NOT NULL DEFAULT '{}'")
         self.con.execute("INSERT INTO meta(key, value) VALUES('schema_version', ?) "
                          "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
+        self._page_index_tokenizer = self._ensure_page_index()
 
     def close(self) -> None:
         self.con.close()
@@ -409,7 +410,10 @@ class Store:
         self.con.execute("UPDATE documents SET status=? WHERE id=?", (_val(status), doc_id))
 
     def delete_documents(self, status) -> int:
-        return self.con.execute("DELETE FROM documents WHERE status=?", (_val(status),)).rowcount
+        with self.con.lock:
+            self.con.execute("DELETE FROM page_index WHERE doc_id IN (SELECT id FROM documents WHERE status=?)",
+                             (_val(status),))
+            return self.con.execute("DELETE FROM documents WHERE status=?", (_val(status),)).rowcount
 
     def known_output_dirs(self) -> set[str]:
         return {r[0] for r in self.con.execute("SELECT output_dir FROM documents")}
@@ -574,3 +578,50 @@ class Store:
             if cut is not None:
                 n += self.con.execute("DELETE FROM mcp_calls WHERE id < ?", (cut[0],)).rowcount
         return n
+
+    # ---- page_index (FTS5; MCP spec §3)
+    def _ensure_page_index(self) -> str:
+        exists = self._q1("SELECT sql FROM sqlite_master WHERE type='table' AND name='page_index'")
+        if exists is not None:
+            return "trigram" if "trigram" in (exists[0] or "") else "unicode61"
+        for tok in ("trigram", "unicode61"):          # D6: trigram needs SQLite >= 3.34
+            try:
+                self.con.execute("CREATE VIRTUAL TABLE page_index USING fts5(doc_id UNINDEXED, page UNINDEXED, text, "
+                                 f"tokenize = '{tok}')")
+            except sqlite3.OperationalError:
+                continue
+            self.con.execute("INSERT INTO meta(key, value) VALUES('page_index_tokenizer', ?) "
+                             "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (tok,))
+            return tok
+        raise RuntimeError("SQLite build has no FTS5")
+
+    def page_index_tokenizer(self) -> str:
+        return self._page_index_tokenizer
+
+    def replace_page_index(self, doc_id, pages: list[tuple[int | None, str]]) -> None:
+        with self.con.lock:
+            self.con.execute("DELETE FROM page_index WHERE doc_id=?", (doc_id,))
+            for page, text in pages:
+                self.con.execute("INSERT INTO page_index(doc_id, page, text) VALUES(?,?,?)", (doc_id, page, text))
+
+    def delete_page_index(self, doc_id) -> None:
+        self.con.execute("DELETE FROM page_index WHERE doc_id=?", (doc_id,))
+
+    def page_index_doc_ids(self) -> set[str]:
+        return {r[0] for r in self.con.execute("SELECT DISTINCT doc_id FROM page_index")}
+
+    def _doc_filter(self, doc_ids) -> tuple[str, list]:
+        if not doc_ids:
+            return "", []
+        return f" AND doc_id IN ({', '.join('?' * len(doc_ids))})", list(doc_ids)
+
+    def search_page_index(self, match: str, *, doc_ids=None, limit: int) -> list[dict]:
+        f, args = self._doc_filter(doc_ids)
+        return self._qa("SELECT doc_id, page, text, bm25(page_index) AS rank FROM page_index WHERE page_index MATCH ?"
+                        f"{f} ORDER BY rank LIMIT ?", [match, *args, int(limit)])
+
+    def like_page_index(self, needle: str, *, doc_ids=None, limit: int, scan_cap: int = 2000) -> list[dict]:
+        f, args = self._doc_filter(doc_ids)
+        rows = self._qa("SELECT doc_id, page, text, 0.0 AS rank FROM page_index WHERE "
+                        f"instr(lower(text), lower(?)) > 0{f} LIMIT ?", [needle, *args, int(min(limit, scan_cap))])
+        return rows
