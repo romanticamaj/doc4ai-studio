@@ -207,6 +207,8 @@ export default function DocumentPage() {
             )}
             <TabsContent value="markdown" className="relative min-h-0 flex-1 overflow-auto px-6 py-5 sm:px-8" ref={right}>
               <MarkdownView markdown={md.data} docId={doc.id} scrollRef={right} warnings={warnings} />
+              {/* scroll past the end: 「跳至頁」 can bring the last pages' anchors to the top of the view */}
+              <div aria-hidden className="h-[70svh]" />
             </TabsContent>
             <TabsContent value="source" className="relative min-h-0 flex-1 overflow-auto" ref={raw}>
               <RawSource text={md.data} scrollRef={raw} />

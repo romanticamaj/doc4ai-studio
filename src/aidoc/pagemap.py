@@ -55,7 +55,7 @@ def page_map(md: str, expected: int | None, method: str | None) -> dict | None:
 
 def squash(s: str) -> str:
     """NFKC, drop soft hyphens and line-break hyphenation, lower-case, keep only alphanumerics (any script)."""
-    s = unicodedata.normalize("NFKC", s).replace("­", "").replace("-\n", "")
+    s = unicodedata.normalize("NFKC", s).replace("\u00ad", "").replace("-\n", "")
     return "".join(c for c in s.lower() if c.isalnum())
 
 

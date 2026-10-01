@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "e2e:real": "playwright test --project real",
     "preview": "vite preview"
   },
   "dependencies": {

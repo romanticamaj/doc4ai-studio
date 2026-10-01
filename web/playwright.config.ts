@@ -44,6 +44,8 @@ fs.writeFileSync(config, `[general]\noutput_dir = ${JSON.stringify(out.replace(/
 // The bundled Chromium download is blocked on some networks; the system Edge/Chrome works the same.
 // PW_CHANNEL="" uses the bundled browser.
 const channel = process.env.PW_CHANNEL ?? "msedge";
+// `--project real` (pnpm e2e:real) targets an already running real server: no fake server is started for it
+const realOnly = process.argv.some((v, i) => v === "--project=real" || (v === "real" && process.argv[i - 1] === "--project"));
 
 export default defineConfig({
   testDir: "./e2e",
@@ -56,8 +58,20 @@ export default defineConfig({
     trace: "retain-on-failure",
     ...(channel ? { channel } : {}),
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], ...(channel ? { channel } : {}) } }],
-  webServer: {
+  projects: [
+    {
+      name: "chromium",
+      testIgnore: /sync-real\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], ...(channel ? { channel } : {}) },
+    },
+    {
+      // spec 2026-10-01 §10.4: real engines; AIDOC_E2E_REAL_BASE_URL / _DOC_ID / _PDF point at a converted sample
+      name: "real",
+      testMatch: /sync-real\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], ...(channel ? { channel } : {}), baseURL: process.env.AIDOC_E2E_REAL_BASE_URL },
+    },
+  ],
+  webServer: realOnly ? undefined : {
     command: `uv run aidoc serve --port ${port}`,
     cwd: path.resolve(here, ".."),
     url: `http://127.0.0.1:${port}/`,

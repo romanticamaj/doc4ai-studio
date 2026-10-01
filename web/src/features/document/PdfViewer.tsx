@@ -192,7 +192,8 @@ export const PdfViewer = forwardRef<HTMLDivElement, Props>(function PdfViewer({ 
   }
 
   return (
-    <div ref={scroller} className={className} style={{ padding: PAD }}>
+    // the bottom padding lets 「跳至頁」 bring the last pages to the top of the view (spec 2026-10-01 §9.4)
+    <div ref={scroller} className={className} style={{ padding: PAD, paddingBottom: "70svh" }}>
       {!doc && !failed && (
         <div className="flex h-full min-h-60 items-center justify-center text-muted-foreground">
           <Loader2 className="size-5 animate-spin" />
