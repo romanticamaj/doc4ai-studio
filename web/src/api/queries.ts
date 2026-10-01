@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
+import { reconvertAll } from "@/features/library/reconvertAll";
 import type {
   Document,
   DocumentDetail,
@@ -173,7 +174,9 @@ export function useRescan() {
 export function useReconvert() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (ids: string[]) => api.post<{ job: Job }>("/api/documents/reconvert", { ids }).then((r) => r.job),
+    // documents without any source left are skipped (named by the caller); the rest go in chunks of 500
+    mutationFn: (ids: string[]) =>
+      reconvertAll(ids, (chunk) => api.post<{ job: Job }>("/api/documents/reconvert", { ids: chunk }).then((r) => r.job)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["documents"] });
       qc.invalidateQueries({ queryKey: ["jobs"] });

@@ -60,9 +60,13 @@ export default function DocumentPage() {
   const reconvert = useReconvert();
   const doReconvert = (id: string) =>
     reconvert.mutateAsync([id]).then(
-      (job) => {
+      ({ jobs }) => {
+        if (!jobs.length) {
+          toast.error("原始檔與工作副本都不在了，請重新上傳原始檔");
+          return;
+        }
         toast.success("已排入重新轉換");
-        navigate(`/jobs/${job.id}`);
+        navigate(`/jobs/${jobs[0].id}`);
       },
       (e) =>
         toast.error(e instanceof ApiError && e.status === 410 ? "原始檔與工作副本都不在了，請重新上傳原始檔" : describeError(e)),

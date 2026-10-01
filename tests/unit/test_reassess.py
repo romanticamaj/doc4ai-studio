@@ -57,3 +57,21 @@ def test_unassessed_flag_and_store_flag_filter(tmp_root, fixtures):
     assert store.list_documents(flag="unassessed") == []
     # pages without a marker are unrepaired flagged pages (spec §5.2), so page_quality is set as well
     assert [d["id"] for d in store.list_documents(flag="page_quality")] == [did]
+
+
+def test_reassess_never_overwrites_a_newer_conversion(tmp_root, fixtures, monkeypatch):
+    """A conversion that finishes while the (slow) assessment runs keeps its own quality (review finding)."""
+    import aidoc.reassess as ra
+    store = Store(tmp_root / "data" / "aidoc.db")
+    did = _legacy_doc(store, tmp_root, fixtures, markers={1, 41})
+    fresh = {"score": 1.0, "level": "ok", "reasons": [], "metrics": {}, "page_check": 1,
+             "page_map": {"expected": 45, "found": 45, "coverage": 1.0, "missing": [], "method": "mineru_render_plan"},
+             "pages": [], "pages_flagged": 0, "pages_unrepaired": 0}
+    real = ra.assess
+
+    def assess_while_converting(*a, **k):
+        store.update_document_quality(did, fresh, "ok")             # the reconversion lands meanwhile
+        return real(*a, **k)
+    monkeypatch.setattr(ra, "assess", assess_while_converting)
+    assert reassess_all(store, log=lambda s: None)["assessed"] == 0
+    assert store.get_document(did)["quality"]["page_map"]["method"] == "mineru_render_plan"

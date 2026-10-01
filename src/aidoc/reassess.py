@@ -57,7 +57,9 @@ def _markdown_path(doc: dict) -> Path:
 
 
 def reassess_document(store, doc: dict, *, force: bool = False) -> dict | None:
-    """New quality dict for one existing document, written to the store; None when skipped."""
+    """New quality dict for one existing document, written to the store; None when skipped (also when the document
+    changed meanwhile: a conversion that finished during the assessment is never overwritten)."""
+    doc = store.get_document(doc["id"]) or doc            # the caller's list may be minutes old
     if doc.get("status") not in _ASSESSABLE or not doc.get("pages"):
         return None
     if Path(str(doc.get("source_path") or "")).suffix.lower() != ".pdf":
@@ -82,6 +84,9 @@ def reassess_document(store, doc: dict, *, force: bool = False) -> dict | None:
         q.page_map["alignment"] = None
     q.metrics = {**(old.get("metrics") or {}), **q.metrics}
     out = q.to_json()
+    now = store.get_document(doc["id"])
+    if now is None or now.get("quality") != doc.get("quality") or now.get("status") != doc.get("status"):
+        return None
     store.update_document_quality(doc["id"], out, q.level)
     return out
 

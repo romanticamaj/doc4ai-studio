@@ -469,6 +469,9 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     opts = ctx.opts = ConvertOptions.from_json(job["options"])
     if (task.get("flags") or {}).get("auto_engine"):   # retry of a low result: routing may pick another engine
         opts.engine = None
+    if (task.get("flags") or {}).get("reconvert"):     # one job may reconvert documents of several roots / langs:
+        opts.output_dir = Path(task["output_dir"]).parent   # each is rewritten in its own output dir, in its lang
+        opts.lang = task["lang"]
     ctx.attempt = task["attempt"]
     if ctx.cancelled():
         return _cancel(ctx)
@@ -490,7 +493,10 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     probe = ctx.probe = probe_file(work_src)
     if probe.error:
         return _fail(ctx, ErrorKind.input, probe.error)
-    output_dir = planned_output_dir(store, opts.output_dir, src, task["sha256"])
+    if (task.get("flags") or {}).get("reconvert"):
+        output_dir = Path(task["output_dir"])
+    else:
+        output_dir = planned_output_dir(store, opts.output_dir, src, task["sha256"])
     _set_output_dir(store, task, output_dir)
     task = store.get_task(task_id)
     force = opts.force or bool((task.get("flags") or {}).get("force"))

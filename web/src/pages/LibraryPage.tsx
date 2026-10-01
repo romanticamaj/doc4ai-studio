@@ -48,7 +48,7 @@ export default function LibraryPage() {
   const incomplete = useDocuments({ flag: "page_map_incomplete" });
   const pageIssues = useDocuments({ flag: "page_quality" });
   const flaggedIds = [...new Set([...(incomplete.data ?? []), ...(pageIssues.data ?? [])].map((d) => d.id))];
-  const reconvert = useReconvertAction();
+  const reconvert = useReconvertAction([...(docs.data ?? []), ...(incomplete.data ?? []), ...(pageIssues.data ?? [])]);
 
   const doRescan = () =>
     rescan.mutateAsync().then(
@@ -241,19 +241,20 @@ function QualityBadge({ doc }: { doc: Document }) {
 }
 
 /** One-click reconvert: on success go to the job; a 410 means neither the original nor the work copy is left. */
-function useReconvertAction() {
+function useReconvertAction(docs: Document[]) {
   const navigate = useNavigate();
   const m = useReconvert();
+  const nameOf = (id: string) => docs.find((d) => d.id === id)?.stem ?? id.slice(0, 8);
   const run = (ids: string[]) =>
     m.mutateAsync(ids).then(
-      (job) => {
-        toast.success(`已排入重新轉換（${ids.length} 份）`);
-        navigate(`/jobs/${job.id}`);
+      ({ jobs, skipped }) => {
+        if (skipped.length)
+          toast.error(`${skipped.map(nameOf).join("、")}：原始檔與工作副本都不在了，請重新上傳原始檔`);
+        if (!jobs.length) return;
+        toast.success(`已排入重新轉換（${ids.length - skipped.length} 份）`);
+        navigate(`/jobs/${jobs[0].id}`);
       },
-      (e) =>
-        toast.error(
-          e instanceof ApiError && e.status === 410 ? "原始檔與工作副本都不在了，請重新上傳原始檔" : describeError(e),
-        ),
+      (e) => toast.error(e instanceof ApiError && e.status === 410 ? "原始檔與工作副本都不在了，請重新上傳原始檔" : describeError(e)),
     );
   return { run, pending: m.isPending };
 }

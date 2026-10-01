@@ -156,3 +156,24 @@ def test_reconvert_starts_over_when_a_cancelled_task_is_reused(client, ctx, tmp_
     t = client.get(f"/api/jobs/{job2['id']}").json()["tasks"][0]
     assert t["id"] == tid and t["tried"] == [] and t["engine"] is None
     assert all(s["status"] == "queued" for s in store.list_segments(tid))
+
+
+def test_reconvert_keeps_each_documents_own_output_root_and_lang(client, ctx, tmp_root, fixtures):
+    """One job for documents from different output roots / languages: each is rewritten in place, in its lang."""
+    a = converted(client, ctx, tmp_root, fixtures)
+    other = tmp_root / "elsewhere"
+    src = tmp_root / "twocol.pdf"
+    shutil.copy(fixtures / "twocol.pdf", src)
+    job = client.post("/api/jobs", json={"inputs": [{"path": str(src)}], "output_dir": str(other), "lang": "en"}).json()["job"]
+    ctx.queue.process_next()
+    b = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]["document_id"]
+    before = {d: client.get(f"/api/documents/{d}").json()["document"] for d in (a, b)}
+    n_docs = len(client.get("/api/documents").json()["documents"])
+    r = client.post("/api/documents/reconvert", json={"ids": [a, b]})
+    ctx.queue.process_next()
+    ctx.queue.process_next()
+    tasks = client.get(f"/api/jobs/{r.json()['job']['id']}").json()["tasks"]
+    assert [t["status"] for t in tasks] == ["done", "done"]
+    assert {t["output_dir"] for t in tasks} == {before[a]["output_dir"], before[b]["output_dir"]}
+    assert len(client.get("/api/documents").json()["documents"]) == n_docs              # no new document rows
+    assert client.get(f"/api/documents/{b}").json()["document"]["lang"] == "en"
