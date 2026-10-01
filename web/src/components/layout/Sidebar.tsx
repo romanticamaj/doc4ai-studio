@@ -19,8 +19,8 @@ export function Sidebar({ variant = "full", onNavigate, footer }: Props) {
         <BrandMark className="size-[22px]" />
         {!rail && (
           <div className="flex items-baseline gap-1.5">
-            <span className="text-[15px] font-semibold tracking-tight">aidoc</span>
-            <span className="text-xs text-muted-foreground">AI-friendly doc</span>
+            <span className="text-[15px] font-semibold tracking-tight">AIDoc</span>
+            <span className="text-xs text-muted-foreground">Studio</span>
           </div>
         )}
       </div>
