@@ -182,7 +182,9 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     if pm["coverage"] < COVERAGE_MIN:
         reasons.append("page_map_incomplete")
     if pdf is not None:
-        al = pagemap.spot_check(markdown, pdf, sample=align_sample or (10 if quick else 30),
+        # quick (segment) check: every page of the segment — a 10-page sample let one legitimately merged
+        # cross-page paragraph read as 1/9 misaligned on a real book (2026-10-01 acceptance)
+        al = pagemap.spot_check(markdown, pdf, sample=align_sample or (max(pages, 1) if quick else 30),
                                 exclude=probe.broken_font_pages, layers=layers)
         pm["alignment"] = al
         if al["decidable"] >= ALIGN_MIN_DECIDABLE and al["ratio"] is not None and al["ratio"] < ALIGN_MIN:

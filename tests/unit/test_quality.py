@@ -156,3 +156,16 @@ def test_last_resort_judges_pages_flagged_on_pages_still_broken():
     assert q.level == "ok" and q.pages_flagged == 3
     still = _doc([GOOD_EN + GARBLED] * 3 + [GOOD_EN] * 7)              # nothing repaired: still low
     assert "pages_flagged" in assess(still, probe, 10, page_map_method="x", last_resort=True).reasons
+
+
+def test_segment_quick_check_spot_checks_every_page(monkeypatch, tmp_path):
+    """A 10-page sample turned one legitimately merged cross-page paragraph into 1/9 < 0.90 on a real 40-page
+    segment (orthopaedic book pages 281-320: 36/38 aligned over all pages). The quick check samples all pages."""
+    import aidoc.quality as qm
+    seen = []
+    monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: seen.append(k["sample"]) or
+                        {"sampled": 0, "decidable": 0, "aligned": 0, "ratio": None, "misplaced": [], "excluded_pages": 0})
+    md = _doc([GOOD_EN] * 40)
+    assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x", quick=True)
+    assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x")
+    assert seen[0] >= 40 and seen[1] == 30
