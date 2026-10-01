@@ -20,6 +20,10 @@ ALIGN_MIN_DECIDABLE = 5
 # a single misplaced page is local (repeated content, a merged cross-page paragraph), not a shifted page map: a
 # shift misplaces nearly every decidable page (2026-10-01 acceptance, Head First Android pages 81-120: 6/7)
 ALIGN_MIN_MISPLACED = 2
+# per-segment fail-fast check: only a grossly wrong map (a shifted map scores <= 0.1). Correct segments of a book whose
+# exercise / solution pages repeat each other's text score 0.80-0.89 (Head First Android, Docling); the document
+# check over 30 pages of the whole book keeps ALIGN_MIN (2026-10-01 acceptance)
+ALIGN_MIN_QUICK = 0.50
 FLAGGED_MAX_RATIO = 0.20
 PAGE_GARBAGE_MAX = 0.05
 PAGE_GARBAGE_MIN_CHARS = 50
@@ -190,7 +194,8 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
         al = pagemap.spot_check(markdown, pdf, sample=align_sample or (max(pages, 1) if quick else 30),
                                 exclude=probe.broken_font_pages, layers=layers)
         pm["alignment"] = al
-        if (al["decidable"] >= ALIGN_MIN_DECIDABLE and al["ratio"] is not None and al["ratio"] < ALIGN_MIN
+        if (al["decidable"] >= ALIGN_MIN_DECIDABLE and al["ratio"] is not None
+                and al["ratio"] < (ALIGN_MIN_QUICK if quick else ALIGN_MIN)
                 and al["decidable"] - al["aligned"] >= ALIGN_MIN_MISPLACED):
             reasons.append("page_map_misaligned")
     repaired = list(repaired or [])

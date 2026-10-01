@@ -182,5 +182,22 @@ def test_one_misplaced_page_is_not_a_misaligned_page_map(monkeypatch, tmp_path):
     assert "page_map_misaligned" not in assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x",
                                                quick=True).reasons
     result.update(decidable=7, aligned=5, ratio=0.7143, misplaced=[16, 35])
-    assert "page_map_misaligned" in assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x",
-                                           quick=True).reasons
+    # (two misses: judged by the document check; the segment quick check only stops gross errors, see below)
+    assert "page_map_misaligned" in assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x").reasons
+
+
+def test_segment_quick_check_only_catches_gross_misalignment(monkeypatch, tmp_path):
+    """Head First Android pages 281-320 with Docling: 8/10 (exercise / solution pages repeat each other's text while
+    the engine renders one of them as images). The document check keeps 0.90; a segment fails fast only below 0.50."""
+    import aidoc.quality as qm
+    result = {}
+    monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: dict(result))
+    md = _doc([GOOD_EN] * 40)
+
+    def reasons(**kw):
+        return assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x", **kw).reasons
+    result.update(sampled=13, decidable=10, aligned=8, ratio=0.8, misplaced=[4, 30], excluded_pages=26)
+    assert "page_map_misaligned" not in reasons(quick=True)
+    assert "page_map_misaligned" in reasons()
+    result.update(decidable=10, aligned=1, ratio=0.1, misplaced=list(range(2, 11)))   # a shifted map
+    assert "page_map_misaligned" in reasons(quick=True)
