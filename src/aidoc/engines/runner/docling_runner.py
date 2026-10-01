@@ -36,7 +36,13 @@ def build_converter(opts):
                             do_formula_enrichment=bool(opts.get("formula")),
                             accelerator_options=AcceleratorOptions(device="cuda"))
     settings.perf.page_batch_size = int(opts.get("page_batch_size", 16))
-    return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=po),
+    pdf_kw = {}
+    if opts.get("backend") == "pypdfium":
+        # spec 2026-10-01 §6.2: docling-parse renders page images from its own (broken) glyph decode, so OCR of a
+        # text layer without ToUnicode needs pdfium's rendering (T-001)
+        from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+        pdf_kw["backend"] = PyPdfiumDocumentBackend
+    return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=po, **pdf_kw),
                                              InputFormat.IMAGE: ImageFormatOption(pipeline_options=po)})
 
 
@@ -89,7 +95,7 @@ def _page_count(doc):
 def handle(req):
     opts = req["engine_opts"]
     key = (opts.get("ocr"), tuple(opts["lang"]), bool(opts.get("full_page_ocr")),
-           int(opts.get("page_batch_size", 16)), bool(opts.get("formula")))
+           int(opts.get("page_batch_size", 16)), bool(opts.get("formula")), opts.get("backend", "docling_parse"))
     conv = _converter_cache.get(key)
     if conv is None:
         conv = _converter_cache.setdefault(key, build_converter(opts))
@@ -122,7 +128,7 @@ def handle(req):
     md_path = out / "out.md"
     md_path.write_text("\n".join(parts), encoding="utf-8")
     return {"markdown_path": str(md_path), "images": images, "has_page_markers": paged, "page_count": n,
-            "first_table": first, "last_table": last}
+            "first_table": first, "last_table": last, "page_map_method": "docling_per_page" if paged else None}
 
 
 if __name__ == "__main__":
