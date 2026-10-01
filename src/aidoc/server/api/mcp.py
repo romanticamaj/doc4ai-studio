@@ -188,3 +188,100 @@ def rotate_token(token_id: str, request: Request) -> dict:
     _publish_token(ctx, new, "rotated")
     return {"token": raw, "record": serialize_token(ctx.store, new), "snippets": _snippets_for(ctx, raw),
             "revoked": serialize_token(ctx.store, ctx.store.get_api_token(token_id))}
+
+
+ACTIVE_WINDOW_S = 300
+
+
+def serialize_client(store, row: dict, now: float, token_names: dict | None = None) -> dict:
+    names = token_names if token_names is not None else {}
+    tname = names.get(row["token_id"]) if row.get("token_id") else None
+    if tname is None and row.get("token_id"):
+        t = store.get_api_token(row["token_id"])
+        tname = t["name"] if t else None
+    return {**row, "token_name": tname, "active": (now - row["last_seen"]) <= ACTIVE_WINDOW_S}
+
+
+@router.get("/mcp/clients")
+def list_clients(request: Request, active: int = 0, token_id: str | None = None) -> dict:
+    store = _ctx(request).store
+    now = time.time()
+    rows = store.list_mcp_clients(token_id=token_id, active_since=now - ACTIVE_WINDOW_S if active else None)
+    names = {t["id"]: t["name"] for t in store.list_api_tokens()}
+    return {"clients": [serialize_client(store, r, now, names) for r in rows]}
+
+
+def serialize_call(row: dict, token_names: dict, client_names: dict) -> dict:
+    return {**row, "token_name": token_names.get(row["token_id"]), "client_name": client_names.get(row["client_id"])}
+
+
+@router.get("/mcp/calls")
+def list_calls(request: Request, token_id: str | None = None, client_id: str | None = None, tool: str | None = None,
+               status: str | None = None, since: float | None = None, until: float | None = None, cursor: str | None = None,
+               limit: int = 50) -> dict:
+    store = _ctx(request).store
+    if not 1 <= limit <= 100:
+        raise ApiError(422, "validation_error", detail="limit must be 1..100")
+    before = None
+    if cursor:
+        if not cursor.isdigit():
+            raise ApiError(422, "invalid_cursor")
+        before = int(cursor)
+    rows = store.list_mcp_calls(token_id=token_id, client_id=client_id, tool=tool, status=status, since=since, until=until,
+                                before_id=before, limit=limit + 1)
+    more = len(rows) > limit
+    rows = rows[:limit]
+    token_names = {t["id"]: t["name"] for t in store.list_api_tokens()}
+    client_names = {c["id"]: c["client_name"] for c in store.list_mcp_clients()}
+    return {"calls": [serialize_call(r, token_names, client_names) for r in rows],
+            "next_cursor": str(rows[-1]["id"]) if more and rows else None}
+
+
+def percentile(values: list[int], p: float) -> int | None:
+    if not values:
+        return None
+    s = sorted(values)
+    idx = max(0, min(len(s) - 1, round(p * (len(s) - 1))))
+    return int(s[idx])
+
+
+def stats(store, since: float, bucket_s: float, buckets: int) -> dict:
+    rows = store.mcp_call_rows_since(since)
+    per_tool: dict[str, dict] = {}
+    per_token: dict[str, dict] = {}
+    series = [{"ts": since + i * bucket_s, "calls": 0, "errors": 0} for i in range(buckets)]
+    for r in rows:
+        err = r["status"] != "ok"
+        if r.get("tool_name"):
+            t = per_tool.setdefault(r["tool_name"], {"calls": 0, "errors": 0, "durations": [], "tokens": []})
+            t["calls"] += 1
+            t["errors"] += int(err)
+            if r.get("duration_ms") is not None:
+                t["durations"].append(int(r["duration_ms"]))
+            if r.get("response_tokens_est") is not None:
+                t["tokens"].append(int(r["response_tokens_est"]))
+        if r.get("token_id"):
+            k = per_token.setdefault(r["token_id"], {"calls": 0, "errors": 0})
+            k["calls"] += 1
+            k["errors"] += int(err)
+        i = min(buckets - 1, max(0, int((r["ts"] - since) // bucket_s)))
+        series[i]["calls"] += 1
+        series[i]["errors"] += int(err)
+    names = {t["id"]: t["name"] for t in store.list_api_tokens()}
+    tools = [{"tool": name, "calls": v["calls"], "errors": v["errors"], "error_rate": round(v["errors"] / v["calls"], 4),
+              "p50_ms": percentile(v["durations"], 0.5), "p95_ms": percentile(v["durations"], 0.95),
+              "tokens_median": percentile(v["tokens"], 0.5)} for name, v in sorted(per_tool.items())]
+    tokens = [{"token_id": k, "name": names.get(k), "calls": v["calls"], "errors": v["errors"]}
+              for k, v in sorted(per_token.items(), key=lambda kv: -kv[1]["calls"])]
+    return {"tools": tools, "tokens": tokens, "series": series}
+
+
+@router.get("/mcp/stats")
+def get_stats(request: Request, window: str = "24h") -> dict:
+    store = _ctx(request).store
+    if window not in ("24h", "7d"):
+        raise ApiError(422, "validation_error", detail="window must be 24h or 7d")
+    now = time.time()
+    span, bucket, n = (DAY, 3600.0, 24) if window == "24h" else (7 * DAY, 6 * 3600.0, 28)
+    since = now - span
+    return {"window": window, "since": since, **stats(store, since, bucket, n)}
