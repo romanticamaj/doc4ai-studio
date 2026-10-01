@@ -17,3 +17,8 @@ def test_conversion_errors_are_reported_per_page():
     assert failed == {3: "Page failed to parse.", 7: "OOM in layout"}
     assert errors == ["p3: Page failed to parse.", "timeout", "p3: again", "p7: OOM in layout"]
     assert dr.conversion_errors(NS(errors=[])) == ({}, [])
+
+
+def test_placeholders_without_an_image_are_kept_and_counted():
+    md, missing = dr.replace_placeholders("a <!-- image --> b <!-- image --> c <!-- image -->", ["images/x.png"])
+    assert md == "a ![](images/x.png) b <!-- image missing --> c <!-- image missing -->" and missing == 2

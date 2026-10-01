@@ -276,3 +276,11 @@ def test_unrepaired_failed_page_is_warn(env, fixtures):
     assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
     q = _sidecar(env, "big")["quality"]
     assert q["level"] == "warn" and q["pages_unrepaired"] == 1 and "error" in q["pages"][0]
+
+
+def test_missing_images_are_counted_in_the_sidecar(env):
+    write_scenario(env["sc"], missing_image_pages=[2])
+    tid = env["make"]("text.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    q = _sidecar(env, "text")["quality"]
+    assert q["metrics"]["images_missing"] == {"2": 1}

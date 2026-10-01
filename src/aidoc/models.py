@@ -137,6 +137,7 @@ class RawResult:
     page_map_method: str | None = None     # how the runner produced page markers (index A20)
     failed_pages: dict[int, str] = field(default_factory=dict)   # page (1-based, segment) -> engine error message
     engine_errors: list[str] = field(default_factory=list)       # every error the engine reported (partial success)
+    images_missing: dict[int, int] = field(default_factory=dict) # page (1-based, segment) -> pictures without image
 
 
 @dataclass

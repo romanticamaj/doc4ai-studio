@@ -42,7 +42,8 @@ def raw_from_result(res: dict, raw_dir: Path) -> RawResult:
                      last_table=TableEdge.from_json(lt) if lt else None,
                      page_map_method=res.get("page_map_method"),
                      failed_pages={int(k): str(v) for k, v in (res.get("failed_pages") or {}).items()},
-                     engine_errors=[str(e) for e in (res.get("errors") or [])])
+                     engine_errors=[str(e) for e in (res.get("errors") or [])],
+                     images_missing={int(k): int(v) for k, v in (res.get("images_missing") or {}).items()})
 
 
 class RunnerEngine:

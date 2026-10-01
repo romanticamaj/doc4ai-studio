@@ -76,15 +76,20 @@ def table_edges(doc):
     return edge(tables[0], True), edge(tables[-1], False)
 
 
-def _replace_placeholders(md, links):
+def replace_placeholders(md, links):
+    """`<!-- image -->` -> the page's saved picture links in order. A placeholder without a picture (Docling could not
+    produce the image) stays visible as `<!-- image missing -->` and is counted: (markdown, missing)."""
     it = iter(links)
+    missing = 0
 
     def sub(m):
+        nonlocal missing
         try:
             return f"![]({next(it)})"
         except StopIteration:
-            return ""
-    return re.sub(r"<!-- image -->", sub, md)
+            missing += 1
+            return "<!-- image missing -->"
+    return re.sub(r"<!-- image -->", sub, md), missing
 
 
 def conversion_errors(res):
@@ -124,6 +129,7 @@ def handle(req):
     n = _page_count(doc)
     paged = req.get("kind", "pdf") == "pdf"          # images are a single unnumbered page: no markers
     parts, images = [], []
+    images_missing = {}
     for p in range(1, n + 1):
         md = doc.export_to_markdown(page_no=p)
         pics = [pic for pic in doc.pictures if pic.prov and pic.prov[0].page_no == p]
@@ -136,7 +142,9 @@ def handle(req):
             img.save(f)
             images.append(str(f))
             links.append(f"images/{f.name}")
-        md = _replace_placeholders(md, links)
+        md, missing = replace_placeholders(md, links)
+        if missing:
+            images_missing[p] = missing
         parts.append(f"<!-- page: {p} -->\n{md.strip()}\n" if paged else f"{md.strip()}\n")
         _proto.progress(p, n)
     first, last = table_edges(doc)
@@ -144,7 +152,8 @@ def handle(req):
     md_path.write_text("\n".join(parts), encoding="utf-8")
     return {"markdown_path": str(md_path), "images": images, "has_page_markers": paged, "page_count": n,
             "first_table": first, "last_table": last, "page_map_method": "docling_per_page" if paged else None,
-            "failed_pages": {str(k): v for k, v in failed.items()}, "errors": errors[:50]}
+            "failed_pages": {str(k): v for k, v in failed.items()}, "errors": errors[:50],
+            "images_missing": {str(k): v for k, v in images_missing.items()}}
 
 
 if __name__ == "__main__":

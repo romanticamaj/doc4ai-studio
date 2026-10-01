@@ -94,6 +94,7 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
             if (repair_src and sticky) or (not repair_src and first - 1 + i in set(sc.get("failed_pages", []))):
                 failed[i] = "Page failed to parse."
     parts, images = [], []
+    images_missing = {}
     for i in range(1, n + 1):
         if with_pages:
             parts.append(f"<!-- page: {i + shift} -->")
@@ -108,6 +109,11 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
                      + (excerpt + "\n" if excerpt else "")
                      + (GARBLE + "\n" if i in garbled_pages else ""))
         parts.append(f"| col1 | col2 |\n| --- | --- |\n| a{i} | b{i} |\n")
+        if (pages[0] if pages else 1) - 1 + i in set(sc.get("missing_image_pages", [])):
+            images_missing[i] = 1                       # like Docling: a picture whose image could not be made
+            parts.append("<!-- image missing -->\n")
+            _proto.progress(i, n)
+            continue
         img = out / "images" / f"img_{i}.png"
         img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 16)
         images.append(str(img))
@@ -120,7 +126,8 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
             "last_table": {"page": n, "n_cols": 2, "touches_edge": False},
             "page_map_method": "fake_per_page" if with_pages else "none",
             "failed_pages": {str(k): v for k, v in failed.items()},
-            "errors": [f"p{k}: {v}" for k, v in failed.items()]}
+            "errors": [f"p{k}: {v}" for k, v in failed.items()],
+            "images_missing": {str(k): v for k, v in images_missing.items()}}
 
 
 def handle(req):

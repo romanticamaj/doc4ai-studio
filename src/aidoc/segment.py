@@ -65,6 +65,7 @@ class SegmentPart:
     opts_key: str | None = None        # output-affecting options it was made with (resume needs the same)
     page_map_method: str | None = None  # how the runner produced the page markers (index A20)
     failed_pages: dict[int, str] = field(default_factory=dict)  # absolute page -> engine error (partial success)
+    images_missing: dict[int, int] = field(default_factory=dict)  # absolute page -> pictures the engine lost
 
 
 def _cells(line: str) -> list[str]:

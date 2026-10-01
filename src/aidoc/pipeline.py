@@ -171,6 +171,7 @@ def save_segment_part(seg_dir: Path, part: SegmentPart) -> None:
         "engine": part.engine, "opts_key": part.opts_key, "has_page_markers": part.has_page_markers,
         "page_count": part.page_count, "page_map_method": part.page_map_method,
         "failed_pages": {str(k): v for k, v in part.failed_pages.items()},
+        "images_missing": {str(k): v for k, v in part.images_missing.items()},
         "first_table": part.first_table.to_json() if part.first_table else None,
         "last_table": part.last_table.to_json() if part.last_table else None})
 
@@ -193,7 +194,8 @@ def load_segment_part(seg_dir: Path, seg_row: dict) -> SegmentPart | None:
                        last_table=TableEdge.from_json(lt) if lt else None,
                        page_count=edges.get("page_count"), engine=edges.get("engine"),
                        opts_key=edges.get("opts_key"), page_map_method=edges.get("page_map_method"),
-                       failed_pages={int(k): v for k, v in (edges.get("failed_pages") or {}).items()})
+                       failed_pages={int(k): v for k, v in (edges.get("failed_pages") or {}).items()},
+                       images_missing={int(k): int(v) for k, v in (edges.get("images_missing") or {}).items()})
 
 
 def _discard_segments(ctx: PipelineContext) -> None:
@@ -327,7 +329,8 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
                                has_page_markers=raw.has_page_markers, first_table=raw.first_table,
                                last_table=raw.last_table, page_count=raw.page_count, engine=engine.name,
                                opts_key=options_key(opts), page_map_method=raw.page_map_method,
-                               failed_pages={p + offset: m for p, m in raw.failed_pages.items()})
+                               failed_pages={p + offset: m for p, m in raw.failed_pages.items()},
+                               images_missing={p + offset: k for p, k in raw.images_missing.items()})
             save_segment_part(sd, part)
             store.update_segment(seg["id"], status=SegmentStatus.done, output_path=str(sd))
             ctx.segment_updated(seg["id"])
@@ -344,6 +347,10 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
     page_count = probe.pages if probe.pages is not None else parts[0].page_count
     failed = {p: m for part in parts for p, m in part.failed_pages.items()}
     merged, q = check_document(ctx, engine.name, merged, parts[0].page_map_method, last_resort=last, failed=failed)
+    missing_imgs = {p: k for part in parts for p, k in part.images_missing.items()}
+    if missing_imgs:                                   # pictures the engine could not produce: never dropped silently
+        q.metrics["images_missing"] = {str(p): k for p, k in sorted(missing_imgs.items())}
+        ctx.log(f"{engine.name}: {sum(missing_imgs.values())} picture(s) without image on pages {sorted(missing_imgs)[:20]}")
     return merged, q, page_count
 
 
