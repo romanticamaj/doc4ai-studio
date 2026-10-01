@@ -46,23 +46,33 @@ def _full_text(item):
     return ""
 
 
-def insert_page_markers(md, items):
-    """Insert `<!-- page: N -->` before the first element of every page. None when a page cannot be located."""
+def insert_page_markers(md, items, n_pages=None):
+    """Insert `<!-- page: N -->` before the first element of every page 0..max(n_pages, last page_idx + 1) - 1.
+
+    Furniture blocks (page numbers, running headers/footers) are not in MinerU's markdown and are never used to
+    locate a page: their 1-3 char needles matched far ahead ("1" inside "Chapter 10") and lost every later page.
+    A page with nothing locatable (blank, image-only, or text that differs from the markdown) still gets its marker,
+    right before the next located page's marker (page sync needs every page). None when fewer than half of the
+    pages with content can be located: the mapping is wrong and stacked guesses would be worse than no markers."""
     by_page: dict[int, list] = {}
-    order: list[int] = []
+    seen: set[int] = set()
     for it in items:
         page = it.get("page_idx")
         if page is None:
             continue
-        if page not in by_page:
-            by_page[page] = []
-            order.append(page)
-        by_page[page].append(it)
-    if not order:
+        seen.add(page)
+        if it.get("type") in _proto.FURNITURE_TYPES:
+            continue
+        by_page.setdefault(page, []).append(it)
+    if not seen:
+        return None
+    pages = range(max(n_pages or 0, max(seen) + 1))
+    content_pages = [p for p in pages if any(_needles(it) for it in by_page.get(p, []))]
+    if not content_pages:
         return None
     cursor = 0
-    cuts: list[tuple[int, int]] = []
-    for page in order:
+    located: dict[int, int] = {}
+    for page in content_pages:
         first = None
         for it in by_page[page]:
             # walk every item of the page so the cursor ends after the page's content: a short needle may
@@ -77,15 +87,21 @@ def insert_page_markers(md, items):
                     first = pos
                 break
         if first is None:
-            if all(not _needles(it) for it in by_page[page]):
-                continue                         # page with nothing locatable (e.g. empty page): no marker
-            return None
+            continue                             # text differs from the markdown: placed like a blank page below
         line_start = md.rfind("\n", 0, first) + 1
-        if cuts and line_start < cuts[-1][1]:
-            line_start = cuts[-1][1]
-        cuts.append((page, line_start))
-    if not cuts:
+        if located and line_start < max(located.values()):
+            line_start = max(located.values())
+        located[page] = line_start
+    if len(located) * 2 < len(content_pages):
         return None
+    if md and not md.endswith("\n"):
+        md += "\n"                               # trailing blank pages put their markers on their own line
+    cuts: list[tuple[int, int]] = []
+    for i, page in enumerate(pages):
+        at = located.get(page)
+        if at is None:                           # blank / unlocatable: just before the next located page
+            at = next((located[p] for p in pages[i + 1:] if p in located), len(md))
+        cuts.append((page, at))
     out, prev = [], 0
     for page, at in cuts:
         out.append(md[prev:at])
@@ -185,8 +201,11 @@ def handle(req):
     md = (base / "markdown.md").read_text(encoding="utf-8")
     sc = json.loads((base / "structured_content.json").read_text(encoding="utf-8"))
     items = flatten_structured(sc)
+    total = None
+    if isinstance(sc, dict):
+        total = ((sc.get("metadata") or {}).get("document") or {}).get("page_count") or len(sc.get("pages") or []) or None
     # page markers only make sense for paged input (PDF); an image is a single unnumbered page
-    marked = insert_page_markers(md, items) if req.get("kind", "pdf") == "pdf" else None
+    marked = insert_page_markers(md, items, n_pages=total) if req.get("kind", "pdf") == "pdf" else None
     has_pages = marked is not None
     md = marked or md
     referenced = {os.path.basename(m.group(1)) for m in _IMG_LINK.finditer(md)}
@@ -194,9 +213,6 @@ def handle(req):
     mj = base / "middle_json.json"
     middle = json.loads(mj.read_text(encoding="utf-8")) if mj.exists() else {}
     first, last = table_edges(middle)
-    total = None
-    if isinstance(sc, dict):
-        total = ((sc.get("metadata") or {}).get("document") or {}).get("page_count") or len(sc.get("pages") or []) or None
     md_path = out / "out.md"
     md_path.write_text(md, encoding="utf-8")
     _proto.progress(total or 1, total or 1)

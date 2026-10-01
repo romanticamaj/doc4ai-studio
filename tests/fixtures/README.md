@@ -26,6 +26,7 @@ The same script copies self-check samples into `src/aidoc/engines/runner/samples
 | `sample.html` | headings + table | MarkItDown |
 | `span_margin.pdf` | 45 pages, 1-inch margins, page-number footer; a ruled table runs from the bottom of page 40 onto the top of page 41 | cross-segment table join (P2 verifier I2) |
 | `bad.exe` | 10 bytes | unsupported type |
+| `mineru_recorded/book12/` | real MinerU 4.0.7 `markdown.md` + `structured_content.json` of a 12-page image-only book (page-number footer, blank page 5); recorded, not generated | MinerU page-marker mapping unit test |
 
 Real scanned documents may be placed in `tests/fixtures/manual/` (gitignored) and are picked up by
 `tests/integration/test_manual_fixtures.py` when present.

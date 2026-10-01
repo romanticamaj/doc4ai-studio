@@ -1,0 +1,700 @@
+{
+  "pages": [
+    {
+      "page_idx": 0,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.1,
+            0.365,
+            0.123
+          ],
+          "content": "Chapter 1: The knee 1"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.201
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 1."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.254
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.481,
+            0.943,
+            0.496,
+            0.959
+          ],
+          "content": "1"
+        }
+      ]
+    },
+    {
+      "page_idx": 1,
+      "blocks": [
+        {
+          "type": "paragraph_title",
+          "bbox": [
+            0.116,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "level": 2,
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "paragraph_title",
+          "bbox": [
+            0.116,
+            0.1,
+            0.365,
+            0.123
+          ],
+          "level": 2,
+          "content": "Chapter 2: The knee 2"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.2
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 2."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.254
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.48,
+            0.943,
+            0.497,
+            0.959
+          ],
+          "content": "2"
+        }
+      ]
+    },
+    {
+      "page_idx": 2,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "paragraph_title",
+          "bbox": [
+            0.116,
+            0.1,
+            0.364,
+            0.123
+          ],
+          "level": 2,
+          "content": "Chapter 3: The knee 3"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.2
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 3."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.254
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.481,
+            0.943,
+            0.496,
+            0.959
+          ],
+          "content": "3"
+        }
+      ]
+    },
+    {
+      "page_idx": 3,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.1,
+            0.365,
+            0.123
+          ],
+          "content": "Chapter 4: The knee 4"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.2
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 4."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.21,
+            0.877,
+            0.254
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.48,
+            0.944,
+            0.497,
+            0.959
+          ],
+          "content": "4"
+        }
+      ]
+    },
+    {
+      "page_idx": 4,
+      "blocks": []
+    },
+    {
+      "page_idx": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.1,
+            0.365,
+            0.123
+          ],
+          "content": "Chapter 6: The knee 6"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.2
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 6."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.254
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.481,
+            0.944,
+            0.497,
+            0.959
+          ],
+          "content": "6"
+        }
+      ]
+    },
+    {
+      "page_idx": 6,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.1,
+            0.365,
+            0.123
+          ],
+          "content": "Chapter 7: The knee 7"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.201
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 7."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.254
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.481,
+            0.943,
+            0.497,
+            0.959
+          ],
+          "content": "7"
+        }
+      ]
+    },
+    {
+      "page_idx": 7,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "paragraph_title",
+          "bbox": [
+            0.116,
+            0.1,
+            0.365,
+            0.123
+          ],
+          "level": 2,
+          "content": "Chapter 8: The knee 8"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.2
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 8."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.21,
+            0.877,
+            0.254
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.481,
+            0.944,
+            0.497,
+            0.959
+          ],
+          "content": "8"
+        }
+      ]
+    },
+    {
+      "page_idx": 8,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.1,
+            0.365,
+            0.123
+          ],
+          "content": "Chapter 9: The knee 9"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.2
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 9."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.254
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.481,
+            0.943,
+            0.497,
+            0.959
+          ],
+          "content": "9"
+        }
+      ]
+    },
+    {
+      "page_idx": 9,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.069,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.1,
+            0.393,
+            0.123
+          ],
+          "content": "Chapter 10: The knee 10"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.853,
+            0.201
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 10."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.255
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.481,
+            0.943,
+            0.509,
+            0.959
+          ],
+          "content": "10"
+        }
+      ]
+    },
+    {
+      "page_idx": 10,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.068,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.1,
+            0.391,
+            0.123
+          ],
+          "content": "Chapter 11: The knee 11"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.114,
+            0.133,
+            0.854,
+            0.201
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 11."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.255
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.48,
+            0.943,
+            0.508,
+            0.959
+          ],
+          "content": "11"
+        }
+      ]
+    },
+    {
+      "page_idx": 11,
+      "blocks": [
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.068,
+            0.509,
+            0.091
+          ],
+          "content": "A System of Orthopaedic Medicine"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.1,
+            0.393,
+            0.123
+          ],
+          "content": "Chapter 12: The knee 12"
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.115,
+            0.133,
+            0.854,
+            0.201
+          ],
+          "content": "This is an English paragraph used to test the document conversion pipeline. It contains enough words to exceed the per-page threshold. Item 12."
+        },
+        {
+          "type": "text",
+          "bbox": [
+            0.116,
+            0.209,
+            0.877,
+            0.255
+          ],
+          "content": "這是一份用來測試文件轉換流程的繁體中文段落。內容包含標題、表格與圖片，用於驗證引擎的中文辨識能力。"
+        },
+        {
+          "type": "page_number",
+          "bbox": [
+            0.481,
+            0.943,
+            0.509,
+            0.959
+          ],
+          "content": "12"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "file_suffix": "pdf",
+    "producer": {
+      "name": "mineru",
+      "version": "4.0.7"
+    },
+    "document": {
+      "page_count": 12,
+      "page_count_kind": "physical"
+    }
+  },
+  "extensions": {
+    "mineru": {
+      "tier": "basic",
+      "parse_mode": "ocr"
+    },
+    "docvortex_layout": {
+      "version": 1,
+      "pages": [
+        {
+          "page_idx": 0,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 1,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 2,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 3,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 4,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 5,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 6,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 7,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 8,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 9,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 10,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        },
+        {
+          "page_idx": 11,
+          "width_pt": 595.0,
+          "height_pt": 842.0
+        }
+      ]
+    }
+  },
+  "is_full_document": true
+}
