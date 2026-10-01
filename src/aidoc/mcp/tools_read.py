@@ -247,66 +247,83 @@ def register_read_tools(mcp, ctx) -> None:
             raise ToolFailure("invalid_arguments", "give either pages or heading, not both")
         job = D.stale_job(ctx, view.row)
 
-        def collect(units: list, first_offset: int) -> tuple[list[str], int, int | None]:
-            """Whole units while they fit; a first unit bigger than the budget is sliced. Units are counted after the
-            asset URIs are rewritten (review: `](assets/x)` grows by ~45 characters each), and `offset` is a position in
-            that rewritten text. Returns (parts, units fully or partly read, offset to continue the next unit at)."""
-            parts, used = [], 0
-            for k, text in enumerate(units):
-                if k == 0 and first_offset:
-                    if first_offset >= len(text):
-                        raise ToolFailure("invalid_arguments", f"offset {first_offset} is past the end of this unit "
-                                          f"({len(text)} characters)", hint="use the offset from next.offset")
-                    text = text[first_offset:]
-                n = estimate_tokens(text)[0]
-                if used + n <= budget:
-                    parts.append(text)
-                    used += n
-                    continue
-                if not parts:                                  # one unit bigger than the budget: slice it
-                    kept, cut = cut_to_budget(text, budget)
-                    return [kept], 1, (first_offset if k == 0 else 0) + (cut or 0)
-                return parts, k, None
-            return parts, len(units), None
+        limit = min(max_tokens, ctx.config.mcp.response_token_budget)
 
-        if not view.has_pages:                                 # chunk mode (spec §5.3, §9)
-            if pages is not None or heading is not None:
-                raise ToolFailure("page_range_invalid", "this document has no page markers; read it by chunk",
-                                  hint="omit pages/heading and follow next.chunk", pages=None)
-            chunks = D.chunk_cache(view, 800)
-            start = chunk or 0
-            if start >= len(chunks):
-                raise ToolFailure("invalid_arguments", f"chunk {start} is past the end ({len(chunks)} chunks)")
-            units = [D.rewrite_assets(D.chunk_markdown_text(chunks[i], None if i == start else chunks[i - 1]), view.doc_id)
-                     for i in range(start, len(chunks))]
+        def build(budget: int) -> ReadOut:
+            def collect(units: list, first_offset: int) -> tuple[list[str], int, int | None]:
+                """Whole units while they fit; a first unit bigger than the budget is sliced. Units are counted after the
+                asset URIs are rewritten (review: `](assets/x)` grows by ~45 characters each), and `offset` is a position in
+                that rewritten text. Returns (parts, units fully or partly read, offset to continue the next unit at)."""
+                parts, used = [], 0
+                for k, text in enumerate(units):
+                    if k == 0 and first_offset:
+                        if first_offset >= len(text):
+                            raise ToolFailure("invalid_arguments", f"offset {first_offset} is past the end of this unit "
+                                              f"({len(text)} characters)", hint="use the offset from next.offset")
+                        text = text[first_offset:]
+                    n = estimate_tokens(text)[0]
+                    if used + n <= budget:
+                        parts.append(text)
+                        used += n
+                        continue
+                    if not parts:                                  # one unit bigger than the budget: slice it
+                        kept, cut = cut_to_budget(text, budget)
+                        return [kept], 1, (first_offset if k == 0 else 0) + (cut or 0)
+                    return parts, k, None
+                return parts, len(units), None
+
+            if not view.has_pages:                                 # chunk mode (spec §5.3, §9)
+                if pages is not None or heading is not None:
+                    raise ToolFailure("page_range_invalid", "this document has no page markers; read it by chunk",
+                                      hint="omit pages/heading and follow next.chunk", pages=None)
+                chunks = D.chunk_cache(view, 800)
+                start = chunk or 0
+                if start >= len(chunks):
+                    raise ToolFailure("invalid_arguments", f"chunk {start} is past the end ({len(chunks)} chunks)")
+                units = [D.rewrite_assets(D.chunk_markdown_text(chunks[i], None if i == start else chunks[i - 1]), view.doc_id)
+                         for i in range(start, len(chunks))]
+                parts, taken, cut_at = collect(units, offset or 0)
+                nxt = None
+                if cut_at is not None:
+                    nxt = NextRef(chunk=start + taken - 1, offset=cut_at)
+                elif start + taken < len(chunks):
+                    nxt = NextRef(chunk=start + taken)
+                md = "\n\n".join(parts)
+                return ReadOut(doc_id=view.doc_id, title=view.title, unit="chunks", pages=None, markdown=md, truncated=nxt is not None,
+                               next=nxt, page_warnings=[], tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)
+            total = view.pages
+            if heading is not None:
+                start, end, _ = D.heading_span(view, heading)
+            elif pages is not None:
+                start, end = D.parse_pages(pages, total)
+            else:
+                start, end = 1, total
+            units = [D.rewrite_assets(view.page_block(p), view.doc_id) for p in range(start, end + 1)]
             parts, taken, cut_at = collect(units, offset or 0)
+            last = start + taken - 1
             nxt = None
-            if cut_at is not None:
-                nxt = NextRef(chunk=start + taken - 1, offset=cut_at)
-            elif start + taken < len(chunks):
-                nxt = NextRef(chunk=start + taken)
-            md = "\n\n".join(parts)
-            return ReadOut(doc_id=view.doc_id, title=view.title, unit="chunks", pages=None, markdown=md, truncated=nxt is not None,
-                           next=nxt, page_warnings=[], tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)
-        total = view.pages
-        if heading is not None:
-            start, end, _ = D.heading_span(view, heading)
-        elif pages is not None:
-            start, end = D.parse_pages(pages, total)
-        else:
-            start, end = 1, total
-        units = [D.rewrite_assets(view.page_block(p), view.doc_id) for p in range(start, end + 1)]
-        parts, taken, cut_at = collect(units, offset or 0)
-        last = start + taken - 1
-        nxt = None
-        if cut_at is not None:                                 # the page `last` was cut: continue inside it
-            nxt = NextRef(pages=f"{last}-{end}" if end > last else str(last), offset=cut_at)
-        elif last < end:
-            nxt = NextRef(pages=f"{last + 1}-{end}" if end > last + 1 else str(end))
-        md = "".join(parts)
-        return ReadOut(doc_id=view.doc_id, title=view.title, unit="pages", pages=PageSpan(start=start, end=last),
-                       markdown=md, truncated=nxt is not None, next=nxt, page_warnings=D.page_warnings(view.row, start, last),
-                       tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)
+            if cut_at is not None:                                 # the page `last` was cut: continue inside it
+                nxt = NextRef(pages=f"{last}-{end}" if end > last else str(last), offset=cut_at)
+            elif last < end:
+                nxt = NextRef(pages=f"{last + 1}-{end}" if end > last + 1 else str(end))
+            md = "".join(parts)
+            return ReadOut(doc_id=view.doc_id, title=view.title, unit="pages", pages=PageSpan(start=start, end=last),
+                           markdown=md, truncated=nxt is not None, next=nxt, page_warnings=D.page_warnings(view.row, start, last),
+                           tokens_est=estimate_tokens(md)[0], stale=job is not None, job_id=job)
+
+        # Item 5 (final review): a client may show the model either the text block or structuredContent; both
+        # must fit. JSON escaping can make the structured copy much larger than the Markdown, so cut again with
+        # a smaller budget until the bigger of the two representations fits (a few rounds at most).
+        out = build(budget)
+        for _ in range(6):
+            biggest = max(estimate_tokens(render_text(out))[0],
+                          estimate_tokens(json.dumps(out.model_dump(mode="json"), ensure_ascii=False,
+                                                     separators=(",", ":")))[0])
+            if biggest <= limit or budget <= 200:
+                break
+            budget = max(200, budget - (biggest - limit) - 50)
+            out = build(budget)
+        return out
 
     @doc4ai_tool(mcp, ctx, name="get_chunks", title="Get RAG chunks",
                  description="Heading-aware chunks of one document (same algorithm as `aidoc chunk`), each with its heading "

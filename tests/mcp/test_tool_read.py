@@ -151,3 +151,19 @@ def test_offset_past_the_end_of_the_page_is_an_error_not_empty(mcp_server, mcp_e
     raw, _ = mcp_env.issue()
     e = _err(mcp_call(mcp_server, raw, "read_document", {"doc_id": doc["id"], "pages": "1-2", "offset": 10 ** 6}))
     assert e["code"] == "invalid_arguments"
+
+
+@pytest.mark.parametrize("body", [
+    "a | b | c\n" * 4000,                                              # table-ish text: JSON adds little
+    ('"q" ' + chr(92) * 2 + " \t\n") * 6000,                           # quotes, backslashes, tabs: JSON escaping inflates it
+], ids=["table", "escapes"])
+def test_whole_result_fits_the_budget_in_both_representations(mcp_server, mcp_env, make_doc, body):
+    """Item 5: the model may be shown the text block OR structuredContent; each must fit max_tokens."""
+    doc = make_doc("big", pages=1, md=page_md(1, body=body))
+    raw, _ = mcp_env.issue()
+    res = mcp_call(mcp_server, raw, "read_document", {"doc_id": doc["id"], "max_tokens": 8000})
+    text = "".join(b.text for b in res.content if getattr(b, "text", None))
+    structured = json.dumps(res.structured_content, ensure_ascii=False, separators=(",", ":"))
+    assert estimate_tokens(text)[0] <= 8000
+    assert estimate_tokens(structured)[0] <= 8000
+    assert res.structured_content["truncated"] is True and res.structured_content["markdown"]
