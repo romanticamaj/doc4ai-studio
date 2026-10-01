@@ -64,6 +64,12 @@ def check_magic(filename: str, data: bytes) -> None:
         raise ToolFailure("unsupported_file", f"the bytes are a binary file but the name says {ext}", hint="use the real extension")
 
 
+def read_head(path: Path, n: int = 16) -> bytes:
+    """The first bytes of a file, enough for every signature in _MAGIC (WebP's fourcc sits at 8..12)."""
+    with open(path, "rb") as f:
+        return f.read(n)
+
+
 def build_convert_options(cfg, *, engine, lang, force) -> ConvertOptions:
     return ConvertOptions(output_dir=cfg.output_root(), engine=engine, lang=lang or cfg.general.lang, force=force,
                           allow_online_audio=bool(cfg.general.enable_audio), mineru_tier=cfg.engines.mineru_tier,
@@ -201,8 +207,7 @@ def register_convert_path_tool(mcp, ctx) -> None:
         cfg = ctx.config
         principal = current_principal.get()
         real = check_local_path(path, cfg.mcp.local_path_roots)
-        with open(real, "rb") as f:                           # same type checks as convert_document (A-M10)
-            check_magic(real.name, f.read(16))
+        check_magic(real.name, read_head(real))              # same type checks as convert_document (A-M10)
         opts = build_convert_options(cfg, engine=engine, lang=lang, force=force)
         sha = file_sha256(real)
         out_dir = planned_output_dir(ctx.store, opts.output_dir, real, sha)
