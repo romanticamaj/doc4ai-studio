@@ -85,7 +85,7 @@ def recover_on_startup(store, config, log: Callable[[str], None] = print) -> dic
 
     # (4) documents whose output (sidecar) is gone from disk
     for doc in store.list_documents():
-        if doc["status"] in ("ok", "low") and not sidecar_path(Path(doc["output_dir"])).is_file():
+        if doc["status"] in ("ok", "warn", "low") and not sidecar_path(Path(doc["output_dir"])).is_file():
             store.set_document_status(doc["id"], "orphaned")
             res["orphaned"].append(doc["id"])
     if res["orphaned"]:

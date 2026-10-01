@@ -33,7 +33,8 @@ from aidoc.normalize import normalize
 from aidoc.output import OutputWriter, build_sidecar, lookup_cached, planned_output_dir
 from aidoc.pagemap import MARKER
 from aidoc.probe import probe_file
-from aidoc.quality import assess
+from aidoc.quality import FLAGGED_MAX_RATIO, assess, flag_pages
+from aidoc.repair import repair_pages
 from aidoc.retry import RetryPolicy
 from aidoc.router import route
 from aidoc.segment import SegmentPart, merge_segments, plan_segments, segment_dir, split_pdf
@@ -80,6 +81,7 @@ class PipelineContext:
     work_dir: Path | None = None
     work_src: Path | None = None
     attempt: int = 0
+    engines: dict | None = None               # all engines (per-page repair may use another one)
 
     def set(self, **fields) -> dict:
         self.store.update_task(self.task_id, **fields)
@@ -167,7 +169,7 @@ def save_segment_part(seg_dir: Path, part: SegmentPart) -> None:
     fsops.atomic_write_json(seg_dir / "assets.json", [[str(src), name] for src, name in part.assets])
     fsops.atomic_write_json(seg_dir / "edges.json", {
         "engine": part.engine, "opts_key": part.opts_key, "has_page_markers": part.has_page_markers,
-        "page_count": part.page_count,
+        "page_count": part.page_count, "page_map_method": part.page_map_method,
         "first_table": part.first_table.to_json() if part.first_table else None,
         "last_table": part.last_table.to_json() if part.last_table else None})
 
@@ -189,7 +191,7 @@ def load_segment_part(seg_dir: Path, seg_row: dict) -> SegmentPart | None:
                        first_table=TableEdge.from_json(ft) if ft else None,
                        last_table=TableEdge.from_json(lt) if lt else None,
                        page_count=edges.get("page_count"), engine=edges.get("engine"),
-                       opts_key=edges.get("opts_key"))
+                       opts_key=edges.get("opts_key"), page_map_method=edges.get("page_map_method"))
 
 
 def _discard_segments(ctx: PipelineContext) -> None:
@@ -207,9 +209,42 @@ def _relative_markers(md: str, offset: int) -> str:
 
 
 def _segment_probe(probe: ProbeResult, page_start: int, page_end: int) -> ProbeResult:
+    """The probe as seen from the segment PDF: pages renumbered 1..n (page lists are relative to the segment)."""
     # has_table_lines is a whole-document fact: a segment without tables must not fail the quick check for it
+    def rel(pages):
+        return [p - page_start + 1 for p in pages if page_start <= p <= page_end]
     return dataclasses.replace(probe, pages=page_end - page_start + 1, has_table_lines=False,
-                               blank_pages=[p for p in probe.blank_pages if page_start <= p <= page_end])
+                               blank_pages=rel(probe.blank_pages), broken_font_pages=rel(probe.broken_font_pages))
+
+
+def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedResult,
+                   method: str | None) -> tuple[NormalizedResult, QualityResult]:
+    """Whole-document check (spec 2026-10-01 §5, §8.2): flag broken pages, repair them page by page when they are
+    few (more than 20 % of the non-blank pages means the engine is wrong for this file: no repair, reason
+    pages_flagged), then assess with the page map and the alignment spot check."""
+    probe = ctx.probe
+    if probe.kind != "pdf" or probe.pages is None:
+        return merged, assess(merged.markdown, probe, probe.pages, page_map_method=method)
+    flagged = flag_pages(merged.markdown, probe.broken_font_pages)
+    effective = max(1, probe.pages - len(probe.blank_pages))
+    repaired: list[dict] = []
+    if flagged and len(flagged) <= FLAGGED_MAX_RATIO * effective and ctx.engines:
+        outcome = repair_pages(ctx, ctx.engines, merged, [e["page"] for e in flagged], engine_name)
+        merged = NormalizedResult(markdown=outcome.markdown, assets=outcome.assets)
+        labels = sorted(set(outcome.repaired.values()))
+        ctx.log(f"repaired {len(outcome.repaired)}/{len(flagged)} pages"
+                + (f" with {', '.join(labels)}" if labels else "")
+                + (f"; unrepaired: {outcome.unrepaired[:20]}" if outcome.unrepaired else ""))
+        repaired = [{**e, "repaired_by": outcome.repaired[e["page"]]} for e in flagged if e["page"] in outcome.repaired]
+    elif flagged:
+        ctx.log(f"{len(flagged)} of {effective} pages have a broken text layer or garbage: not repaired page by page")
+    q = assess(merged.markdown, probe, probe.pages, pdf=ctx.work_src, page_map_method=method,
+               flagged_before=len(flagged), repaired=repaired)
+    if q.page_map and q.page_map.get("alignment"):
+        al = q.page_map["alignment"]
+        ctx.log(f"page map {q.page_map['found']}/{q.page_map['expected']} ({q.page_map.get('method')}); "
+                f"alignment {al['aligned']}/{al['decidable']}")
+    return merged, q
 
 
 # ---------------------------------------------------------------- one engine attempt (one runner session)
@@ -267,14 +302,15 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
             offset = (ps - 1) if (pages is not None and ps) else 0
             norm = normalize(raw, offset, seg["idx"])
             if multi and quick_check and ps is not None:
-                q = assess(_relative_markers(norm.markdown, offset), _segment_probe(probe, ps, pe), seg_pages)
+                q = assess(_relative_markers(norm.markdown, offset), _segment_probe(probe, ps, pe), seg_pages,
+                           pdf=seg_src, page_map_method=raw.page_map_method, quick=True)
                 if q.level == "low":
                     raise EngineError(ErrorKind.engine, f"segment {seg['idx']} quick check failed: "
                                                         f"{', '.join(q.reasons)}")
             part = SegmentPart(idx=seg["idx"], page_start=ps, page_end=pe, markdown=norm.markdown, assets=norm.assets,
                                has_page_markers=raw.has_page_markers, first_table=raw.first_table,
                                last_table=raw.last_table, page_count=raw.page_count, engine=engine.name,
-                               opts_key=options_key(opts))
+                               opts_key=options_key(opts), page_map_method=raw.page_map_method)
             save_segment_part(sd, part)
             store.update_segment(seg["id"], status=SegmentStatus.done, output_path=str(sd))
             ctx.segment_updated(seg["id"])
@@ -289,7 +325,8 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
     else:
         merged = NormalizedResult(markdown=parts[0].markdown, assets=parts[0].assets)
     page_count = probe.pages if probe.pages is not None else parts[0].page_count
-    return merged, assess(merged.markdown, probe, probe.pages), page_count
+    merged, q = check_document(ctx, engine.name, merged, parts[0].page_map_method)
+    return merged, q, page_count
 
 
 # ---------------------------------------------------------------- output
@@ -325,7 +362,7 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
     except OSError as e:                      # disk full, invalid name, ...: never leave out/.tmp/<task> behind
         writer.discard()
         return _fail(ctx, ErrorKind.transient, f"output write failed: {e}")
-    status = TaskStatus.done if cand.quality.level == "ok" else TaskStatus.low
+    status = TaskStatus.done if cand.quality.level in ("ok", "warn") else TaskStatus.low
     retention = ctx.config.general.work_retention_days
     store.upsert_document(sha256=task["sha256"], source_path=task["source_path"], output_dir=str(output_dir),
                           engine=cand.engine, quality=cand.quality.to_json(), pages=sidecar["pages"], lang=opts.lang,
@@ -369,7 +406,7 @@ def run_task(store: Store, task_id: str, engines: dict, config: AidocConfig, emi
     Unexpected exceptions end as failed(engine: internal error)."""
     if store.get_task(task_id) is None:
         raise KeyError(task_id)
-    ctx = PipelineContext(store, task_id, config, emit, cancel, pause)
+    ctx = PipelineContext(store, task_id, config, emit, cancel, pause, engines=engines)
     lock = TaskLock(lock_path(store.db_path.parent, task_id))
     if not lock.acquire():                    # another process is running this very task: leave it alone
         ctx.log("task is being converted by another process; not started")
@@ -458,7 +495,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
         hit = lookup_cached(store, task["sha256"], output_dir)
         if hit is not None:
             level = (hit.get("quality") or {}).get("level") or hit.get("status")
-            if level == "ok" or not opts.retry_low:
+            if level in ("ok", "warn") or not opts.retry_low:
                 ctx.set(status=TaskStatus.skipped, engine=hit.get("engine"), quality=hit.get("quality"))
                 _drop_unused_work_dir(ctx)
                 return TaskStatus.skipped
@@ -527,7 +564,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
         norm, q, page_count = result
         store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=q.score, reasons=q.reasons))
         cand = _Candidate(name, norm, q, page_count)
-        if q.level == "ok":
+        if q.level in ("ok", "warn"):                  # warn: usable, known problem pages; no fallback (A19)
             return _write_output(ctx, task, cand, output_dir)
         ctx.log(f"{name} quality low ({q.score}): {', '.join(q.reasons)}")
         if best is None or q.score > best.quality.score:

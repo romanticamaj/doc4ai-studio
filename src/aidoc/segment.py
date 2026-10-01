@@ -63,6 +63,7 @@ class SegmentPart:
     page_count: int | None = None
     engine: str | None = None          # engine that produced this part (resume only reuses the same engine)
     opts_key: str | None = None        # output-affecting options it was made with (resume needs the same)
+    page_map_method: str | None = None  # how the runner produced the page markers (index A20)
 
 
 def _cells(line: str) -> list[str]:

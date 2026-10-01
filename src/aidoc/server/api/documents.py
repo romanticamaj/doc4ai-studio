@@ -192,11 +192,11 @@ def rescan(request: Request) -> dict:
     n = 0
     for doc in store.list_documents():
         present = sidecar_path(Path(doc["output_dir"])).is_file()
-        if doc["status"] in ("ok", "low") and not present:
+        if doc["status"] in ("ok", "warn", "low") and not present:
             store.set_document_status(doc["id"], "orphaned")
             n += 1
         elif doc["status"] == "orphaned" and present:
             level = (doc.get("quality") or {}).get("level")
-            store.set_document_status(doc["id"], level if level in ("ok", "low") else "ok")
+            store.set_document_status(doc["id"], level if level in ("ok", "warn", "low") else "ok")
     ctx.bus.publish("system.updated", None, {"documents_rescanned": True, "orphaned": n})
     return {"orphaned": n}

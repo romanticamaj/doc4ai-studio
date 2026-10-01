@@ -28,7 +28,14 @@ def env(tmp_root, monkeypatch, fixtures):
         tid, _ = store.create_task(job, str(src), file_sha256(src), src.stat().st_size, src.stat().st_mtime, opts.lang,
                                    str(tmp_root / "out" / Path(src).stem))
         return tid
-    yield {"cfg": cfg, "store": store, "sc": sc, "make": make_task, "root": tmp_root}
+
+    def make_path(src):
+        opts = ConvertOptions(output_dir=tmp_root / "out")
+        job = store.create_job(opts, "cli")
+        tid, _ = store.create_task(job, str(src), file_sha256(src), src.stat().st_size, src.stat().st_mtime, opts.lang,
+                                   str(tmp_root / "out" / Path(src).stem))
+        return tid
+    yield {"cfg": cfg, "store": store, "sc": sc, "make": make_task, "make_path": make_path, "root": tmp_root}
     store.close()
 
 
@@ -165,3 +172,80 @@ def test_fake_output_has_one_marker_per_pdf_page(env):
     assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
     out = env["root"] / "out" / "twocol" / "twocol.md"
     assert out.read_text(encoding="utf-8").count("<!-- page: ") == 2
+
+
+import json as _json
+
+import pymupdf
+
+
+def _sidecar(env, stem):
+    return _json.loads((env["root"] / "out" / stem / f"{stem}.json").read_text(encoding="utf-8"))
+
+
+def _b10(fixtures, root):
+    """broken_tounicode.pdf + 8 pages of text.pdf: 1 broken page of 10 (10 % <= 20 %: repaired per page)."""
+    d = pymupdf.open(fixtures / "broken_tounicode.pdf")
+    d.delete_page(1)
+    t = pymupdf.open(fixtures / "text.pdf")
+    for _ in range(9):
+        d.insert_pdf(t, from_page=0, to_page=0)
+    d.save(root / "b10.pdf")
+
+
+def test_garbled_page_is_repaired_and_ok(env, fixtures):
+    _b10(fixtures, env["root"])
+    write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "garbled"}], garbled_pages=[1])
+    tid = env["make_path"](env["root"] / "b10.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    q = _sidecar(env, "b10")["quality"]
+    assert q["level"] == "ok" and q["pages"][0]["page"] == 1
+    assert q["pages"][0]["repaired_by"] == "docling:pypdfium_full_page_ocr" and q["pages_unrepaired"] == 0
+    md = (env["root"] / "out" / "b10" / "b10.md").read_text(encoding="utf-8")
+    assert "\N{REPLACEMENT CHARACTER}" not in md and md.count("<!-- page: ") == 10
+
+
+def test_unrepairable_page_is_warn_not_failure(env, fixtures):
+    _b10(fixtures, env["root"])
+    write_scenario(env["sc"], default="garbled_sticky", garbled_pages=[1])
+    tid = env["make_path"](env["root"] / "b10.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    q = _sidecar(env, "b10")["quality"]
+    assert q["level"] == "warn" and q["pages_unrepaired"] == 1
+    assert env["store"].list_documents()[0]["status"] == "warn"
+
+
+def test_too_many_broken_pages_fall_back_instead_of_repair(env):
+    # 1 of 2 pages (50 %) -> document-level pages_flagged -> next engine; mineru output is clean
+    write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "garbled_sticky"}], garbled_pages=[1])
+    tid = env["make"]("broken_tounicode.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    t = env["store"].get_task(tid)
+    assert t["engine"] == "mineru" and "pages_flagged" in t["tried"][0]["reasons"]
+
+
+def test_no_page_markers_fall_back_to_next_engine(env):
+    write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "no_pages"}])
+    tid = env["make"]("text.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    t = env["store"].get_task(tid)
+    assert t["engine"] == "mineru" and "page_map_incomplete" in t["tried"][0]["reasons"]
+
+
+def test_misaligned_markers_fall_back(env):
+    write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "misaligned"}])
+    tid = env["make"]("big.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    assert env["store"].get_task(tid)["engine"] == "mineru"
+
+
+def test_segment_quick_check_is_quick(env, monkeypatch):
+    import aidoc.pipeline as pl
+    calls = []
+    real = pl.assess
+    monkeypatch.setattr(pl, "assess", lambda *a, **k: calls.append(k) or real(*a, **k))
+    tid = env["make"]("big.pdf")                                          # 45 pages -> 2 segments
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    seg_calls = [k for k in calls if k.get("quick")]
+    assert len(seg_calls) == 2 and all(k.get("pdf") is not None for k in seg_calls)
+    assert [k for k in calls if not k.get("quick")][-1].get("pdf") is not None   # document check uses the PDF

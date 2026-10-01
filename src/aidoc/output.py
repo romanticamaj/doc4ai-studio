@@ -50,7 +50,7 @@ def lookup_cached(store: Store, sha256: str, output_dir: Path) -> dict | None:
     sc = read_sidecar(output_dir)
     row = store.get_document_by_output(str(output_dir))
     if row is not None:
-        if row["sha256"] == sha256 and row["status"] in ("ok", "low") and sc is not None \
+        if row["sha256"] == sha256 and row["status"] in ("ok", "warn", "low") and sc is not None \
                 and sc.get("sha256") == sha256:
             return row
         return None
