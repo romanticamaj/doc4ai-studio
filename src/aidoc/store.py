@@ -58,6 +58,9 @@ CREATE INDEX IF NOT EXISTS mcp_calls_ts ON mcp_calls(ts);
 CREATE INDEX IF NOT EXISTS mcp_calls_token_ts ON mcp_calls(token_id, ts);
 CREATE TABLE IF NOT EXISTS oauth_clients(
   client_id TEXT PRIMARY KEY, metadata_url TEXT, name TEXT, redirect_uris_json TEXT, created_at REAL NOT NULL, last_seen REAL);
+-- which token started an MCP job, written in the same locked step that checks the per-token cap (S-phase finding 4)
+CREATE TABLE IF NOT EXISTS mcp_jobs(job_id TEXT PRIMARY KEY, token_id TEXT NOT NULL, created_at REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS mcp_jobs_token ON mcp_jobs(token_id);
 """
 
 _ACTIVE = {TaskStatus.probing.value, TaskStatus.converting.value, TaskStatus.checking.value}
@@ -643,6 +646,26 @@ class Store:
         return rows
 
     def active_mcp_jobs(self, token_id) -> int:
-        r = self._q1("SELECT COUNT(DISTINCT c.job_id) FROM mcp_calls c JOIN jobs j ON j.id = c.job_id "
-                     "WHERE c.token_id=? AND c.job_id IS NOT NULL AND j.status IN ('queued','running')", (token_id,))
+        """MCP jobs of this token still queued or running: those recorded in `mcp_jobs` (every MCP-created job since
+        the fix, reconverts included) plus, for older rows, jobs attributed only through `mcp_calls.job_id` (D8)."""
+        r = self._q1("SELECT COUNT(*) FROM jobs j WHERE j.status IN ('queued','running') AND j.id IN ("
+                     "SELECT job_id FROM mcp_jobs WHERE token_id=? UNION "
+                     "SELECT job_id FROM mcp_calls WHERE token_id=? AND job_id IS NOT NULL)", (token_id, token_id))
         return int(r[0]) if r else 0
+
+    def create_mcp_job(self, options: ConvertOptions, *, token_id: str, limit: int) -> str | None:
+        """Check the per-token cap and create the job in one locked step, so concurrent calls cannot overshoot.
+        None when the token already has `limit` jobs in flight."""
+        with self.con.lock:
+            self.con.execute("BEGIN IMMEDIATE")
+            try:
+                if self.active_mcp_jobs(token_id) >= limit:
+                    self.con.execute("ROLLBACK")
+                    return None
+                jid = self.create_job(options, "mcp")
+                self.con.execute("INSERT INTO mcp_jobs(job_id, token_id, created_at) VALUES(?,?,?)", (jid, token_id, time.time()))
+            except BaseException:
+                self.con.execute("ROLLBACK")
+                raise
+            self.con.execute("COMMIT")
+            return jid

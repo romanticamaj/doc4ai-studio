@@ -314,7 +314,7 @@ def _link_or_copy(src: Path, dst: Path) -> None:
     os.replace(tmp, dst)
 
 
-def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | None = None) -> dict:
+def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | None = None, create_job=None) -> dict:
     """One job, one forced task per document, written back to the document's own output dir (spec 2026-10-01
     §9.2). Every id is checked before anything is created; raises ApiError 404/410/409. `engine` forces that
     engine (MCP reconvert_document); None lets routing choose (the web 「重新轉換」)."""
@@ -340,7 +340,8 @@ def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | N
     opts = ConvertOptions(output_dir=out_root, engine=engine, lang=plan[0][0].get("lang") or cfg.general.lang, force=True,
                           allow_online_audio=bool(cfg.general.enable_audio), mineru_tier=cfg.engines.mineru_tier,
                           docling_ocr=cfg.engines.docling_ocr)
-    job_id = store.create_job(opts, origin)
+    # `create_job(opts) -> job_id`: MCP passes its per-token-capped reservation (tools_convert.reserve_job)
+    job_id = create_job(opts) if create_job is not None else store.create_job(opts, origin)
     task_ids = []
     for doc, src, is_work_copy in plan:
         st = src.stat()

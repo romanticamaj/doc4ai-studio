@@ -70,11 +70,31 @@ def build_convert_options(cfg, *, engine, lang, force) -> ConvertOptions:
                           docling_ocr=cfg.engines.docling_ocr)
 
 
+def _too_many(cfg) -> ToolFailure:
+    return ToolFailure("too_many_jobs", "this token already has the maximum number of conversions in progress",
+                       hint="wait for get_job to report done", limit=cfg.mcp.max_concurrent_jobs_per_token)
+
+
+def reserve_job(ctx, opts: ConvertOptions, token_id: str | None) -> str:
+    """Create an MCP job, checking the per-token cap atomically (Store.create_mcp_job). Every MCP-originated job
+    goes through here (convert_document, convert_path, reconvert_document)."""
+    if token_id is None:
+        return ctx.store.create_job(opts, "mcp")
+    jid = ctx.store.create_mcp_job(opts, token_id=token_id, limit=ctx.config.mcp.max_concurrent_jobs_per_token)
+    if jid is None:
+        raise _too_many(ctx.config)
+    return jid
+
+
+def _abandon(ctx, job_id: str) -> None:
+    """A reserved job whose task could not be created must not hold a slot."""
+    ctx.store.set_job_status(job_id, "cancelled")
+
+
 def _guard_capacity(ctx, token_id: str | None, size: int) -> None:
     cfg = ctx.config
     if token_id and ctx.store.active_mcp_jobs(token_id) >= cfg.mcp.max_concurrent_jobs_per_token:
-        raise ToolFailure("too_many_jobs", "this token already has the maximum number of conversions in progress",
-                          hint="wait for get_job to report done", limit=cfg.mcp.max_concurrent_jobs_per_token)
+        raise _too_many(cfg)                    # early exit before any file is written; the binding check is atomic
     up = ctx.uploads.dir
     up.mkdir(parents=True, exist_ok=True)
     needed = size * cfg.limits.disk_space_factor
@@ -83,20 +103,24 @@ def _guard_capacity(ctx, token_id: str | None, size: int) -> None:
         raise ToolFailure("insufficient_disk", "not enough free disk for this conversion", needed=needed, free=free)
 
 
-def start_job_for_bytes(ctx, filename: str, data: bytes, opts: ConvertOptions) -> tuple[str, str]:
+def start_job_for_bytes(ctx, filename: str, data: bytes, opts: ConvertOptions, token_id: str | None = None) -> tuple[str, str]:
     store = ctx.store
-    name = display_name(filename)
-    sha = hashlib.sha256(data).hexdigest()
-    uid = store.create_upload(name, len(data), sha)
-    part = ctx.uploads.part_path(uid)
-    part.parent.mkdir(parents=True, exist_ok=True)
-    part.write_bytes(data)
-    store.update_upload(uid, received=len(data), status="complete")
-    job_id = store.create_job(opts, "mcp")
+    job_id = reserve_job(ctx, opts, token_id)
     try:
+        name = display_name(filename)
+        sha = hashlib.sha256(data).hexdigest()
+        uid = store.create_upload(name, len(data), sha)
+        part = ctx.uploads.part_path(uid)
+        part.parent.mkdir(parents=True, exist_ok=True)
+        part.write_bytes(data)
+        store.update_upload(uid, received=len(data), status="complete")
         tid = ctx.uploads.create_task_from_upload(job_id, uid, opts)
     except UploadError as e:
+        _abandon(ctx, job_id)
         raise ToolFailure("already_converting", "this file is being converted right now", **e.extra) from None
+    except BaseException:
+        _abandon(ctx, job_id)
+        raise
     _publish(ctx, job_id, tid)
     return job_id, tid
 
@@ -184,11 +208,16 @@ def register_convert_path_tool(mcp, ctx) -> None:
             hit = lookup_cached(ctx.store, sha, out_dir)
             if hit is not None and hit.get("id"):
                 return ConvertOut(job_id=None, status="cached", doc_id=hit["id"])
-        _guard_capacity(ctx, principal.token_id if principal else None, real.stat().st_size)
+        token_id = principal.token_id if principal else None
+        _guard_capacity(ctx, token_id, real.stat().st_size)
 
         def start() -> tuple[str, str]:
-            job_id = ctx.store.create_job(opts, "mcp")
-            tid, _ = register_source(ctx.store, job_id, real, opts)
+            job_id = reserve_job(ctx, opts, token_id)
+            try:
+                tid, _ = register_source(ctx.store, job_id, real, opts)
+            except BaseException:
+                _abandon(ctx, job_id)
+                raise
             _publish(ctx, job_id, tid)
             return job_id, tid
         job_id, tid = await anyio.to_thread.run_sync(start)
@@ -223,8 +252,9 @@ def register_convert_tools(mcp, ctx) -> None:
             hit = lookup_cached(ctx.store, sha, out_dir)
             if hit is not None and hit.get("id"):
                 return ConvertOut(job_id=None, status="cached", doc_id=hit["id"])
-        _guard_capacity(ctx, principal.token_id if principal else None, len(data))
-        job_id, tid = await anyio.to_thread.run_sync(start_job_for_bytes, ctx, filename, data, opts)
+        token_id = principal.token_id if principal else None
+        _guard_capacity(ctx, token_id, len(data))
+        job_id, tid = await anyio.to_thread.run_sync(start_job_for_bytes, ctx, filename, data, opts, token_id)
         if wait_seconds > 0:
             await wait_for_task(ctx, tid, wait_seconds, ctx_.report_progress if ctx_ is not None else None)
         return _result(ctx, tid, job_id)

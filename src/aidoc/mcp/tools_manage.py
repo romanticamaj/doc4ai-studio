@@ -7,9 +7,10 @@ from pydantic import Field
 
 from aidoc.mcp import docs as D
 from aidoc.mcp.errors import ToolFailure
-from aidoc.mcp.principal import SCOPE_MANAGE
+from aidoc.mcp.principal import SCOPE_MANAGE, current_principal
 from aidoc.mcp.registry import doc4ai_tool
 from aidoc.mcp.schemas import ChangedOut, ConvertOut
+from aidoc.mcp.tools_convert import reserve_job
 from aidoc.server.api.documents import start_reconvert
 from aidoc.server.auth import ApiError
 
@@ -38,8 +39,11 @@ def register_manage_tools(mcp, ctx) -> None:
     def reconvert_document(doc_id: Annotated[str, Field(min_length=1, max_length=64)],
                            engine: Literal["markitdown", "docling", "mineru"] | None = None) -> ConvertOut:
         D.doc_row(ctx, doc_id)
+        principal = current_principal.get()
+        token_id = principal.token_id if principal else None
         try:
-            job = start_reconvert(ctx, [doc_id], origin="mcp", engine=engine)
+            job = start_reconvert(ctx, [doc_id], origin="mcp", engine=engine,
+                                  create_job=lambda opts: reserve_job(ctx, opts, token_id))
         except ApiError as e:
             code = _MAP.get(e.error, "already_converting")
             raise ToolFailure(code, e.error.replace("_", " "), **{k: v for k, v in e.extra.items() if k != "id"}) from None
