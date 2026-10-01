@@ -1,6 +1,6 @@
 # T-001 Head First Android Development：封面轉譯出現亂碼
 
-- 狀態：已調查，待修
+- 狀態：已併入 `docs/superpowers/specs/2026-10-01-per-page-quality-and-page-map.md`（逐頁品質模型；實作計畫 `docs/superpowers/plans/2026-10-01-per-page-quality-and-page-map.md`）
 - 建立：2026-10-01
 - 回報者：站長
 - 嚴重度：中（內容遺失但不影響其餘文字；品質檢查誤判為 `ok`，使用者不會被提醒）
@@ -114,4 +114,4 @@ PDF 裡的 Comic Sans 等手寫體字型以 Type0／Identity-H 嵌入、**沒有
 - 品質檢查的亂碼規則：`src/aidoc/quality.py`
 - Docling runner：`src/aidoc/engines/runner/docling_runner.py`（目前 `FULL_PAGE` 只改 `ocr.mode`，未換 backend）
 - docling-parse 自繪頁面圖：`envs/docling/.venv/Lib/site-packages/docling/backend/docling_parse_backend.py`
-- 頁碼系統性修正（進行中）：`docs/superpowers/specs/2026-10-01-page-map-systemic-fix.md`
+- 頁碼與逐頁品質系統性修正：`docs/superpowers/specs/2026-10-01-per-page-quality-and-page-map.md`
