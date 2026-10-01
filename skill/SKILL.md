@@ -16,7 +16,8 @@ All routing/engine decisions live in the CLI. This skill only calls it and reads
    - Add `--allow-online-audio` only if the user explicitly accepts sending audio to Google.
 3. Parse the JSON on stdout. Exit code 1 → report `error_kind`/`error_msg` verbatim and stop. If the message says `run aidoc setup <engine>`, tell the user that command.
 4. Read the Markdown file inside `output_dir`: it is named after the directory itself, i.e. `<output_dir>/<last path component of output_dir>.md` (images are under `<output_dir>/assets/`). Use it to answer the user's request.
-5. If `quality.level == "low"` (or `status == "low"`), say so up front and list `quality.reasons` (e.g. `chars_per_page`, `garbage_ratio`, `missing_table`) so the user knows the text may be incomplete. Mention `tried` (which engines were attempted).
+5. If `quality.level == "low"` (or `status == "low"`), say so up front and list `quality.reasons` (e.g. `chars_per_page`, `garbage_ratio`, `missing_table`, `page_map_incomplete`, `page_map_misaligned`, `pages_flagged`) so the user knows the text may be incomplete or the page numbers unreliable. Mention `tried` (which engines were attempted).
+   If `quality.level == "warn"`, the document is usable but some pages have known problems: `quality.pages` lists them (`{page, reasons, repaired_by?}`; reasons `broken_text_layer` = the PDF's text layer is garbled, `garbage`, `page_map_missing`). Entries **with** `repaired_by` were re-read by OCR and are fine; entries **without** it are still unreliable — name those page numbers to the user (`quality.pages_unrepaired` counts them) and do not quote their text as fact.
 6. Never paste the whole Markdown back unless asked; summarise or quote the relevant parts. Page numbers are available from `<!-- page: N -->` markers — cite them.
 
 ## Notes

@@ -1,6 +1,6 @@
 # T-001 Head First Android Development：封面轉譯出現亂碼
 
-- 狀態：已併入 `docs/superpowers/specs/2026-10-01-per-page-quality-and-page-map.md`（逐頁品質模型；實作計畫 `docs/superpowers/plans/2026-10-01-per-page-quality-and-page-map.md`）
+- 狀態：**已修正**（2026-10-01）。逐頁偵測（壞字型閘門 + `\S\uFFFD\S`／逐頁 garbage／位移 29）與逐頁 OCR 修復（Docling pypdfium + FULL_PAGE，次選 MinerU `ocr_mode="ocr"`）已上線；本書重新轉換後 55/55 頁修復、`pages_unrepaired` 0、品質 `ok`，封面含「Wouldn't it be dreamy」。驗收紀錄見 spec 第 15 節；主要 commit：`f5bc5bb`（quality）、`ac75fdb`（docling backend）、`5a688d1`（repair pipeline）。
 - 建立：2026-10-01
 - 回報者：站長
 - 嚴重度：中（內容遺失但不影響其餘文字；品質檢查誤判為 `ok`，使用者不會被提醒）
