@@ -23,3 +23,12 @@ test("respects the active filters", () => {
   expect(mergeLiveCall(pages, call(1, { status: "auth_error" }), { status: "ok" })![0].calls).toEqual([]);
   expect(mergeLiveCall(undefined, call(1), {})).toBeUndefined();
 });
+
+test("an update to a known row merges in place and keeps fields the event does not carry", () => {
+  const pages: McpCallsPage[] = [{ calls: [call(3), call(2, { args_summary: '{"suppressed": 4}', status: "rate_limited" }), call(1)], next_cursor: null }];
+  const ev = { id: 2, ts: 2, status: "rate_limited", error_code: "auth_failures" } as unknown as McpCall;
+  const out = mergeLiveCall(pages, ev, {})!;
+  expect(out[0].calls.map((c) => c.id)).toEqual([3, 2, 1]);
+  expect(out[0].calls[1].args_summary).toBe('{"suppressed": 4}');
+  expect(out[0].calls[1].error_code).toBe("auth_failures");
+});

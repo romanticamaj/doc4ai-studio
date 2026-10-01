@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type { McpCallsPage, McpClient, McpSnippet, McpStats, McpStatus, McpToken, McpTokenCreated } from "./types";
 
@@ -44,15 +44,27 @@ export const useConfigSnippets = (endpoint?: string) =>
     queryFn: ({ signal }) => api.get<{ endpoint_url: string; snippets: McpSnippet[] }>(`/api/mcp/config-snippets${qs({ endpoint })}`, signal),
   });
 
-function useMcpMutation<TVars, TOut>(fn: (v: TVars) => Promise<TOut>) {
+const ISSUE_KEY = ["mcp", "issue"] as const;
+
+function useMcpMutation<TVars, TOut>(fn: (v: TVars) => Promise<TOut>, issuesToken = false) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: fn, onSuccess: () => qc.invalidateQueries({ queryKey: ["mcp"] }) });
+  return useMutation({
+    mutationFn: fn,
+    ...(issuesToken ? { mutationKey: ISSUE_KEY, gcTime: 0 } : {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["mcp"] }),
+  });
+}
+
+/** Drop finished create/rotate mutations, whose results hold a token's plaintext, from the mutation cache. */
+export function forgetIssuedTokens(qc: QueryClient): void {
+  const cache = qc.getMutationCache();
+  for (const m of cache.findAll({ mutationKey: ISSUE_KEY })) if (m.state.status !== "pending") cache.remove(m);
 }
 export type TokenCreateBody = { name: string; scopes: string[]; expires_in_days?: number; note?: string; rate_limit_per_min?: number };
-export const useCreateToken = () => useMcpMutation((b: TokenCreateBody) => api.post<McpTokenCreated>("/api/mcp/tokens", b));
+export const useCreateToken = () => useMcpMutation((b: TokenCreateBody) => api.post<McpTokenCreated>("/api/mcp/tokens", b), true);
 export const usePatchToken = () =>
   useMcpMutation(({ id, ...body }: { id: string; name?: string; note?: string | null; rate_limit_per_min?: number | null }) =>
     api.patch<{ token: McpToken }>(`/api/mcp/tokens/${id}`, body).then((r) => r.token));
 export const useRevokeToken = () =>
   useMcpMutation((v: { id: string; reason?: string }) => api.post<{ token: McpToken }>(`/api/mcp/tokens/${v.id}/revoke`, { reason: v.reason }).then((r) => r.token));
-export const useRotateToken = () => useMcpMutation((id: string) => api.post<McpTokenCreated>(`/api/mcp/tokens/${id}/rotate`));
+export const useRotateToken = () => useMcpMutation((id: string) => api.post<McpTokenCreated>(`/api/mcp/tokens/${id}/rotate`), true);

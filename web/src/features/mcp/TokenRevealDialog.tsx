@@ -15,7 +15,8 @@ export function TokenRevealDialog({ result, onClose }: { result: McpTokenCreated
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl"
-        onInteractOutside={(e) => e.preventDefault()}         // a stray click must not throw the token away
+        onInteractOutside={(e) => e.preventDefault()}         // a stray click or Escape must not throw the token away
+        onEscapeKeyDown={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

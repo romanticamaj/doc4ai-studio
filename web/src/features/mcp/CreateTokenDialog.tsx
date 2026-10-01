@@ -1,7 +1,8 @@
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { useCreateToken, type TokenCreateBody } from "@/api/mcp";
+import { useQueryClient } from "@tanstack/react-query";
+import { forgetIssuedTokens, useCreateToken, type TokenCreateBody } from "@/api/mcp";
 import { useSettings } from "@/api/queries";
 import type { McpScope, McpTokenCreated } from "@/api/types";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,14 @@ const RISK_TEXT: Partial<Record<McpScope, string>> = {
   "doc4ai:manage": "取消工作、重新轉換文件",
 };
 
+/** The presets the server allows, plus the server's own default and maximum (so both are always selectable). */
+export function ttlChoices(def: number | undefined, max: number | undefined, allowNever: boolean): number[] {
+  const days = new Set<number>(TTL_CHOICES.filter((d) => !max || d <= max));
+  if (def && (!max || def <= max)) days.add(def);
+  if (max) days.add(max);
+  return [...[...days].sort((a, b) => a - b), ...(allowNever ? [NEVER] : [])];
+}
+
 export function CreateTokenDialog({
   open,
   onOpenChange,
@@ -33,6 +42,7 @@ export function CreateTokenDialog({
   const settings = useSettings();
   const mcp = settings.data?.mcp;
   const create = useCreateToken();
+  const qc = useQueryClient();
   const ids = useId();
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<Set<McpScope>>(new Set(DEFAULT_SCOPES));
@@ -42,9 +52,10 @@ export function CreateTokenDialog({
 
   // the server's default TTL, when it is one of the choices
   const defaultTtl = mcp?.default_token_ttl_days;
+  const maxTtl = mcp?.max_token_ttl_days;
   useEffect(() => {
-    if (defaultTtl && (TTL_CHOICES as readonly number[]).includes(defaultTtl)) setTtl(defaultTtl);
-  }, [defaultTtl]);
+    if (defaultTtl) setTtl(maxTtl ? Math.min(defaultTtl, maxTtl) : defaultTtl);
+  }, [defaultTtl, maxTtl]);
 
   useEffect(() => {
     if (!open) {
@@ -56,7 +67,7 @@ export function CreateTokenDialog({
   }, [open]);
 
   const highRisk = ALL_SCOPES.filter((s) => scopes.has(s) && SCOPE_META[s].risk === "high");
-  const choices: number[] = [...TTL_CHOICES.filter((d) => !mcp?.max_token_ttl_days || d <= mcp.max_token_ttl_days), ...(mcp?.allow_no_expiry ? [NEVER] : [])];
+  const choices = ttlChoices(mcp?.default_token_ttl_days, mcp?.max_token_ttl_days, Boolean(mcp?.allow_no_expiry));
 
   const toggle = (s: McpScope) =>
     setScopes((prev) => {
@@ -73,7 +84,10 @@ export function CreateTokenDialog({
     if (note.trim()) body.note = note.trim();
     if (rate != null) body.rate_limit_per_min = rate;
     try {
-      onCreated(await create.mutateAsync(body));
+      const result = await create.mutateAsync(body);
+      create.reset(); // the plaintext lives on only in the reveal dialog's props, not in the mutation cache
+      forgetIssuedTokens(qc);
+      onCreated(result);
     } catch (err) {
       toast.error(describeError(err));
     }

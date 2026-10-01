@@ -26,3 +26,11 @@ test("renders nothing without a result", () => {
   const { container } = render(<TokenRevealDialog result={null} onClose={() => {}} />);
   expect(container).toBeEmptyDOMElement();
 });
+
+test("Escape does not throw the token away", async () => {
+  const onClose = vi.fn();
+  render(<TokenRevealDialog result={result} onClose={onClose} />);
+  await userEvent.keyboard("{Escape}");
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByDisplayValue("doc4ai_pat_SECRETVALUE")).toBeInTheDocument();
+});

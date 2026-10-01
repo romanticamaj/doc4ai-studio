@@ -1,7 +1,8 @@
 import { KeyRound, MoreHorizontal, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useMcpTokens, usePatchToken, useRevokeToken, useRotateToken } from "@/api/mcp";
+import { useQueryClient } from "@tanstack/react-query";
+import { forgetIssuedTokens, useMcpTokens, usePatchToken, useRevokeToken, useRotateToken } from "@/api/mcp";
 import type { McpToken, McpTokenCreated } from "@/api/types";
 import { Panel, PanelHeader } from "@/components/Panel";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -178,6 +179,7 @@ function TokenTable({ tokens, onAction }: { tokens: McpToken[]; onAction: (p: Pe
 
 function RotateDialog({ pending, onDone }: { pending: McpToken | null; onDone: (r: McpTokenCreated | null) => void }) {
   const rotate = useRotateToken();
+  const qc = useQueryClient();
   return (
     <Dialog open={pending != null} onOpenChange={(o) => !o && onDone(null)}>
       <DialogContent>
@@ -193,7 +195,10 @@ function RotateDialog({ pending, onDone }: { pending: McpToken | null; onDone: (
             disabled={rotate.isPending}
             onClick={async () => {
               try {
-                onDone(await rotate.mutateAsync(pending!.id));
+                const r = await rotate.mutateAsync(pending!.id);
+                rotate.reset(); // keep the new plaintext out of the mutation cache
+                forgetIssuedTokens(qc);
+                onDone(r);
               } catch (e) {
                 toast.error(describeError(e));
               }
