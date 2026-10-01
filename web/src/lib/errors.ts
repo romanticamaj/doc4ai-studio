@@ -51,6 +51,18 @@ export function describeError(e: unknown): string {
         return `設定值無效：${b.detail}`;
       case "token_readonly":
         return "token 只能在啟動 aidoc serve 時設定";
+      case "invalid_scopes":
+        return "scopes 無效：每把 token 都要有 doc4ai:read";
+      case "ttl_too_long":
+        return `到期天數超過上限 ${b.max} 天`;
+      case "no_expiry_disabled":
+        return "尚未允許永不過期的 token（設定 mcp.allow_no_expiry）";
+      case "already_revoked":
+        return "這把 token 已經撤銷";
+      case "scopes_immutable":
+        return "scope 不能修改，請輪替或重建";
+      case "unknown_endpoint":
+        return "不是這台伺服器的 MCP 位址";
       case "network_error":
         return "連不上伺服器，請確認 aidoc serve 仍在執行";
       default:

@@ -2,6 +2,7 @@ import { useSearchParams } from "react-router";
 import { Page, PageHeader } from "@/components/layout/Page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/states";
+import { TokensTab } from "@/features/mcp/TokensTab";
 
 const TABS = ["overview", "tokens", "clients", "calls"] as const;
 type Tab = (typeof TABS)[number];
@@ -27,7 +28,7 @@ export default function McpPage() {
           ))}
         </TabsList>
         <TabsContent value="overview"><EmptyState title="總覽（Task 30）" /></TabsContent>
-        <TabsContent value="tokens"><EmptyState title="Tokens（Task 29）" /></TabsContent>
+        <TabsContent value="tokens"><TokensTab /></TabsContent>
         <TabsContent value="clients"><EmptyState title="連線（Task 31）" /></TabsContent>
         <TabsContent value="calls"><EmptyState title="呼叫紀錄（Task 32）" /></TabsContent>
       </Tabs>
