@@ -79,9 +79,18 @@ async def mcp_client(base_url: str, token: str | None, mode: str = "auto", clien
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     http = httpx2.AsyncClient(headers=headers, timeout=httpx2.Timeout(30, read=120))
     info = client_info or Implementation(name="doc4ai-tests", version="1.0")
-    async with http, Client(streamable_http_client(f"{base_url}/mcp", http_client=http), mode=mode, client_info=info,
-                            cache=None) as c:
-        yield c
+    try:
+        async with http, Client(streamable_http_client(f"{base_url}/mcp", http_client=http), mode=mode,
+                                client_info=info, cache=None) as c:
+            yield c
+    except Exception as e:  # noqa: BLE001  the transport task group wraps whatever the body raised
+        raise _unwrap(e) from None
+
+
+def _unwrap(e: BaseException) -> BaseException:
+    while hasattr(e, "exceptions") and len(e.exceptions) == 1:
+        e = e.exceptions[0]
+    return e
 
 
 def mcp_call(base_url, token, tool, arguments=None, mode="auto", client_info=None, progress=None):

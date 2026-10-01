@@ -257,3 +257,21 @@ def chunk_markdown_text(chunk, previous=None) -> str:
     if path and (previous is None or list(previous.heading_path or []) != path):
         return f"{'#' * min(len(path), 6)} {path[-1]}\n\n{chunk.text}"
     return chunk.text
+
+
+DEFAULT_CHUNK_TOKENS = 800
+_CHUNK_ID = re.compile(r"^c(\d{1,6})(?:m(\d{3,4}))?$")
+
+
+def chunk_uri_id(index: int, max_tokens: int = DEFAULT_CHUNK_TOKENS) -> str:
+    """MCP chunk ids are `c0007` (`c0007m2000` for a non-default chunk size): `aidoc chunk` ids are `<stem>#0007`,
+    and a `#` (or a CJK / spaced stem) cannot sit in a doc4ai://chunks/{doc_id}/{chunk_id} URI. The doc_id in the
+    URI already scopes the index."""
+    return f"c{index:04d}" + ("" if max_tokens == DEFAULT_CHUNK_TOKENS else f"m{max_tokens}")
+
+
+def chunk_index(chunk_id: str) -> tuple[int, int] | None:
+    m = _CHUNK_ID.match(chunk_id or "")
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2) or DEFAULT_CHUNK_TOKENS)

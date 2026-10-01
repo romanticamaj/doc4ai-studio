@@ -165,17 +165,14 @@ def build_mcp(ctx) -> McpRuntime:
                     middleware=[make_middleware(ctx, recorder)],
                     cache_hints={"tools/list": CacheHint(300_000, "private"), "resources/list": CacheHint(60_000, "private"),
                                  "server/discover": CacheHint(300_000, "private")})            # keys per spike S10
-    try:                                                                          # Task 22 removes this guard
-        from aidoc.mcp import tools_read
-        tools_read.register_read_tools(mcp, ctx)
-        from aidoc.mcp import tools_convert
-        tools_convert.register_convert_tools(mcp, ctx)
-        from aidoc.mcp import tools_manage
-        tools_manage.register_manage_tools(mcp, ctx)
-        from aidoc.mcp import resources
-        resources.register_resources(mcp, ctx)
-    except ImportError:
-        pass
+    import importlib  # Task 22 removes this guard
+    for mod, fn in (("tools_read", "register_read_tools"), ("tools_convert", "register_convert_tools"),
+                    ("tools_manage", "register_manage_tools"), ("resources", "register_resources")):
+        try:
+            m = importlib.import_module(f"aidoc.mcp.{mod}")
+        except ImportError:
+            continue
+        getattr(m, fn)(mcp, ctx)
     bind_host = str(ctx.extras.get("bind_host") or cfg.server.host)
     port = int(ctx.extras.get("bind_port") or cfg.server.port)
     inner = mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True, json_response=False,

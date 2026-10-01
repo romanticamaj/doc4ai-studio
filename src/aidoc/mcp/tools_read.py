@@ -277,7 +277,7 @@ def register_read_tools(mcp, ctx) -> None:
             n = estimate_tokens(c.text)[0] + 40              # + the per-chunk header line of the text rendering
             if out and used + n > budget:
                 break
-            out.append(ChunkOut(chunk_id=c.id, heading_path=list(c.heading_path), page_start=c.page_start,
+            out.append(ChunkOut(chunk_id=D.chunk_uri_id(start + len(out), max_tokens), heading_path=list(c.heading_path), page_start=c.page_start,
                                 page_end=c.page_end, text=D.rewrite_assets(c.text, view.doc_id)))
             used += n
         nxt = encode_cursor({"i": start + len(out)}) if start + len(out) < len(chunks) else None
