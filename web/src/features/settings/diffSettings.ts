@@ -11,7 +11,8 @@ export function diffSettings(original: Settings, edited: Settings): SettingsPatc
     const a = (original[section] ?? {}) as Record<string, unknown>;
     const b = edited[section] as Record<string, unknown>;
     for (const key of Object.keys(b)) {
-      if (a[key] !== b[key]) (out[section] ??= {})[key] = b[key];
+      const same = Array.isArray(b[key]) ? JSON.stringify(a[key]) === JSON.stringify(b[key]) : a[key] === b[key];
+      if (!same) (out[section] ??= {})[key] = b[key];
     }
   }
   return out as SettingsPatch;

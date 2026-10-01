@@ -18,6 +18,7 @@ import type { EngineName, Settings } from "@/api/types";
 import { useEventStream } from "@/events/EventStreamProvider";
 import { EngineCard } from "@/features/settings/EngineCard";
 import { NumberField } from "@/features/settings/NumberField";
+import { ListField } from "@/features/settings/ListField";
 import { diffSettings } from "@/features/settings/diffSettings";
 import { describeError } from "@/lib/errors";
 import { formatBytes, gb } from "@/lib/format";
@@ -110,6 +111,11 @@ export default function SettingsPage() {
           ) : (
             <Skeleton className="h-72 rounded-[10px]" />
           )}
+        </section>
+
+        <section aria-labelledby="mcp-h">
+          <SectionTitle id="mcp-h" title="MCP" description="其他 AI 透過 /mcp 使用這個 Library 的規則。token 本身在 MCP 頁管理。" />
+          {settings.data ? <McpSettingsForm original={settings.data} /> : !settings.isError && <Skeleton className="h-72 rounded-[10px]" />}
         </section>
 
         {!unauthorized && <TokenCard />}
@@ -251,6 +257,96 @@ function SettingsForm({ original }: { original: Settings }) {
           </div>
         </div>
 
+        <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+          {dirty && <span className="mr-auto text-xs text-muted-foreground">有未儲存的變更</span>}
+          <Button type="button" variant="ghost" size="sm" disabled={!dirty} onClick={() => setEdited(original)}>
+            <RotateCcw /> 還原
+          </Button>
+          <Button type="submit" size="sm" disabled={!dirty || update.isPending}>
+            {update.isPending ? "儲存中…" : "儲存"}
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
+type McpSettings = Settings["mcp"];
+
+function McpSettingsForm({ original }: { original: Settings }) {
+  const [edited, setEdited] = useState<Settings>(original);
+  const update = useUpdateSettings();
+  useEffect(() => setEdited(original), [original]);
+  const patch = diffSettings(original, edited);
+  const mcpPatch = patch.mcp ? { mcp: patch.mcp } : {};
+  const dirty = Object.keys(mcpPatch).length > 0;
+  const m = edited.mcp;
+  const set = <K extends keyof McpSettings>(key: K, value: McpSettings[K]) => setEdited((e) => ({ ...e, mcp: { ...e.mcp, [key]: value } }));
+  const num = (key: keyof McpSettings, id: string, min: number, max: number, unit?: string) => (
+    <div className="flex items-center gap-2">
+      <NumberField id={id} min={min} max={max} value={m[key] as number} onValue={(n) => set(key, n as never)} className="w-32 tabular" />
+      {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
+    </div>
+  );
+  const save = () =>
+    update.mutateAsync(mcpPatch).then(
+      () => toast.success("已儲存"),
+      (e) => toast.error(describeError(e)),
+    );
+
+  return (
+    <Panel>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty) void save();
+        }}
+      >
+        <div className="divide-y px-4">
+          <Field label="啟用 MCP" hint="關閉後 /mcp 回 404；後台照常可用" htmlFor="mcp-enabled">
+            <Switch id="mcp-enabled" checked={m.enabled} onCheckedChange={(v) => set("enabled", v)} />
+          </Field>
+          <Field label="每分鐘呼叫上限" hint="每把 token 的 tools/call 次數；token 可個別覆寫" htmlFor="mcp-rate">
+            {num("rate_limit_per_min", "mcp-rate", 1, 100000, "次")}
+          </Field>
+          <Field label="回應預算（tokens）" hint="單次回應的上限，超過會截斷並給 next" htmlFor="mcp-budget">
+            {num("response_token_budget", "mcp-budget", 500, 25000)}
+          </Field>
+          <Field label="預設到期天數" hint="建立 token 時預選的到期" htmlFor="mcp-ttl">
+            {num("default_token_ttl_days", "mcp-ttl", 1, 3650, "天")}
+          </Field>
+          <Field label="最長到期天數" htmlFor="mcp-ttl-max">
+            {num("max_token_ttl_days", "mcp-ttl-max", 1, 3650, "天")}
+          </Field>
+          <Field label="允許永不過期" hint="開啟後建立 token 時可選「永不過期」" htmlFor="mcp-noexp">
+            <div className="flex flex-wrap items-center gap-3">
+              <Switch id="mcp-noexp" checked={m.allow_no_expiry} onCheckedChange={(v) => set("allow_no_expiry", v)} />
+              {m.allow_no_expiry && (
+                <span className="flex items-center gap-1.5 text-xs text-warn">
+                  <TriangleAlert className="size-3.5" /> 不會過期的 token 外洩後只能手動撤銷
+                </span>
+              )}
+            </div>
+          </Field>
+          <Field label="每把 token 同時工作數" hint="convert / reconvert 進行中的上限" htmlFor="mcp-jobs">
+            {num("max_concurrent_jobs_per_token", "mcp-jobs", 1, 100)}
+          </Field>
+          <Field label="上傳上限（MB）" hint="convert_document 的檔案大小" htmlFor="mcp-upload">
+            {num("max_upload_mb", "mcp-upload", 1, 2048, "MB")}
+          </Field>
+          <Field label="呼叫紀錄保留天數" hint="0 = 只受筆數上限限制" htmlFor="mcp-retention">
+            {num("call_log_retention_days", "mcp-retention", 0, 3650, "天")}
+          </Field>
+          <Field label="呼叫紀錄筆數上限" htmlFor="mcp-rows">
+            {num("call_log_max_rows", "mcp-rows", 1000, 10_000_000, "筆")}
+          </Field>
+          <Field label="額外允許的 Host" hint="一行一個，例如 MagicDNS 名稱；綁定的位址會自動加入" htmlFor="mcp-hosts">
+            <ListField id="mcp-hosts" rows={2} value={m.allowed_hosts} onValue={(v) => set("allowed_hosts", v)} className="font-mono text-[12.5px]" />
+          </Field>
+          <Field label="convert_path 白名單根目錄" hint="必須是主機上存在的絕對路徑；留空即隱藏 convert_path" htmlFor="mcp-roots">
+            <ListField id="mcp-roots" rows={2} value={m.local_path_roots} onValue={(v) => set("local_path_roots", v)} className="font-mono text-[12.5px]" />
+          </Field>
+        </div>
         <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
           {dirty && <span className="mr-auto text-xs text-muted-foreground">有未儲存的變更</span>}
           <Button type="button" variant="ghost" size="sm" disabled={!dirty} onClick={() => setEdited(original)}>
