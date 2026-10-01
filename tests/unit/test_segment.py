@@ -19,3 +19,12 @@ def test_split_pdf(fixtures, tmp_path):
 
 def test_segment_dir(tmp_path):
     assert segment_dir(tmp_path, 3) == tmp_path / "seg_3"
+
+
+def test_extract_pages_in_order(fixtures, tmp_path):
+    import pymupdf
+
+    from aidoc.segment import extract_pages
+    out = extract_pages(fixtures / "big.pdf", [7, 2, 45], tmp_path / "r.pdf")
+    d = pymupdf.open(out)
+    assert d.page_count == 3 and "第 7 頁" in d[0].get_text() and "第 45 頁" in d[2].get_text()

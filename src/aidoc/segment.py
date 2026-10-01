@@ -33,6 +33,19 @@ def split_pdf(src: Path, page_start: int, page_end: int, dst: Path) -> Path:
     return dst
 
 
+def extract_pages(src: Path, pages: list[int], dst: Path) -> Path:
+    """Write the given 1-based pages of src, in that order, into dst (per-page repair, spec 2026-10-01 §8.2)."""
+    dst = Path(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(f".{dst.name}.tmp")
+    with fitz.open(str(src)) as doc, fitz.open() as out:
+        for p in pages:
+            out.insert_pdf(doc, from_page=p - 1, to_page=p - 1)
+        out.save(str(tmp), garbage=3, deflate=True)
+    tmp.replace(dst)
+    return dst
+
+
 def segment_dir(work_dir: Path, idx: int) -> Path:
     return Path(work_dir) / f"seg_{idx}"
 

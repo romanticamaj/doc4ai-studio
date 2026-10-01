@@ -54,3 +54,16 @@ def test_whitespace_normalised():
 def test_formulas_untouched():
     md = "$x^2$ and $$\\int_0^1 f$$"
     assert md in normalize(raw(md), 0, 0).markdown
+
+
+def test_normalize_with_page_numbers(tmp_path):
+    from aidoc.models import RawResult
+    from aidoc.normalize import normalize
+    img = tmp_path / "images" / "a.png"
+    img.parent.mkdir()
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    raw = RawResult(markdown="<!-- page: 1 -->\nA\n<!-- page: 2 -->\n![](images/a.png)\n", image_paths=[img],
+                    raw_dir=tmp_path, has_page_markers=True)
+    out = normalize(raw, 0, 900, page_numbers=[17, 42])
+    assert "<!-- page: 17 -->" in out.markdown and "<!-- page: 42 -->" in out.markdown
+    assert "assets/p42_1.png" in out.markdown and out.assets[0][1] == "p42_1.png"

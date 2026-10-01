@@ -158,3 +158,10 @@ def test_any_finalize_error_discards_tmp_dir(env, monkeypatch):
     t = env["store"].get_task(tid)
     assert t["error_kind"] == "transient" and "output" in t["error_msg"]
     assert not (env["root"] / "out" / ".tmp" / tid).exists()
+
+
+def test_fake_output_has_one_marker_per_pdf_page(env):
+    tid = env["make"]("twocol.pdf")                       # 2 pages, pages_per_doc is 3
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    out = env["root"] / "out" / "twocol" / "twocol.md"
+    assert out.read_text(encoding="utf-8").count("<!-- page: ") == 2

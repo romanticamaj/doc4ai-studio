@@ -31,6 +31,7 @@ from aidoc.models import (
 )
 from aidoc.normalize import normalize
 from aidoc.output import OutputWriter, build_sidecar, lookup_cached, planned_output_dir
+from aidoc.pagemap import MARKER
 from aidoc.probe import probe_file
 from aidoc.quality import assess
 from aidoc.retry import RetryPolicy
@@ -198,6 +199,13 @@ def _discard_segments(ctx: PipelineContext) -> None:
         fsops.remove_tree(segment_dir(ctx.work_dir, seg["idx"]))
 
 
+def _relative_markers(md: str, offset: int) -> str:
+    """Segment markdown with page markers renumbered to the segment PDF's own pages (1..n) for the quick check."""
+    if not offset:
+        return md
+    return MARKER.sub(lambda m: f"<!-- page: {int(m.group(1)) - offset} -->", md)
+
+
 def _segment_probe(probe: ProbeResult, page_start: int, page_end: int) -> ProbeResult:
     # has_table_lines is a whole-document fact: a segment without tables must not fail the quick check for it
     return dataclasses.replace(probe, pages=page_end - page_start + 1, has_table_lines=False,
@@ -259,7 +267,7 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
             offset = (ps - 1) if (pages is not None and ps) else 0
             norm = normalize(raw, offset, seg["idx"])
             if multi and quick_check and ps is not None:
-                q = assess(norm.markdown, _segment_probe(probe, ps, pe), seg_pages)
+                q = assess(_relative_markers(norm.markdown, offset), _segment_probe(probe, ps, pe), seg_pages)
                 if q.level == "low":
                     raise EngineError(ErrorKind.engine, f"segment {seg['idx']} quick check failed: "
                                                         f"{', '.join(q.reasons)}")

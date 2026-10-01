@@ -99,8 +99,18 @@ def _clean_ws(md: str) -> str:
     return md.strip("\n") + "\n"
 
 
-def normalize(raw: RawResult, page_offset: int, seg_idx: int) -> NormalizedResult:
+def normalize(raw: RawResult, page_offset: int, seg_idx: int,
+              page_numbers: list[int] | None = None) -> NormalizedResult:
+    """page_numbers (per-page repair, spec 2026-10-01 §6.4): marker N of the raw output is page page_numbers[N-1]
+    of the original document (page_offset must be 0 then)."""
+    if page_numbers is not None and page_offset:
+        raise ValueError("page_numbers and page_offset are exclusive")
     md = raw.markdown
+
+    def to_abs(n: int) -> int:
+        if page_numbers is not None:
+            return page_numbers[n - 1] if 1 <= n <= len(page_numbers) else n
+        return n + page_offset
     by_name: dict[str, Path] = {}
     for p in raw.image_paths:
         by_name.setdefault(Path(p).name, Path(p))
@@ -114,7 +124,7 @@ def normalize(raw: RawResult, page_offset: int, seg_idx: int) -> NormalizedResul
             if at > pos:
                 break
             page = n
-        return None if page is None else page + page_offset
+        return None if page is None else to_abs(page)
 
     counters: dict[object, int] = {}
     assigned: dict[Path, str] = {}
@@ -144,7 +154,7 @@ def normalize(raw: RawResult, page_offset: int, seg_idx: int) -> NormalizedResul
         if Path(p) not in assigned:
             name_for(Path(p), None)
 
-    if page_offset:
-        md = PAGE_RE.sub(lambda m: f"<!-- page: {int(m.group(1)) + page_offset} -->", md)
+    if page_offset or page_numbers is not None:
+        md = PAGE_RE.sub(lambda m: f"<!-- page: {to_abs(int(m.group(1)))} -->", md)
     md = _convert_tables(md)
     return NormalizedResult(markdown=_clean_ws(md), assets=assets)

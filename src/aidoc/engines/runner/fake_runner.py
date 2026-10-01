@@ -53,16 +53,50 @@ def _behavior(sc, req, attempt):
     return sc.get("default", "ok")
 
 
-def _write_ok(req, sc, with_pages=True):
+GARBLE = " :RXOGQ\N{REPLACEMENT CHARACTER}W\N{REPLACEMENT CHARACTER}LW\N{REPLACEMENT CHARACTER}EH "   # T-001 style
+
+
+def _pdf_texts(req):
+    """Text layer of every page of a PDF source (the fake runs on the host interpreter, so PyMuPDF is there)."""
+    if not str(req["src"]).lower().endswith(".pdf"):
+        return None
+    try:
+        import pymupdf
+        with pymupdf.open(req["src"]) as d:
+            return [p.get_text() for p in d]
+    except Exception:  # noqa: BLE001  unreadable: behave like a page-less source
+        return None
+
+
+def _repairing(req):
+    eo = req.get("engine_opts") or {}
+    return eo.get("backend") == "pypdfium" or eo.get("ocr_mode") == "ocr"
+
+
+def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False):
     out = Path(req["out_dir"])
     (out / "images").mkdir(parents=True, exist_ok=True)
     pages = req.get("pages")
-    n = (pages[1] - pages[0] + 1) if pages else sc.get("pages_per_doc", 3)
+    texts = _pdf_texts(req)
+    if pages:
+        n = pages[1] - pages[0] + 1
+    elif texts is not None:
+        n = len(texts)
+    else:
+        n = sc.get("pages_per_doc", 3)
+    garbled_pages = set(sc.get("garbled_pages", [])) if garbled and (sticky or not _repairing(req)) else set()
     parts, images = [], []
     for i in range(1, n + 1):
         if with_pages:
-            parts.append(f"<!-- page: {i} -->")
-        parts.append(f"# 第 {i} 頁 Heading {i}\n\n" + ("假引擎產生的內容 fake engine content. " * 4) + "\n")
+            parts.append(f"<!-- page: {i + shift} -->")
+        excerpt = ""
+        if texts is not None and len(texts) == n:
+            excerpt = " ".join(texts[i - 1][:400].split())
+        elif texts is not None and pages and len(texts) >= pages[1]:
+            excerpt = " ".join(texts[pages[0] - 1 + i - 1][:400].split())
+        parts.append(f"# 第 {i} 頁 Heading {i}\n\n" + ("假引擎產生的內容 fake engine content. " * 4) + "\n"
+                     + (excerpt + "\n" if excerpt else "")
+                     + (GARBLE + "\n" if i in garbled_pages else ""))
         parts.append(f"| col1 | col2 |\n| --- | --- |\n| a{i} | b{i} |\n")
         img = out / "images" / f"img_{i}.png"
         img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 16)
@@ -73,7 +107,8 @@ def _write_ok(req, sc, with_pages=True):
     md.write_text("\n".join(parts), encoding="utf-8")
     return {"markdown_path": str(md), "images": images, "has_page_markers": with_pages, "page_count": n,
             "first_table": {"page": 1, "n_cols": 2, "touches_edge": False},
-            "last_table": {"page": n, "n_cols": 2, "touches_edge": False}}
+            "last_table": {"page": n, "n_cols": 2, "touches_edge": False},
+            "page_map_method": "fake_per_page" if with_pages else "none"}
 
 
 def handle(req):
@@ -86,6 +121,12 @@ def handle(req):
         return _write_ok(req, sc)
     if b == "no_pages":
         return _write_ok(req, sc, with_pages=False)
+    if b == "misaligned":                               # markers numbered +1: every page under the wrong marker
+        return _write_ok(req, sc, shift=1)
+    if b == "garbled":                                  # broken text layer on scenario garbled_pages; OCR repairs it
+        return _write_ok(req, sc, garbled=True)
+    if b == "garbled_sticky":                           # ... and the repair engines cannot fix it either
+        return _write_ok(req, sc, garbled=True, sticky=True)
     if b == "slow_ok":
         # index §6: slow_ok sleeps delay_s; `slow_s` (tests) overrides it for slow_ok only
         time.sleep(float(sc.get("slow_s", sc.get("delay_s", 0))))
