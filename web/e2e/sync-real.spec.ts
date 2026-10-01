@@ -11,6 +11,19 @@ const required = process.env.AIDOC_REQUIRE_MANUAL === "1";
 
 const squash = (s: string) => s.normalize("NFKC").replace(/\u00ad|-\n/g, "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
+/** Spec §7 probes: 24-char windows in the 20-80 % band (deterministic positions), unique in the whole PDF text layer;
+ *  the first 3 are kept. */
+function probes(text: string, whole: string): string[] {
+  const out: string[] = [];
+  for (const f of [0.3, 0.4, 0.5, 0.6, 0.7, 0.25, 0.75]) {
+    const p = text.slice(Math.floor(text.length * f), Math.floor(text.length * f) + 24);
+    if (p.length < 24 || out.includes(p)) continue;
+    if (whole.indexOf(p) === whole.lastIndexOf(p)) out.push(p);
+    if (out.length === 3) break;
+  }
+  return out;
+}
+
 test("real document: 20/20 positions, ≥ 18/20 content probes", async ({ page }) => {
   test.setTimeout(240_000);
   const missing = !base || !docId || !pdfPath || !fs.existsSync(pdfPath);
@@ -25,6 +38,10 @@ test("real document: 20/20 positions, ≥ 18/20 content probes", async ({ page }
   const md = await (await page.request.get(`${base}/api/documents/${docId}/markdown`)).text();
   const sections = new Map<number, string>();
   md.split(/<!-- page: (\d+) -->/).forEach((v, i, a) => { if (i % 2 === 1) sections.set(Number(v), squash(a[i + 1] ?? "")); });
+  const layers: string[] = [];
+  for (let i = 1; i <= pdf.numPages; i++)
+    layers.push(squash((await (await pdf.getPage(i)).getTextContent()).items.map((it) => ("str" in it ? it.str : "")).join("\n")));
+  const whole = layers.join("\u0000");
   let pos = 0, content = 0, decidable = 0;
   const misses: string[] = [];
   for (const n of pickPages(pdf.numPages)) {
@@ -33,12 +50,15 @@ test("real document: 20/20 positions, ≥ 18/20 content probes", async ({ page }
     const r = await topPage(page, "轉換結果");
     if (l === n && r === n) pos++;
     else misses.push(`jump ${n}: left ${l} right ${r}`);
-    const text = squash((await (await pdf.getPage(n)).getTextContent()).items.map((it) => ("str" in it ? it.str : "")).join("\n"));
+    const text = layers[n - 1];
     if (text.length < 120) continue;
+    const ps = probes(text, whole);
+    if (!ps.length) continue;
     decidable++;
-    const probe = text.slice(Math.floor(text.length * 0.4), Math.floor(text.length * 0.4) + 24);
-    if (sections.get(n)?.includes(probe)) content++;
-    else misses.push(`content ${n}: probe not in its section`);
+    // majority of the page's probes inside its own section (a paragraph merged across the page break may take one)
+    const home = ps.filter((p) => sections.get(n)?.includes(p)).length;
+    if (home * 2 > ps.length) content++;
+    else misses.push(`content ${n}: ${home}/${ps.length} probes in its section`);
   }
   console.log(`real sync: positions ${pos}/20, content ${content}/${decidable}`, misses);
   expect(pos).toBe(20);

@@ -45,7 +45,11 @@ fs.writeFileSync(config, `[general]\noutput_dir = ${JSON.stringify(out.replace(/
 // PW_CHANNEL="" uses the bundled browser.
 const channel = process.env.PW_CHANNEL ?? "msedge";
 // `--project real` (pnpm e2e:real) targets an already running real server: no fake server is started for it
-const realOnly = process.argv.some((v, i) => v === "--project=real" || (v === "real" && process.argv[i - 1] === "--project"));
+// (workers re-import this file without the CLI arguments: the decision is passed on in the environment)
+const realOnly =
+  process.env.AIDOC_E2E_REAL_ONLY === "1" ||
+  process.argv.some((v, i) => v === "--project=real" || (v === "real" && process.argv[i - 1] === "--project"));
+if (realOnly) process.env.AIDOC_E2E_REAL_ONLY = "1";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -58,6 +62,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     ...(channel ? { channel } : {}),
   },
+  // the real-sample project runs only with `--project real` (pnpm e2e:real): in a plain run it would only be skipped
   projects: [
     {
       name: "chromium",
@@ -70,7 +75,7 @@ export default defineConfig({
       testMatch: /sync-real\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], ...(channel ? { channel } : {}), baseURL: process.env.AIDOC_E2E_REAL_BASE_URL },
     },
-  ],
+  ].filter((p) => (p.name === "real") === realOnly),
   webServer: realOnly ? undefined : {
     command: `uv run aidoc serve --port ${port}`,
     cwd: path.resolve(here, ".."),

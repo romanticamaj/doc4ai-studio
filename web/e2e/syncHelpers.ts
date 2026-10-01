@@ -4,8 +4,9 @@ export type Pane = "原始檔" | "轉換結果";
 
 type PaneState = { top: number | null; anchorTop: number | null; height: number };
 
-/** In the pane's scroll container: the mounted `[data-page]` with the greatest page number whose top is at or above
- *  the container's top + 25 % of its height (null when no page anchor is mounted); plus where page `n` starts. */
+/** In the pane's scroll container: the topmost page in view — the mounted `[data-page]` with the greatest page number
+ *  whose top is at or above the container's top (12 px slack; spec 2026-10-01 §10.4 「最上方可見頁／最上方頁錨點」).
+ *  null when no page anchor is mounted. Also where page `n` starts. */
 async function paneState(page: Page, pane: Pane, n?: number): Promise<PaneState> {
   return page.evaluate(
     ([label, target]) => {
@@ -15,7 +16,7 @@ async function paneState(page: Page, pane: Pane, n?: number): Promise<PaneState>
       let c: HTMLElement | null = anchors[0].parentElement;
       while (c && c !== sec && !/(auto|scroll)/.test(getComputedStyle(c).overflowY)) c = c.parentElement;
       const box = (c ?? (sec as HTMLElement)).getBoundingClientRect();
-      const limit = box.top + 0.25 * box.height;
+      const limit = box.top + 12;
       let best: number | null = null;
       let anchorTop: number | null = null;
       for (const a of anchors) {
