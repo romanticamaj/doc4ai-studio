@@ -41,7 +41,7 @@ def test_store_threadsafe_and_flags(tmp_root):
     tid = s.list_tasks(job)[0]["id"]
     s.set_task_flags(tid, {"force": True})
     assert s.get_task(tid)["flags"] == {"force": True} and s.next_queued_task()["id"] == s.list_tasks(job)[0]["id"]
-    assert s.con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "2"
+    assert s.con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "4"
     s.close()
 
 

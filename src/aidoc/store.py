@@ -11,7 +11,7 @@ from pathlib import Path
 
 from aidoc.models import TERMINAL_TASK, Attempt, ConvertOptions, JobStatus, TaskStatus
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4   # v3 was never issued: the MCP work (spec 2026-10-01) goes straight to the spec's "v4"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -39,6 +39,25 @@ CREATE TABLE IF NOT EXISTS uploads(
   received INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, status TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS events(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, kind TEXT NOT NULL, ref_id TEXT, payload_json TEXT NOT NULL);
+-- schema v4 (MCP spec 2026-10-01 §3): additive only
+CREATE TABLE IF NOT EXISTS api_tokens(
+  id TEXT PRIMARY KEY, workspace TEXT NOT NULL DEFAULT 'default', name TEXT NOT NULL, prefix TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE, scopes_json TEXT NOT NULL, note TEXT, created_at REAL NOT NULL, expires_at REAL,
+  revoked_at REAL, revoked_reason TEXT, rotated_from TEXT, rate_limit_per_min INTEGER, last_used_at REAL,
+  last_used_ip TEXT, last_client TEXT);
+CREATE TABLE IF NOT EXISTS mcp_clients(
+  id TEXT PRIMARY KEY, token_id TEXT, oauth_client_id TEXT, client_name TEXT NOT NULL, client_version TEXT,
+  protocol_version TEXT, user_agent TEXT, first_seen REAL NOT NULL, last_seen REAL NOT NULL, last_ip TEXT,
+  request_count INTEGER NOT NULL DEFAULT 0, UNIQUE(token_id, client_name, client_version));
+CREATE TABLE IF NOT EXISTS mcp_calls(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, token_id TEXT, token_prefix_seen TEXT, client_id TEXT,
+  method TEXT, tool_name TEXT, resource_uri TEXT, args_summary TEXT, status TEXT NOT NULL, error_code TEXT,
+  http_status INTEGER, duration_ms INTEGER, response_bytes INTEGER, response_tokens_est INTEGER, ip TEXT,
+  protocol_version TEXT, job_id TEXT);
+CREATE INDEX IF NOT EXISTS mcp_calls_ts ON mcp_calls(ts);
+CREATE INDEX IF NOT EXISTS mcp_calls_token_ts ON mcp_calls(token_id, ts);
+CREATE TABLE IF NOT EXISTS oauth_clients(
+  client_id TEXT PRIMARY KEY, metadata_url TEXT, name TEXT, redirect_uris_json TEXT, created_at REAL NOT NULL, last_seen REAL);
 """
 
 _ACTIVE = {TaskStatus.probing.value, TaskStatus.converting.value, TaskStatus.checking.value}
@@ -52,7 +71,7 @@ class TaskBusyError(Exception):
         self.task_id = task_id
 
 
-_JSON_COLS = {"options_json", "tried_json", "quality_json", "payload_json", "flags_json"}
+_JSON_COLS = {"options_json", "tried_json", "quality_json", "payload_json", "flags_json", "scopes_json"}
 _TERMINAL = {s.value for s in TERMINAL_TASK}
 # index A14 (P2): rows with these statuses are re-parented and resumed; done/low/skipped rows are replaced
 _REUSABLE = {TaskStatus.queued.value, TaskStatus.probing.value, TaskStatus.converting.value,
@@ -437,3 +456,121 @@ class Store:
         r = self._q1("SELECT MAX(seq) FROM events")
         if r and r[0] is not None:
             self.con.execute("DELETE FROM events WHERE seq <= ?", (r[0] - keep,))
+
+    # ---- MCP (schema v4)
+    # ---- api_tokens (MCP spec §2.3/§3)
+    def create_api_token(self, *, name, prefix, token_hash, scopes: list[str], expires_at, note=None,
+                         rate_limit_per_min=None, rotated_from=None, workspace="default") -> str:
+        tid = _new_id()
+        self.con.execute(
+            "INSERT INTO api_tokens(id, workspace, name, prefix, token_hash, scopes_json, note, created_at, expires_at, "
+            "rate_limit_per_min, rotated_from) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (tid, workspace, name, prefix, token_hash, json.dumps(list(scopes)), note, time.time(), expires_at,
+             rate_limit_per_min, rotated_from))
+        return tid
+
+    def get_api_token(self, token_id) -> dict | None:
+        return _row(self._q1("SELECT * FROM api_tokens WHERE id=?", (token_id,)))
+
+    def get_api_token_by_hash(self, token_hash) -> dict | None:
+        return _row(self._q1("SELECT * FROM api_tokens WHERE token_hash=?", (token_hash,)))
+
+    def list_api_tokens(self) -> list[dict]:
+        return self._qa("SELECT * FROM api_tokens ORDER BY created_at DESC, rowid DESC")
+
+    def update_api_token(self, token_id, **fields) -> None:
+        self._update("api_tokens", "id", token_id, fields)
+
+    def revoke_api_token(self, token_id, reason: str | None, at: float) -> bool:
+        """False when the token is already revoked (nothing changes)."""
+        cur = self.con.execute("UPDATE api_tokens SET revoked_at=?, revoked_reason=? WHERE id=? AND revoked_at IS NULL",
+                               (at, reason, token_id))
+        return cur.rowcount == 1
+
+    # ---- mcp_clients (observed clients; display only)
+    def upsert_mcp_client(self, *, token_id, client_name, client_version, protocol_version, user_agent, ip,
+                          now) -> tuple[str, bool]:
+        version = client_version or ""
+        with self.con.lock:
+            old = self._q1("SELECT id FROM mcp_clients WHERE token_id IS ? AND client_name=? AND client_version=?",
+                           (token_id, client_name, version))
+            if old is not None:
+                self.con.execute("UPDATE mcp_clients SET protocol_version=?, user_agent=?, last_seen=?, last_ip=?, "
+                                 "request_count=request_count+1 WHERE id=?",
+                                 (protocol_version, user_agent, now, ip, old["id"]))
+                return old["id"], False
+            cid = _new_id()
+            self.con.execute("INSERT INTO mcp_clients(id, token_id, client_name, client_version, protocol_version, "
+                             "user_agent, first_seen, last_seen, last_ip, request_count) VALUES(?,?,?,?,?,?,?,?,?,1)",
+                             (cid, token_id, client_name, version, protocol_version, user_agent, now, now, ip))
+            return cid, True
+
+    def get_mcp_client(self, client_id) -> dict | None:
+        return _row(self._q1("SELECT * FROM mcp_clients WHERE id=?", (client_id,)))
+
+    def list_mcp_clients(self, token_id=None, active_since: float | None = None) -> list[dict]:
+        sql, args = "SELECT * FROM mcp_clients WHERE 1=1", []
+        if token_id is not None:
+            sql += " AND token_id=?"
+            args.append(token_id)
+        if active_since is not None:
+            sql += " AND last_seen >= ?"
+            args.append(active_since)
+        return self._qa(sql + " ORDER BY last_seen DESC, rowid DESC", args)
+
+    # ---- mcp_calls (one row per MCP HTTP request)
+    _MCP_CALL_COLS = ("ts", "token_id", "token_prefix_seen", "client_id", "method", "tool_name", "resource_uri",
+                      "args_summary", "status", "error_code", "http_status", "duration_ms", "response_bytes",
+                      "response_tokens_est", "ip", "protocol_version", "job_id")
+
+    def insert_mcp_call(self, *, status: str, **fields) -> int:
+        unknown = set(fields) - set(self._MCP_CALL_COLS)
+        if unknown:
+            raise TypeError(f"unknown mcp_calls columns: {sorted(unknown)}")
+        fields["status"] = status
+        fields.setdefault("ts", time.time())
+        cols = list(fields)
+        cur = self.con.execute(f"INSERT INTO mcp_calls({', '.join(cols)}) VALUES({', '.join('?' * len(cols))})",
+                               tuple(_val(fields[c]) for c in cols))
+        return cur.lastrowid
+
+    def list_mcp_calls(self, *, token_id=None, client_id=None, tool=None, status=None, since=None, until=None,
+                       before_id=None, limit=100) -> list[dict]:
+        sql, args = "SELECT * FROM mcp_calls WHERE 1=1", []
+        for col, val in (("token_id", token_id), ("client_id", client_id), ("tool_name", tool), ("status", status)):
+            if val is not None:
+                sql += f" AND {col}=?"
+                args.append(val)
+        if since is not None:
+            sql += " AND ts >= ?"
+            args.append(since)
+        if until is not None:
+            sql += " AND ts <= ?"
+            args.append(until)
+        if before_id is not None:
+            sql += " AND id < ?"
+            args.append(before_id)
+        return self._qa(sql + " ORDER BY id DESC LIMIT ?", [*args, max(1, min(int(limit), 1000))])
+
+    def count_mcp_calls(self, since: float, token_id=None, errors_only=False) -> int:
+        sql, args = "SELECT COUNT(*) FROM mcp_calls WHERE ts >= ?", [since]
+        if token_id is not None:
+            sql += " AND token_id=?"
+            args.append(token_id)
+        if errors_only:
+            sql += " AND status != 'ok'"
+        return int(self._q1(sql, args)[0])
+
+    def mcp_call_rows_since(self, since: float) -> list[dict]:
+        return self._qa("SELECT id, ts, token_id, client_id, tool_name, method, status, duration_ms, response_tokens_est "
+                        "FROM mcp_calls WHERE ts >= ? ORDER BY ts", (since,))
+
+    def prune_mcp_calls(self, *, older_than_ts: float, max_rows: int) -> int:
+        n = self.con.execute("DELETE FROM mcp_calls WHERE ts < ?", (older_than_ts,)).rowcount
+        r = self._q1("SELECT COUNT(*), MAX(id) FROM mcp_calls")
+        total, max_id = (int(r[0]), r[1]) if r else (0, None)
+        if max_id is not None and total > max_rows:
+            cut = self._q1("SELECT id FROM mcp_calls ORDER BY id DESC LIMIT 1 OFFSET ?", (max_rows - 1,))
+            if cut is not None:
+                n += self.con.execute("DELETE FROM mcp_calls WHERE id < ?", (cut[0],)).rowcount
+        return n
