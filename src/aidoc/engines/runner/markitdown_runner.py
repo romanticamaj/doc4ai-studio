@@ -68,6 +68,64 @@ def pptx_pictures_in_order(path):
     return out
 
 
+def md_normalize(text):
+    """MarkItDown's own post-processing of every conversion (rstrip lines, collapse 3+ newlines)."""
+    text = "\n".join(line.rstrip() for line in re.split(r"\r?\n", text))
+    return re.sub(r"\n{3,}", "\n\n", text)
+
+
+def split_formfeed(text, n_pages):
+    """pdfminer puts a form feed after every page: split, drop one trailing empty part; None if the count differs."""
+    parts = text.split("\f")
+    if parts and not parts[-1].strip():
+        parts = parts[:-1]
+    return parts if len(parts) == n_pages else None
+
+
+def join_like_markitdown(pages, form_path):
+    """MarkItDown's own join: form path = non-empty chunks joined by blank lines; pdfminer path = original text."""
+    if form_path:
+        return "\n\n".join(p for p in pages if p).strip()
+    return "\f".join(pages) + "\f"
+
+
+def pdf_pages(path):
+    """Spec 2026-10-01 §6.3: MarkItDown's PDF conversion, page by page, with its own primitives. None when the
+    pages, joined back MarkItDown's way, do not reproduce `MarkItDown().convert()` exactly (self-check)."""
+    import io
+
+    import pdfminer.high_level
+    import pdfplumber
+    from markitdown import MarkItDown
+    from markitdown.converters import _pdf_converter as P
+
+    data = io.BytesIO(Path(path).read_bytes())
+    chunks, form = [], 0
+    with pdfplumber.open(data) as pdf:
+        for page in pdf.pages:
+            content = P._extract_form_content_from_words(page)
+            if content is not None:
+                form += 1
+                chunks.append(content if content.strip() else "")
+            else:
+                chunks.append((page.extract_text() or "").strip())
+            page.close()
+    if form == 0:
+        data.seek(0)
+        text = pdfminer.high_level.extract_text(data)
+        pages = split_formfeed(text, len(chunks))
+        if pages is None:
+            return None
+        joined = text
+    else:
+        pages = chunks
+        joined = join_like_markitdown(pages, form_path=True)
+    ref = MarkItDown(enable_plugins=False).convert(str(path)).markdown
+    if md_normalize(P._merge_partial_numbering_lines(joined)) != ref:
+        return None
+    return pages
+
+
 def handle(req):
     from markitdown import MarkItDown
     src = Path(req["src"])
@@ -83,7 +141,20 @@ def handle(req):
         if name in ("UnsupportedFormatException", "FileConversionException"):
             raise _proto.RunnerError("input", f"{name}: {e}")
         raise
-    images, has_pages = [], False
+    images, has_pages, method = [], False, None
+    if ext == ".pdf" or req.get("kind") == "pdf":
+        try:
+            pages = pdf_pages(src)
+        except Exception as e:  # noqa: BLE001  internals changed: no page map (-> page_map_incomplete -> low)
+            _proto.log(f"markitdown per-page extraction failed: {type(e).__name__}: {e}")
+            pages = None
+        if pages is not None:
+            md = "".join(f"<!-- page: {i} -->\n\n" + (md_normalize(p).strip("\n") + "\n\n" if p.strip() else "")
+                         for i, p in enumerate(pages, 1))
+            has_pages, method = True, "markitdown_per_page"
+        else:
+            _proto.log("markitdown per-page self-check failed: output has no page markers")
+            method = "none"
     if ext == ".docx":
         media = docx_media_in_order(src)
     elif ext == ".pptx":
@@ -102,8 +173,8 @@ def handle(req):
     md_path = out / "out.md"
     md_path.write_text(md, encoding="utf-8")
     _proto.progress(1, 1)
-    return {"markdown_path": str(md_path), "images": images, "has_page_markers": has_pages, "page_count": None,
-            "first_table": None, "last_table": None}
+    return {"markdown_path": str(md_path), "images": images, "has_page_markers": has_pages,
+            "page_count": None, "first_table": None, "last_table": None, "page_map_method": method}
 
 
 if __name__ == "__main__":
