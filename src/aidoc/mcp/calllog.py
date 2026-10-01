@@ -15,7 +15,11 @@ ACTIVE_WINDOW_S = 300          # spec §3: a client is active when last_seen is 
 TOUCH_THROTTLE_S = 10          # spec §4.3 step 4
 ARGS_MAX = 500
 IDLE_SWEEP_S = 30
-IDENTITY_TTL_S = 3600          # spike S5: legacy stateless clients identify themselves on `initialize` only
+IDENTITY_TTL_S = 3600
+CLIENT_NAME_MAX = 100          # clientInfo is self-reported: bound what one client can make us store
+CLIENT_VERSION_MAX = 50
+USER_AGENT_MAX = 300
+CLIENT_RETENTION_DAYS = 90     # observed clients idle this long are removed by maintenance          # spike S5: legacy stateless clients identify themselves on `initialize` only
 _REDACT_KEYS = ("content_base64",)
 
 
@@ -86,9 +90,11 @@ class CallRecorder:
 
     def note_client(self, *, token_id, client_name, client_version, protocol_version, user_agent, ip, now=None) -> str:
         now = time.time() if now is None else now
-        cid, created = self.ctx.store.upsert_mcp_client(token_id=token_id, client_name=client_name or "unknown",
-                                                        client_version=client_version, protocol_version=protocol_version,
-                                                        user_agent=user_agent, ip=ip, now=now)
+        cid, created = self.ctx.store.upsert_mcp_client(
+            token_id=token_id, client_name=(client_name or "unknown")[:CLIENT_NAME_MAX],
+            client_version=client_version[:CLIENT_VERSION_MAX] if client_version else client_version,
+            protocol_version=protocol_version[:40] if protocol_version else protocol_version,
+            user_agent=user_agent[:USER_AGENT_MAX] if user_agent else user_agent, ip=ip, now=now)
         with self._lock:
             was_active = cid in self._active
             self._active[cid] = now

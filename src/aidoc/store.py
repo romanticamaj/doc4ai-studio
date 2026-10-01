@@ -512,6 +512,9 @@ class Store:
                              (cid, token_id, client_name, version, protocol_version, user_agent, now, now, ip))
             return cid, True
 
+    def prune_mcp_clients(self, *, idle_before_ts: float) -> int:
+        return self.con.execute("DELETE FROM mcp_clients WHERE last_seen < ?", (idle_before_ts,)).rowcount
+
     def get_mcp_client(self, client_id) -> dict | None:
         return _row(self._q1("SELECT * FROM mcp_clients WHERE id=?", (client_id,)))
 

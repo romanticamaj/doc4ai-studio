@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aidoc.mcp import tokens as T
+from aidoc.mcp.middleware import TOOL_SCOPES
 from aidoc.mcp.principal import SCOPE_READ, SCOPES
 from aidoc.mcp.server import PROTOCOL_VERSIONS, SDK_VERSION, endpoint_urls, transport_security_for
 from aidoc.mcp.snippets import render_snippets
@@ -16,6 +17,7 @@ from aidoc.server.auth import ApiError
 
 router = APIRouter()
 EXPIRING_SOON_S = 14 * 86400
+UNKNOWN_TOOL = "(unknown)"
 DAY = 86400
 
 
@@ -275,7 +277,8 @@ def stats(store, since: float, bucket_s: float, buckets: int) -> dict:
     for r in rows:
         err = r["status"] != "ok"
         if r.get("tool_name"):
-            t = per_tool.setdefault(r["tool_name"], {"calls": 0, "errors": 0, "durations": [], "tokens": []})
+            name = r["tool_name"] if r["tool_name"] in TOOL_SCOPES else UNKNOWN_TOOL     # junk names share one row
+            t = per_tool.setdefault(name, {"calls": 0, "errors": 0, "durations": [], "tokens": []})
             t["calls"] += 1
             t["errors"] += int(err)
             if r.get("duration_ms") is not None:
