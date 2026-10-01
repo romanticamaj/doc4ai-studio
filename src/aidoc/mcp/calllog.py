@@ -39,6 +39,7 @@ class CallRecorder:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.sweepers: list = []                        # extra periodic jobs (auth-flood flush), run by the watcher
 
     # ---- rows
     def record(self, *, status: str, token_id=None, token_prefix_seen=None, client_id=None, method=None, tool_name=None,
@@ -52,14 +53,24 @@ class CallRecorder:
             args_summary=summarize_args(args), error_code=error_code, http_status=http_status, duration_ms=duration_ms,
             response_bytes=response_bytes, response_tokens_est=response_tokens_est, ip=ip,
             protocol_version=protocol_version, job_id=job_id)
-        token = store.get_api_token(token_id) if token_id else None
-        client = store.get_mcp_client(client_id) if client_id else None
-        self.ctx.bus.publish("mcp.call", str(rid), {
-            "id": rid, "ts": ts, "token_id": token_id, "token_name": token["name"] if token else None,
-            "client_id": client_id, "client_name": client["client_name"] if client else None, "method": method,
-            "tool_name": tool_name, "status": status, "error_code": error_code, "http_status": http_status,
-            "duration_ms": duration_ms, "response_tokens_est": response_tokens_est, "job_id": job_id})
+        self._publish_call(store.get_mcp_call(rid))
         return rid
+
+    def update_call(self, call_id: int, *, args=None) -> None:
+        """Rewrite an aggregate row's summary (auth flood counts) and re-send it as the same live event id."""
+        self.ctx.store.update_mcp_call(call_id, args_summary=summarize_args(args))
+        row = self.ctx.store.get_mcp_call(call_id)
+        if row is not None:
+            self._publish_call(row)
+
+    def _publish_call(self, row: dict) -> None:
+        store = self.ctx.store
+        token = store.get_api_token(row["token_id"]) if row["token_id"] else None
+        client = store.get_mcp_client(row["client_id"]) if row["client_id"] else None
+        self.ctx.bus.publish("mcp.call", str(row["id"]), {
+            **{k: row[k] for k in ("id", "ts", "token_id", "client_id", "method", "tool_name", "status", "error_code",
+                                   "http_status", "duration_ms", "response_tokens_est", "job_id")},
+            "token_name": token["name"] if token else None, "client_name": client["client_name"] if client else None})
 
     # ---- clients
     def _client_payload(self, row: dict, state: str) -> dict:
@@ -127,6 +138,8 @@ class CallRecorder:
         while not self._stop.wait(IDLE_SWEEP_S):
             try:
                 self.sweep_idle()
+                for fn in self.sweepers:
+                    fn()
             except Exception:  # noqa: BLE001  a watcher must never take the server down
                 traceback.print_exc()
 

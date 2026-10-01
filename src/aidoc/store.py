@@ -538,6 +538,15 @@ class Store:
                                tuple(_val(fields[c]) for c in cols))
         return cur.lastrowid
 
+    def update_mcp_call(self, call_id: int, **fields) -> None:
+        unknown = set(fields) - set(self._MCP_CALL_COLS)
+        if unknown:
+            raise TypeError(f"unknown mcp_calls columns: {sorted(unknown)}")
+        self._update("mcp_calls", "id", call_id, fields)
+
+    def get_mcp_call(self, call_id: int) -> dict | None:
+        return _row(self._q1("SELECT * FROM mcp_calls WHERE id=?", (call_id,)))
+
     def list_mcp_calls(self, *, token_id=None, client_id=None, tool=None, status=None, since=None, until=None,
                        before_id=None, limit=100) -> list[dict]:
         sql, args = "SELECT * FROM mcp_calls WHERE 1=1", []

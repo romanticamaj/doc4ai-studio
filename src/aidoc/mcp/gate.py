@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs
 
 from aidoc.mcp import tokens as T
+from aidoc.mcp.authguard import AuthFailureGuard
 from aidoc.mcp.principal import AuthFailure, PatVerifier, Principal, parse_bearer
 
 MIB = 1024 * 1024
@@ -71,8 +72,16 @@ async def _send_json(send, status: int, body: dict, headers: list[tuple[bytes, b
 
 
 class McpGate:
-    def __init__(self, ctx, inner, verifier: PatVerifier, limiter, recorder):
+    def __init__(self, ctx, inner, verifier: PatVerifier, limiter, recorder, guard: AuthFailureGuard | None = None):
         self.ctx, self.inner, self.verifier, self.limiter, self.recorder = ctx, inner, verifier, limiter, recorder
+        self.guard = guard if guard is not None else AuthFailureGuard(recorder)
+
+    async def _flooded(self, send, retry: int) -> None:
+        """An IP over the failed-auth limit: 429, counted into its aggregate row instead of a row per attempt."""
+        await _send_json(send, 429, {"error": "too_many_auth_failures", "retry_after": retry,
+                                     "error_description": f"Too many failed authentications from this address; "
+                                                          f"retry after {retry} s with a valid token"},
+                         [(b"retry-after", str(retry).encode())])
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -87,12 +96,18 @@ class McpGate:
         qs = {k.lower(): v for k, v in parse_qs(scope.get("query_string", b"").decode("latin-1")).items()}
         in_url = qs.get("token") or qs.get("access_token")
         if in_url is not None:                      # spec: tokens never travel in the URL (RFC 6750 form included)
+            retry = self.guard.on_failure(ip, "token_in_query", T.prefix_seen(in_url[0] if in_url else None), pv)
+            if retry is not None:
+                return await self._flooded(send, retry)
             self.recorder.record(status="auth_error", error_code="token_in_query", http_status=400, ip=ip,
                                  token_prefix_seen=T.prefix_seen(in_url[0] if in_url else None), protocol_version=pv, ts=ts)
             return await _send_json(send, 400, {"error": "token_in_query",
                                                 "error_description": "Send the token in the Authorization header"})
         result = self.verifier.verify(parse_bearer(_header(scope, "authorization")))
         if isinstance(result, AuthFailure):
+            retry = self.guard.on_failure(ip, result.reason, result.prefix_seen, pv)
+            if retry is not None:
+                return await self._flooded(send, retry)
             text = _FAILURE_TEXT[result.reason]
             self.recorder.record(status="auth_error", error_code=result.reason, http_status=401, ip=ip,
                                  token_prefix_seen=result.prefix_seen, protocol_version=pv, ts=ts)

@@ -13,6 +13,7 @@ from mcp.server import MCPServer
 from mcp.server.caching import CacheHint
 from mcp.server.transport_security import TransportSecuritySettings
 
+from aidoc.mcp.authguard import AuthFailureGuard
 from aidoc.mcp.calllog import CallRecorder
 from aidoc.mcp.gate import McpGate, max_body_bytes
 from aidoc.mcp.middleware import make_middleware
@@ -155,6 +156,7 @@ class McpRuntime:
     limiter: RateLimiter
     recorder: CallRecorder
     secret: bytes
+    guard: AuthFailureGuard
 
 
 def build_mcp(ctx) -> McpRuntime:
@@ -177,5 +179,7 @@ def build_mcp(ctx) -> McpRuntime:
     inner = mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True, json_response=False,
                                     transport_security=transport_security_for(cfg, bind_host, port),
                                     max_request_body_size=max_body_bytes(cfg), host=bind_host)
-    return McpRuntime(mcp=mcp, app=McpGate(ctx, inner, verifier, limiter, recorder), verifier=verifier, limiter=limiter,
-                      recorder=recorder, secret=secret)
+    guard = AuthFailureGuard(recorder)
+    recorder.sweepers.append(guard.sweep)              # flush auth-flood counts every watcher tick
+    return McpRuntime(mcp=mcp, app=McpGate(ctx, inner, verifier, limiter, recorder, guard), verifier=verifier,
+                      limiter=limiter, recorder=recorder, secret=secret, guard=guard)
