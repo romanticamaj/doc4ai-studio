@@ -123,3 +123,32 @@ def test_convert_path_applies_the_same_file_type_checks(mcp_server, mcp_env, roo
         assert out["status"] == "queued"
     finally:
         ctx.config.mcp.local_path_roots = []
+
+
+def test_file_being_converted_is_already_converting_in_both_tools(mcp_server, mcp_env, roots, fixtures, monkeypatch):
+    """Item 7: convert_path used to answer with a new `failed` job; both tools now answer already_converting with
+    the job that is converting it."""
+    import base64
+
+    from aidoc.batch import register_source
+    from aidoc.models import ConvertOptions
+    allowed, _ = roots
+    ctx = mcp_env.ctx
+    src = allowed / "sub" / "text.pdf"
+    opts = ConvertOptions(output_dir=ctx.config.output_root())
+    busy_job = ctx.store.create_job(opts, "web")
+    tid, _ = register_source(ctx.store, busy_job, src.resolve(), opts)
+    ctx.store.update_task(tid, status="converting")
+    monkeypatch.setattr(ctx.store, "task_is_live", lambda task_id: task_id == tid)      # a worker holds its lock
+    raw, _ = mcp_env.issue(scopes=("doc4ai:read", "doc4ai:convert", "doc4ai:convert:local"))
+    ctx.config.mcp.local_path_roots = [str(allowed)]
+    try:
+        jobs_before = {j["id"] for j in ctx.store.list_jobs()}
+        e = _err(mcp_call(mcp_server, raw, "convert_path", {"path": str(src)}))
+        assert e["code"] == "already_converting" and e["job_id"] == busy_job and e["task_id"] == tid
+        b64 = base64.b64encode(src.read_bytes()).decode()
+        e2 = _err(mcp_call(mcp_server, raw, "convert_document", {"filename": "text.pdf", "content_base64": b64}))
+        assert e2["code"] == "already_converting" and e2["job_id"] == busy_job
+        assert {j["id"] for j in ctx.store.list_jobs() if j["status"] != "cancelled"} == jobs_before
+    finally:
+        ctx.config.mcp.local_path_roots = []

@@ -109,6 +109,19 @@ def _guard_capacity(ctx, token_id: str | None, size: int) -> None:
         raise ToolFailure("insufficient_disk", "not enough free disk for this conversion", needed=needed, free=free)
 
 
+def busy_failure(ctx, task_id: str) -> ToolFailure:
+    task = ctx.store.get_task(task_id)
+    return ToolFailure("already_converting", "this file is being converted right now",
+                       hint="poll the existing job with get_job", task_id=task_id, job_id=task["job_id"] if task else None)
+
+
+def _check_not_busy(ctx, sha: str, out_dir) -> None:
+    """The same answer from both convert tools while another process converts the file (item 7)."""
+    tid = ctx.store.busy_task_id(sha, out_dir)
+    if tid is not None:
+        raise busy_failure(ctx, tid)
+
+
 def start_job_for_bytes(ctx, filename: str, data: bytes, opts: ConvertOptions, token_id: str | None = None) -> tuple[str, str]:
     store = ctx.store
     job_id = reserve_job(ctx, opts, token_id)
@@ -123,6 +136,8 @@ def start_job_for_bytes(ctx, filename: str, data: bytes, opts: ConvertOptions, t
         tid = ctx.uploads.create_task_from_upload(job_id, uid, opts)
     except UploadError as e:
         _abandon(ctx, job_id)
+        if e.extra.get("task_id"):
+            raise busy_failure(ctx, e.extra["task_id"]) from None
         raise ToolFailure("already_converting", "this file is being converted right now", **e.extra) from None
     except BaseException:
         _abandon(ctx, job_id)
@@ -215,6 +230,7 @@ def register_convert_path_tool(mcp, ctx) -> None:
             hit = lookup_cached(ctx.store, sha, out_dir)
             if hit is not None and hit.get("id"):
                 return ConvertOut(job_id=None, status="cached", doc_id=hit["id"])
+        _check_not_busy(ctx, sha, out_dir)
         token_id = principal.token_id if principal else None
         _guard_capacity(ctx, token_id, real.stat().st_size)
 
@@ -225,6 +241,11 @@ def register_convert_path_tool(mcp, ctx) -> None:
             except BaseException:
                 _abandon(ctx, job_id)
                 raise
+            task = ctx.store.get_task(tid)
+            if task["status"] == "failed" and str(task.get("error_msg") or "").startswith("already_converting"):
+                _abandon(ctx, job_id)                       # lost the race with another process: same answer
+                busy = ctx.store.busy_task_id(sha, out_dir)
+                raise busy_failure(ctx, busy) if busy else ToolFailure("already_converting", "this file is being converted right now")
             _publish(ctx, job_id, tid)
             return job_id, tid
         job_id, tid = await anyio.to_thread.run_sync(start)
@@ -259,6 +280,7 @@ def register_convert_tools(mcp, ctx) -> None:
             hit = lookup_cached(ctx.store, sha, out_dir)
             if hit is not None and hit.get("id"):
                 return ConvertOut(job_id=None, status="cached", doc_id=hit["id"])
+        _check_not_busy(ctx, sha, out_dir)
         token_id = principal.token_id if principal else None
         _guard_capacity(ctx, token_id, len(data))
         job_id, tid = await anyio.to_thread.run_sync(start_job_for_bytes, ctx, filename, data, opts, token_id)
