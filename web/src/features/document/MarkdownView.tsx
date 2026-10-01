@@ -29,9 +29,11 @@ const SAFE_ASSET = /^(?:\.\/)?assets\/((?:[A-Za-z0-9_@+-][A-Za-z0-9._@+-]*)(?:\/
  * endpoint, and only that URL gets the API token. Any other link that would land on this server's /api is
  * dropped: a converted document must never be able to point the browser at an API URL (final P4 check C1).
  */
-export function markdownUrl(url: string, docId: string): string {
+export function markdownUrl(url: string, docId: string, version?: string | number): string {
   const m = SAFE_ASSET.exec(url);
-  if (m) return withToken(`/api/documents/${docId}/assets/${m[1]}`);
+  // `version` (the document's conversion time) changes on every reconversion, which rewrites assets under the same
+  // names: a new URL can never be served from an old browser cache entry
+  if (m) return withToken(`/api/documents/${docId}/assets/${m[1]}${version != null ? `?v=${encodeURIComponent(String(version))}` : ""}`);
   if (url.includes("\\")) return "";
   if (url.startsWith("#")) return url;
   // other relative URLs point nowhere useful from /documents/<id> (and could be steered at /api): drop them
@@ -50,12 +52,12 @@ export function markdownUrl(url: string, docId: string): string {
 }
 
 /** The same URL pass react-markdown's urlTransform made: every URL attribute of every element. */
-function rewriteUrls(tree: Root, docId: string): Root {
+function rewriteUrls(tree: Root, docId: string, version?: string | number): Root {
   visit(tree, "element", (el: Element) => {
     for (const key in urlAttributes) {
       if (!Object.hasOwn(urlAttributes, key) || !Object.hasOwn(el.properties, key)) continue;
       const test = urlAttributes[key];
-      if (test === null || test.includes(el.tagName)) el.properties[key] = markdownUrl(String(el.properties[key] || ""), docId);
+      if (test === null || test.includes(el.tagName)) el.properties[key] = markdownUrl(String(el.properties[key] || ""), docId, version);
     }
   });
   return tree;
@@ -96,9 +98,9 @@ const baseComponents: Components = {
     src ? <img src={src} {...props} loading="lazy" decoding="async" /> : null,
 } as Components;
 
-function toReact(tree: Root, docId: string, warnings?: ReadonlyMap<number, PageWarning>): ReactNode {
+function toReact(tree: Root, docId: string, warnings?: ReadonlyMap<number, PageWarning>, version?: string | number): ReactNode {
   const components = warnings?.size ? ({ ...baseComponents, div: pageAnchorDiv(warnings) } as Components) : baseComponents;
-  return toJsxRuntime(rewriteUrls(tree, docId), {
+  return toJsxRuntime(rewriteUrls(tree, docId, version), {
     Fragment,
     jsx,
     jsxs,
@@ -116,15 +118,18 @@ type Props = {
   scrollRef?: React.RefObject<HTMLElement | null>;
   /** notes shown at the page anchors of flagged pages (spec 2026-10-01 §9.4) */
   warnings?: ReadonlyMap<number, PageWarning>;
+  /** the document's conversion version (created_at): appended to asset URLs */
+  version?: string | number;
 };
 
-function MarkdownViewImpl({ markdown, docId, scrollRef, warnings }: Props) {
-  if (markdown.length <= SMALL || !scrollRef) return <WholeMarkdown markdown={markdown} docId={docId} warnings={warnings} />;
-  return <BlockMarkdown markdown={markdown} docId={docId} scrollRef={scrollRef} warnings={warnings} />;
+function MarkdownViewImpl({ markdown, docId, scrollRef, warnings, version }: Props) {
+  if (markdown.length <= SMALL || !scrollRef)
+    return <WholeMarkdown markdown={markdown} docId={docId} warnings={warnings} version={version} />;
+  return <BlockMarkdown markdown={markdown} docId={docId} scrollRef={scrollRef} warnings={warnings} version={version} />;
 }
 
-function WholeMarkdown({ markdown, docId, warnings }: { markdown: string; docId: string; warnings?: ReadonlyMap<number, PageWarning> }) {
-  const content = useMemo(() => toReact(processBlock(markdown, NONCE), docId, warnings), [markdown, docId, warnings]);
+function WholeMarkdown({ markdown, docId, warnings, version }: { markdown: string; docId: string; warnings?: ReadonlyMap<number, PageWarning>; version?: string | number }) {
+  const content = useMemo(() => toReact(processBlock(markdown, NONCE), docId, warnings, version), [markdown, docId, warnings, version]);
   return <div className="md-body">{content}</div>;
 }
 
@@ -136,7 +141,7 @@ function estimateBlock(b: MdBlock, width: number): number {
 
 const KEEP_TREES = 24;
 
-function BlockMarkdown({ markdown, docId, scrollRef, warnings }: Omit<Required<Props>, "warnings"> & Pick<Props, "warnings">) {
+function BlockMarkdown({ markdown, docId, scrollRef, warnings, version }: Omit<Required<Props>, "warnings" | "version"> & Pick<Props, "warnings" | "version">) {
   const blocks = useMemo(() => splitMarkdown(markdown), [markdown]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const renderer = useMemo(() => new BlockRenderer(NONCE), []);
@@ -149,8 +154,8 @@ function BlockMarkdown({ markdown, docId, scrollRef, warnings }: Omit<Required<P
   useMemo(() => {
     for (const c of pending.current.values()) c();
     pending.current.clear();
-    trees.current = new Map([[0, toReact(processBlock(blocks[0].text, NONCE), docId, warnings)]]);
-  }, [blocks, docId, warnings]);
+    trees.current = new Map([[0, toReact(processBlock(blocks[0].text, NONCE), docId, warnings, version)]]);
+  }, [blocks, docId, warnings, version]);
 
   const anchorOffsets = useRef<(number[] | undefined)[]>([]);
   useMemo(() => (anchorOffsets.current = []), [blocks]);
@@ -178,7 +183,7 @@ function BlockMarkdown({ markdown, docId, scrollRef, warnings }: Omit<Required<P
         i,
         renderer.render(blocks[i].text, () => Math.abs(i - center.current), (tree) => {
           pending.current.delete(i);
-          trees.current.set(i, toReact(tree, docId, warnings));
+          trees.current.set(i, toReact(tree, docId, warnings, version));
           while (trees.current.size > KEEP_TREES) {
             // evict the cached block farthest from the view
             let far = -1;
@@ -189,7 +194,7 @@ function BlockMarkdown({ markdown, docId, scrollRef, warnings }: Omit<Required<P
         }),
       );
     }
-  }, [lo, hi, blocks, renderer, docId, warnings]);
+  }, [lo, hi, blocks, renderer, docId, warnings, version]);
   useEffect(
     () => () => {
       for (const c of pending.current.values()) c();

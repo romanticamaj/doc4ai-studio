@@ -88,3 +88,11 @@ test("flagged pages get a note at their page anchor (spec 2026-10-01 §9.4)", ()
   expect(chip?.closest("[data-page]")?.getAttribute("data-page")).toBe("2");
   expect(container.querySelectorAll("[data-page-warning]").length).toBe(1);
 });
+
+test("asset URLs carry the conversion version, so a reconverted image is never taken from the browser cache", async () => {
+  const { markdownUrl } = await import("../MarkdownView");
+  expect(markdownUrl("assets/p1_1.png", "d1", 1790841234.5)).toBe("/api/documents/d1/assets/p1_1.png?v=1790841234.5");
+  expect(markdownUrl("assets/p1_1.png", "d1")).toBe("/api/documents/d1/assets/p1_1.png");
+  const { container } = render(<MarkdownView docId="d1" version={42} markdown={"![x](assets/p2_1.png)"} />);
+  expect(container.querySelector("img")!.getAttribute("src")).toBe("/api/documents/d1/assets/p2_1.png?v=42");
+});

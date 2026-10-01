@@ -91,7 +91,7 @@ export default function DocumentPage() {
   const d = q.data;
   const doc = d.document;
   const kind = sourceKind(d);
-  const sourceUrl = withToken(`/api/documents/${doc.id}/source`);
+  const sourceUrl = withToken(`/api/documents/${doc.id}/source?v=${encodeURIComponent(String(doc.created_at))}`);
   const showSource = d.source_available && !sourceGone;
 
   const copy = async () => {
@@ -210,7 +210,7 @@ export default function DocumentPage() {
               </div>
             )}
             <TabsContent value="markdown" className="relative min-h-0 flex-1 overflow-auto px-6 py-5 sm:px-8" ref={right}>
-              <MarkdownView markdown={md.data} docId={doc.id} scrollRef={right} warnings={warnings} />
+              <MarkdownView markdown={md.data} docId={doc.id} scrollRef={right} warnings={warnings} version={doc.created_at} />
               {/* scroll past the end: 「跳至頁」 can bring the last pages' anchors to the top of the view */}
               <div aria-hidden className="h-[70svh]" />
             </TabsContent>

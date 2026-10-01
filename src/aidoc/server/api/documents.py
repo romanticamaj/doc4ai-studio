@@ -1,6 +1,7 @@
 """Library / Document endpoints (index §8, spec §6 pages 3-4, §8.5 orphaned)."""
 from __future__ import annotations
 
+import hashlib
 import mimetypes
 import os
 import shutil
@@ -76,7 +77,12 @@ def get_markdown(doc_id: str, request: Request) -> Response:
     md = out / f"{out.name}.md"
     if not md.is_file():
         raise ApiError(410, "output_missing")
-    return Response(md.read_bytes(), media_type="text/markdown; charset=utf-8")
+    body = md.read_bytes()
+    etag = '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+    if _etag_matches(request, etag):
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": REVALIDATE})
+    return Response(body, media_type="text/markdown; charset=utf-8",
+                    headers={"ETag": etag, "Cache-Control": REVALIDATE})
 
 
 @router.get("/documents/{doc_id}/assets/{path:path}")
@@ -91,7 +97,7 @@ def get_asset(doc_id: str, path: str, request: Request) -> Response:
         raise ApiError(400, "bad_path")
     if not target.is_file():
         raise ApiError(404, "not_found")
-    return safe_file_response(target, target.name)
+    return safe_file_response(target, target.name, request)
 
 
 @router.get("/documents/{doc_id}/source")
@@ -101,7 +107,7 @@ def get_source(doc_id: str, request: Request) -> Response:
     if f is None:
         raise ApiError(410, "source_missing")
     name = Path(doc["source_path"]).name or f.name
-    return safe_file_response(f, name)
+    return safe_file_response(f, name, request)
 
 
 # Converted documents come from anywhere: a source or asset must never run as a page on the aidoc origin (final
@@ -112,14 +118,35 @@ FILE_HEADERS = {"X-Content-Type-Options": "nosniff",
                 "Content-Security-Policy": "sandbox; default-src 'none'"}
 
 
-def safe_file_response(path: Path, filename: str) -> FileResponse:
+# A reconversion rewrites outputs under the same names (assets/p1_1.png): every file is revalidated on each use,
+# with a strong validator, so a browser never shows a pre-repair image or text from its cache (verifier finding).
+REVALIDATE = "no-cache"
+
+
+def _file_etag(path: Path) -> str:
+    st = path.stat()
+    return '"' + hashlib.sha256(f"{st.st_mtime_ns}-{st.st_size}".encode()).hexdigest()[:32] + '"'
+
+
+def _etag_matches(request: Request | None, etag: str) -> bool:
+    if request is None:
+        return False
+    sent = request.headers.get("if-none-match", "")
+    return any(t.strip() in (etag, "*") for t in sent.split(",")) if sent else False
+
+
+def safe_file_response(path: Path, filename: str, request: Request | None = None) -> Response:
+    etag = _file_etag(path)
+    caching = {"ETag": etag, "Cache-Control": REVALIDATE}
+    if _etag_matches(request, etag):
+        return Response(status_code=304, headers={**FILE_HEADERS, **caching})
     mime = mimetypes.guess_type(filename)[0] or mimetypes.guess_type(path.name)[0] or ""
     if mime in SAFE_INLINE:
-        return FileResponse(path, media_type=mime, headers={**FILE_HEADERS,
+        return FileResponse(path, media_type=mime, headers={**FILE_HEADERS, **caching,
                                                             "Content-Disposition": content_disposition(filename,
                                                                                                        "inline")})
     return FileResponse(path, media_type="application/octet-stream",
-                        headers={**FILE_HEADERS, "Content-Disposition": content_disposition(filename)})
+                        headers={**FILE_HEADERS, **caching, "Content-Disposition": content_disposition(filename)})
 
 
 @router.get("/documents/{doc_id}/download.zip")

@@ -177,3 +177,29 @@ def test_reconvert_keeps_each_documents_own_output_root_and_lang(client, ctx, tm
     assert {t["output_dir"] for t in tasks} == {before[a]["output_dir"], before[b]["output_dir"]}
     assert len(client.get("/api/documents").json()["documents"]) == n_docs              # no new document rows
     assert client.get(f"/api/documents/{b}").json()["document"]["lang"] == "en"
+
+
+def test_files_revalidate_so_a_reconvert_is_never_shown_from_cache(client, ctx, tmp_root, fixtures):
+    """Reconverted outputs reuse names (p1_1.png); without Cache-Control the browser kept the pre-repair image."""
+    import os
+    import time as _t
+    did = converted(client, ctx, tmp_root, fixtures)
+    urls = [f"/api/documents/{did}/assets/p1_1.png", f"/api/documents/{did}/markdown", f"/api/documents/{did}/source"]
+    first = {}
+    for u in urls:
+        r = client.get(u)
+        assert r.status_code == 200 and "no-cache" in r.headers["cache-control"] and r.headers.get("etag"), u
+        first[u] = r.headers["etag"]
+        assert client.get(u, headers={"If-None-Match": first[u]}).status_code == 304, u   # unchanged: revalidated
+    out = ctx.store.get_document(did)["output_dir"]
+    md = os.path.join(out, os.path.basename(out) + ".md")
+    _t.sleep(0.05)
+    with open(md, "a", encoding="utf-8") as f:
+        f.write("\nrepaired\n")
+    png = os.path.join(out, "assets", "p1_1.png")
+    with open(png, "ab") as f:
+        f.write(b"0")
+    for u in urls[:2]:                                                       # changed content: new bytes, new tag
+        r = client.get(u, headers={"If-None-Match": first[u]})
+        assert r.status_code == 200 and r.headers["etag"] != first[u], u
+    assert "repaired" in client.get(urls[1]).text
