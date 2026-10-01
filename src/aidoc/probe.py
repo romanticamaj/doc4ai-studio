@@ -115,6 +115,40 @@ def _analyse_page(page) -> dict:
             "two_col": two_col, "table_lines": table_lines, "blank": blank}
 
 
+def _base_name(name: str) -> str:
+    """Font name without the subset prefix (`ABCDEF+ComicSansMS` -> `ComicSansMS`)."""
+    if len(name) > 7 and name[6] == "+" and name[:6].isalpha() and name[:6].isupper():
+        return name[7:]
+    return name
+
+
+def broken_fonts(doc) -> tuple[list[str], list[int]]:
+    """Fonts whose text cannot be mapped to Unicode (spec 2026-10-01 §5.5): type `Type0` or an `Identity`
+    encoding, and no `/ToUnicode` in the font dictionary. Scans every page; returns (sorted unique names,
+    sorted 1-based pages that use one). Results are cached per font xref."""
+    cache: dict[int, bool] = {}
+    names: set[str] = set()
+    pages: list[int] = []
+    for i in range(doc.page_count):
+        hit = False
+        for f in doc[i].get_fonts():
+            xref, ftype, basefont, enc = f[0], str(f[2]), str(f[3]), str(f[5])
+            if xref not in cache:
+                broken = False
+                if ftype == "Type0" or "Identity" in enc:
+                    try:
+                        broken = doc.xref_get_key(xref, "ToUnicode")[0] == "null"
+                    except Exception:  # noqa: BLE001  a damaged font object is not our signal
+                        broken = False
+                cache[xref] = broken
+            if cache[xref]:
+                hit = True
+                names.add(_base_name(basefont))
+        if hit:
+            pages.append(i + 1)
+    return sorted(names), pages
+
+
 def probe_file(path: Path) -> ProbeResult:
     path = Path(path)
     ext = path.suffix.lower()
@@ -138,10 +172,11 @@ def probe_file(path: Path) -> ProbeResult:
         text_ratio = (sum(1 for m in non_blank if m["has_text"]) / len(non_blank)) if non_blank else 0.0
         image_cover = sum(m["image_cover"] for m in stats) / len(stats) if stats else 0.0
         layout = bool(non_blank) and sum(1 for m in non_blank if m["two_col"]) >= len(non_blank) / 2
+        bf_names, bf_pages = broken_fonts(doc)
         return ProbeResult(kind="pdf", ext=ext, size=size, pages=n, text_ratio=text_ratio,
                            image_cover=image_cover, math_hint=any(m["math"] for m in stats),
                            layout_hint=layout, has_table_lines=any(m["table_lines"] for m in stats),
-                           blank_pages=blank_pages)
+                           blank_pages=blank_pages, broken_fonts=bf_names, broken_font_pages=bf_pages)
     except Exception:  # noqa: BLE001  PyMuPDF raises many types for broken files
         return ProbeResult(kind="pdf", ext=ext, size=size, error="corrupt")
     finally:

@@ -11,5 +11,6 @@ def test_pdf_page_counts():
 
 
 def test_office_and_misc_exist():
-    for n in ["sample.docx", "sample.pptx", "sample.xlsx", "sample.html", "page.png", "bad.exe", "corrupt.pdf"]:
+    for n in ["sample.docx", "sample.pptx", "sample.xlsx", "sample.html", "page.png", "bad.exe", "corrupt.pdf",
+              "paged_furniture.pdf", "broken_tounicode.pdf"]:
         assert (FIXTURES / n).stat().st_size > 0

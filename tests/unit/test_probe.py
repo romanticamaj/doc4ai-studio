@@ -65,3 +65,25 @@ def test_blank_pages_counted_on_every_page_not_just_the_sample(tmp_path):
     md = "\n".join(f"<!-- page: {i + 1} -->\nPage {i + 1} " + "lorem ipsum dolor sit amet " * 3
                    for i in range(45) if i % 9 < 4)
     assert assess(md, pr, 45).level == "ok"
+
+
+def test_broken_tounicode_fonts_detected(fixtures):
+    p = probe_file(fixtures / "broken_tounicode.pdf")
+    assert p.broken_font_pages == [1, 2] and len(p.broken_fonts) == 1
+
+
+def test_normal_pdfs_have_no_broken_fonts(fixtures):
+    for name in ("text.pdf", "big.pdf", "paged_furniture.pdf", "formula.pdf"):
+        assert probe_file(fixtures / name).broken_font_pages == [], name
+
+
+def test_broken_tounicode_text_layer_is_glyph_ids(fixtures):
+    import pymupdf
+    assert "dreamy" not in pymupdf.open(fixtures / "broken_tounicode.pdf")[0].get_text()
+
+
+def test_paged_furniture_shape(fixtures):
+    import pymupdf
+    d = pymupdf.open(fixtures / "paged_furniture.pdf")
+    assert d.page_count == 8 and d[3].get_text().strip() == "" and "........" in d[1].get_text()
+    assert probe_file(fixtures / "paged_furniture.pdf").blank_pages == [4]

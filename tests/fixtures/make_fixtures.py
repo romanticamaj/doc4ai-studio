@@ -289,6 +289,106 @@ def make_html(path):
         f"<tr><td>1</td><td>2</td></tr></table></body></html>", encoding="utf-8")
 
 
+_FURNITURE_WORDS = ("patient joint muscle tendon ligament examination movement passive active resisted painful "
+                    "capsular pattern lesion treatment injection friction massage manipulation traction posture "
+                    "shoulder elbow wrist hip knee ankle spine nerve root dura sign test history onset "
+                    "gradual sudden morning evening stiffness swelling warmth weakness range limited full").split()
+
+
+def _furniture_body(page_no: int, n_words: int = 130) -> str:
+    rng = random.Random(1000 + page_no)
+    words = [rng.choice(_FURNITURE_WORDS) for _ in range(n_words)]
+    for i in range(0, n_words, 12):                    # page-specific tokens keep every page's text unique
+        words[i] = f"{words[i]}{page_no}{chr(97 + (i // 12) % 26)}"
+    return f"Body text of page {page_no}: " + " ".join(words) + "."
+
+
+def _helv_lines(page, text, x, y, size=10, max_w=450):
+    font = fitz.Font("helv")
+    for line in _wrap(text, font, size, max_w):
+        page.insert_text((x, y), line, fontname="helv", fontsize=size)
+        y += size + 4
+    return y
+
+
+def make_paged_furniture_pdf(path):
+    """8 pages (A4): running header + footer page number on every non-blank page; page 2 is a table of contents
+    with dot leaders; page 4 is blank; a paragraph starts at the bottom of page 5 and continues on page 6; page 7
+    has a drawn figure + caption. Body pages carry >= 600 chars of unique English text."""
+    doc = fitz.open()
+    for n in range(1, 9):
+        page = doc.new_page(width=595, height=842)
+        if n == 4:
+            continue                                   # blank: no text, no drawing
+        page.insert_text((72, 40), "Chapter 2 - Testing Pages", fontname="helv", fontsize=9)
+        page.insert_text((290, 815), str(n), fontname="helv", fontsize=9)
+        if n == 2:
+            page.insert_text((72, 90), "Contents", fontname="helv", fontsize=16)
+            y = 120
+            for title, pg in (("Introduction", 3), ("Examination of the joint", 5), ("Spanning paragraph", 6),
+                              ("Figures", 7), ("Summary", 8)):
+                page.insert_text((72, y), f"{title} {'.' * (60 - len(title))} {pg}", fontname="helv", fontsize=11)
+                y += 20
+            _helv_lines(page, _furniture_body(n, 100), 72, y + 20)
+            continue
+        y = _helv_lines(page, _furniture_body(n), 72, 80)
+        if n == 5:
+            # a paragraph that starts at the bottom of page 5 and continues on page 6
+            _helv_lines(page, "Spanning paragraph begins here and keeps describing the capsular pattern of the "
+                              "shoulder joint while the page runs out of room at the very bottom margin of the",
+                        72, 770)
+        if n == 6:
+            _helv_lines(page, "sheet, so the reader continues on the next page where the spanning paragraph "
+                              "finally ends with a full stop.", 72, 60)
+            _helv_lines(page, _furniture_body(60 + n, 40), 72, y + 20)
+        if n == 7:
+            sh = page.new_shape()
+            sh.draw_rect(fitz.Rect(150, y + 20, 450, y + 220))
+            sh.finish(color=(0, 0, 0), fill=(0.3, 0.5, 0.8))
+            sh.commit()
+            page.insert_text((150, y + 240), "Figure 7.1 A drawn box", fontname="helv", fontsize=10)
+    _save(doc, path)
+
+
+BROKEN_SENTENCE = ("Wouldn't it be dreamy if there was a book on Android",
+                   "development that could turn me into an expert while",
+                   "keeping me engaged and entertained?")
+
+
+def make_broken_tounicode_pdf(path):
+    """2 pages; page 1 has three lines in a Type0/Identity-H font whose /ToUnicode was deleted (T-001), page 2 uses
+    that font only for a footer. The text layer of those lines is glyph ids."""
+    doc = fitz.open()
+    for n in (1, 2):
+        page = doc.new_page(width=595, height=842)
+        page.insert_font(fontname="K", fontbuffer=fitz.Font("cjk").buffer)
+        page.insert_text((72, 72), f"Broken ToUnicode fixture - page {n}", fontname="helv", fontsize=16)
+        y = 110
+        for i in range(6):
+            page.insert_text((72, y), f"Normal Helvetica line {i + 1} on page {n}: the quick brown fox jumps over "
+                                      f"the lazy dog.", fontname="helv", fontsize=11)
+            y += 18
+        if n == 1:
+            y += 20
+            for line in BROKEN_SENTENCE:
+                page.insert_text((72, y), line, fontname="K", fontsize=14)
+                y += 22
+        else:
+            page.insert_text((290, 815), "7", fontname="K", fontsize=9)
+    try:
+        doc.subset_fonts()                             # keep the committed file small (the cjk font is ~4 MB)
+    except Exception:  # noqa: BLE001, S110  subsetting is an optimisation only
+        pass
+    for xref in range(1, doc.xref_length()):
+        try:
+            if doc.xref_get_key(xref, "Subtype")[1] == "/Type0":
+                doc.xref_set_key(xref, "ToUnicode", "null")
+        except Exception:  # noqa: BLE001, S112  non-dict objects
+            continue
+    doc.save(path, garbage=4, deflate=True)
+    doc.close()
+
+
 def main():
     HERE.mkdir(exist_ok=True)
     SAMPLES.mkdir(parents=True, exist_ok=True)
@@ -301,6 +401,8 @@ def main():
     make_big_pdf(HERE / "big.pdf")
     make_blank_pdf(HERE / "blank.pdf")
     make_span_margin_pdf(HERE / "span_margin.pdf")
+    make_paged_furniture_pdf(HERE / "paged_furniture.pdf")
+    make_broken_tounicode_pdf(HERE / "broken_tounicode.pdf")
     make_encrypted_pdf(HERE / "encrypted.pdf")
     make_corrupt_pdf(HERE / "corrupt.pdf")
     make_png(HERE / "page.png")
