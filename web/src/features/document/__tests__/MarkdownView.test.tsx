@@ -78,3 +78,13 @@ test("a large document renders its first block at once, not the whole text, and 
   const source = (ref.current as unknown as { anchorSource: () => { page: number }[] }).anchorSource;
   expect(source().map((a) => a.page)).toEqual(Array.from({ length: 60 }, (_, i) => i + 1));
 });
+
+test("flagged pages get a note at their page anchor (spec 2026-10-01 §9.4)", () => {
+  const warnings = new Map([[2, { text: "第 2 頁：文字層損壞，已用 OCR 修復", tone: "info" as const }]]);
+  const md = "<!-- page: 1 -->\n\nOne\n\n<!-- page: 2 -->\n\nTwo\n";
+  const { container } = render(<MarkdownView docId="d1" markdown={md} warnings={warnings} />);
+  const chip = container.querySelector('[data-page-warning="2"]');
+  expect(chip?.textContent).toBe("第 2 頁：文字層損壞，已用 OCR 修復");
+  expect(chip?.closest("[data-page]")?.getAttribute("data-page")).toBe("2");
+  expect(container.querySelectorAll("[data-page-warning]").length).toBe(1);
+});

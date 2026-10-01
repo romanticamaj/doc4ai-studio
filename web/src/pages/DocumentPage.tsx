@@ -1,19 +1,24 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
-import { ChevronLeft, Copy, Download, FileQuestion, FileX2, FolderX, Link2, Link2Off, Scissors } from "lucide-react";
+import { ChevronLeft, Copy, Download, FileQuestion, FileWarning, FileX2, FolderX, Link2, Link2Off, RefreshCw, Scissors } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge, Tag } from "@/components/StatusBadge";
 import { EmptyState, ErrorState } from "@/components/states";
-import { useDocument, useMarkdown } from "@/api/queries";
+import { useDocument, useMarkdown, useReconvert } from "@/api/queries";
 import { ApiError, withToken } from "@/api/client";
 import type { DocumentDetail } from "@/api/types";
 import { MarkdownView } from "@/features/document/MarkdownView";
 import { PdfViewer } from "@/features/document/PdfViewer";
 import { RawSource } from "@/features/document/RawSource";
 import { useScrollSync } from "@/features/document/useScrollSync";
+import { GoToPage } from "@/features/document/GoToPage";
+import { pageWarnings } from "@/features/document/pageWarnings";
+import { PageBadges } from "@/features/library/PageBadges";
+import { needsReconvert } from "@/features/library/badges";
+import { describeError } from "@/lib/errors";
 import { reasonText } from "@/features/jobs/buildTimeline";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { baseName, extOf, formatDuration } from "@/lib/format";
@@ -45,10 +50,23 @@ export default function DocumentPage() {
   const right = useRef<HTMLDivElement>(null);
   const raw = useRef<HTMLDivElement>(null);
   const [pdfPages, setPdfPages] = useState(0);
-  const { enabled, page } = useScrollSync(left, right, {
+  const { enabled, page, goTo } = useScrollSync(left, right, {
     active: sync && tab === "markdown" && wide,
     deps: [md.data, pdfPages, tab, wide, pane],
   });
+  const quality = q.data?.document.quality;
+  const warnings = useMemo(() => pageWarnings(quality), [quality]);
+  const warnPages = useMemo(() => new Set(warnings.keys()), [warnings]);
+  const reconvert = useReconvert();
+  const doReconvert = (id: string) =>
+    reconvert.mutateAsync([id]).then(
+      (job) => {
+        toast.success("已排入重新轉換");
+        navigate(`/jobs/${job.id}`);
+      },
+      (e) =>
+        toast.error(e instanceof ApiError && e.status === 410 ? "原始檔與工作副本都不在了，請重新上傳原始檔" : describeError(e)),
+    );
 
   const back = () => (window.history.length > 1 ? navigate(-1) : navigate("/library"));
 
@@ -101,6 +119,7 @@ export default function DocumentPage() {
           url={sourceUrl}
           className="relative min-h-0 flex-1 overflow-auto"
           onLoaded={setPdfPages}
+          warnPages={warnPages}
           onError={(e) => {
             const msg = String((e as { message?: string })?.message ?? "");
             if (/410|Missing|Unexpected server response/i.test(msg)) setSourceGone(true);
@@ -175,8 +194,19 @@ export default function DocumentPage() {
           </div>
         ) : (
           <>
+            {tab === "markdown" && doc.flags?.includes("page_map_incomplete") && (
+              <div role="status" data-testid="page-map-banner" className="flex shrink-0 items-center gap-2 border-b bg-danger-soft px-3 py-2 text-xs">
+                <FileWarning className="size-4 shrink-0 text-danger" />
+                <span className="flex-1">
+                  頁碼不完整（找到 {doc.page_summary?.found ?? 0}／{doc.page_summary?.expected ?? doc.pages ?? "?"} 頁），左右同步可能失準。
+                </span>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => doReconvert(doc.id)} disabled={reconvert.isPending}>
+                  <RefreshCw /> 重新轉換
+                </Button>
+              </div>
+            )}
             <TabsContent value="markdown" className="relative min-h-0 flex-1 overflow-auto px-6 py-5 sm:px-8" ref={right}>
-              <MarkdownView markdown={md.data} docId={doc.id} scrollRef={right} />
+              <MarkdownView markdown={md.data} docId={doc.id} scrollRef={right} warnings={warnings} />
             </TabsContent>
             <TabsContent value="source" className="relative min-h-0 flex-1 overflow-auto" ref={raw}>
               <RawSource text={md.data} scrollRef={raw} />
@@ -203,6 +233,7 @@ export default function DocumentPage() {
               {doc.status}
               {doc.status !== "orphaned" && <span className="opacity-70">{doc.quality.score.toFixed(2)}</span>}
             </StatusBadge>
+            <PageBadges doc={doc} />
           </div>
           <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <Tag>{doc.engine}</Tag>
@@ -212,7 +243,13 @@ export default function DocumentPage() {
             {doc.quality.reasons.length > 0 && <span className="text-warn">{reasonText(doc.quality.reasons)}</span>}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {kind === "pdf" && (doc.pages ?? 0) > 0 && wide && tab === "markdown" && <GoToPage pages={doc.pages ?? 1} onGo={goTo} />}
+          {needsReconvert(doc) && !doc.flags?.includes("page_map_incomplete") && (
+            <Button variant="outline" size="sm" onClick={() => doReconvert(doc.id)} disabled={reconvert.isPending}>
+              <RefreshCw /> 重新轉換
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={copy} disabled={!md.data}>
             <Copy /> 複製 Markdown
           </Button>

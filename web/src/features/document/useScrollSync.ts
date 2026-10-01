@@ -133,7 +133,10 @@ export function useScrollSync(
 ) {
   const [enabled, setEnabled] = useState(false);
   const [page, setPage] = useState<number | null>(null);
-  const lock = useRef<{ side: "left" | "right"; until: number } | null>(null);
+  // per side: ignore that pane's scroll events until this time (it was moved programmatically)
+  const lock = useRef<{ left: number; right: number }>({ left: 0, right: 0 });
+  // 「跳至頁」: keep both panes on this page while their layouts settle (lazy pages / blocks change heights)
+  const goal = useRef<{ page: number; until: number } | null>(null);
   const frame = useRef(0);
   const tables = useRef<{ left: AnchorTable | null; right: AnchorTable | null }>({ left: null, right: null });
   // the side the user scrolled last: when a pane's layout settles (a block rendered, a page got its real size)
@@ -166,11 +169,40 @@ export function useScrollSync(
       if (!active.current || !at) return at;
       const top = table(from === "left" ? "right" : "left")?.scrollTopFor(at.page, at.fraction) ?? null;
       if (top == null || Math.abs(dst.scrollTop - top) < 2) return at;
-      lock.current = { side: from === "left" ? "right" : "left", until: performance.now() + 150 };
+      lock.current[from === "left" ? "right" : "left"] = performance.now() + 150;
       dst.scrollTop = top;
       return at;
     },
     [left, right, table],
+  );
+
+  /** Scrolls both panes to the top of the goal page; false when there is no live goal. */
+  const applyGoal = useCallback(() => {
+    const g = goal.current;
+    if (!g || performance.now() > g.until) {
+      goal.current = null;
+      return false;
+    }
+    for (const side of ["left", "right"] as const) {
+      const el = side === "left" ? left.current : right.current;
+      const top = el ? table(side)?.scrollTopFor(g.page, 0) : null;
+      if (!el || top == null || Math.abs(el.scrollTop - top) < 2) continue;
+      lock.current[side] = performance.now() + 150;
+      el.scrollTop = top;
+    }
+    return true;
+  }, [left, right, table]);
+
+  /** Both panes to the start of `page` (spec 2026-10-01 §9.4 「跳至頁」); re-applied while layouts settle. */
+  const goTo = useCallback(
+    (page: number) => {
+      goal.current = { page, until: performance.now() + 2500 };
+      leader.current = null;
+      tables.current = { left: null, right: null };
+      applyGoal();
+      setPage(page);
+    },
+    [applyGoal],
   );
 
   const recheck = useCallback(() => {
@@ -200,6 +232,7 @@ export function useScrollSync(
         const l = table("left");
         const r = table("right");
         setEnabled(!!l && !!r && l.size > 0 && r.size > 0);
+        if (applyGoal()) return;
         const lead = leader.current;
         if (lead && performance.now() - lead.at < 1500) follow(lead.side);
       });
@@ -220,15 +253,15 @@ export function useScrollSync(
       cancelAnimationFrame(raf);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left, right, table, follow, ...(opts.deps ?? [])]);
+  }, [left, right, table, follow, applyGoal, ...(opts.deps ?? [])]);
 
   useEffect(() => {
     const l = left.current;
     const r = right.current;
     if (!l || !r) return;
     const onScroll = (from: "left" | "right") => () => {
-      const lk = lock.current;
-      if (lk && lk.side === from && performance.now() < lk.until) return; // our own programmatic scroll
+      if (performance.now() < lock.current[from]) return; // our own programmatic scroll
+      goal.current = null;                                  // the user scrolls: a pending 「跳至頁」 is over
       leader.current = { side: from, at: performance.now() };
       cancelAnimationFrame(frame.current);
       frame.current = requestAnimationFrame(() => {
@@ -248,5 +281,5 @@ export function useScrollSync(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [left, right, follow, opts.active, enabled, ...(opts.deps ?? [])]);
 
-  return { enabled, page, recheck };
+  return { enabled, page, recheck, goTo };
 }

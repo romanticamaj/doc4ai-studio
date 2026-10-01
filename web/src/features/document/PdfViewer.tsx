@@ -15,6 +15,8 @@ type Props = {
   onError?: (e: unknown) => void;
   onLoaded?: (pages: number) => void;
   className?: string;
+  /** pages with a known problem (spec 2026-10-01 §9.4): a thin warning outline */
+  warnPages?: ReadonlySet<number>;
 };
 
 const GAP = 12;
@@ -32,7 +34,7 @@ const RENDERS = 2;
  * window cancels its render and releases its canvas. Mounted pages carry `[data-page]`; the scroll sync reads the
  * page positions from `publishAnchors`.
  */
-export const PdfViewer = forwardRef<HTMLDivElement, Props>(function PdfViewer({ url, onError, onLoaded, className }, ref) {
+export const PdfViewer = forwardRef<HTMLDivElement, Props>(function PdfViewer({ url, onError, onLoaded, className, warnPages }, ref) {
   const scroller = useRef<HTMLDivElement>(null);
   useImperativeHandle(ref, () => scroller.current as HTMLDivElement);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
@@ -183,6 +185,7 @@ export const PdfViewer = forwardRef<HTMLDivElement, Props>(function PdfViewer({ 
           queue={queue}
           center={center}
           onRatio={onRatio}
+          warn={warnPages?.has(i + 1) ?? false}
         />,
       );
     }
@@ -213,9 +216,10 @@ type PageProps = {
   queue: RenderQueue;
   center: React.RefObject<number>;
   onRatio: (n: number, r: number) => void;
+  warn?: boolean;
 };
 
-const PdfPage = memo(function PdfPage({ doc, n, top, width, height, queue, center, onRatio }: PageProps) {
+const PdfPage = memo(function PdfPage({ doc, n, top, width, height, queue, center, onRatio, warn }: PageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -262,7 +266,11 @@ const PdfPage = memo(function PdfPage({ doc, n, top, width, height, queue, cente
   return (
     <div
       data-page={n}
-      className="absolute left-0 w-full overflow-hidden rounded-sm bg-white shadow-panel ring-1 ring-black/5"
+      data-page-warning={warn ? n : undefined}
+      className={
+        "absolute left-0 w-full overflow-hidden rounded-sm bg-white shadow-panel " +
+        (warn ? "ring-2 ring-warn/70" : "ring-1 ring-black/5")
+      }
       style={{ top, height }}
     >
       <canvas ref={canvasRef} className="block size-full" aria-label={`第 ${n} 頁`} />

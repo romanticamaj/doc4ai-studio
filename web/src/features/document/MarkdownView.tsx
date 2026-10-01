@@ -13,6 +13,7 @@ import { splitMarkdown, type MdBlock } from "./splitMarkdown";
 import { useBlockVirtualizer } from "./useBlockVirtualizer";
 import { mdAnchors } from "./mdAnchors";
 import { publishAnchors } from "./useScrollSync";
+import type { PageWarning } from "./pageWarnings";
 
 // Page anchors made by remarkPageAnchors carry this per-load class; raw HTML in a converted document cannot guess
 // it, so after sanitizing only our own anchors keep data-page (a fake anchor could hijack the scroll sync).
@@ -60,7 +61,29 @@ function rewriteUrls(tree: Root, docId: string): Root {
   return tree;
 }
 
-const components: Components = {
+function pageAnchorDiv(warnings: ReadonlyMap<number, PageWarning> | undefined) {
+  return ({ node: _node, ...props }: { node?: unknown; children?: ReactNode; [k: string]: unknown }) => {
+    const page = Number(props["data-page"]);
+    const w = Number.isFinite(page) ? warnings?.get(page) : undefined;
+    if (!w) return <div {...props} />;
+    return (
+      <div {...props} className={`${String(props.className ?? "")} page-anchor-warned`}>
+        {props.children as ReactNode}
+        <span
+          data-page-warning={page}
+          className={
+            "page-warning-chip absolute top-2 left-10 rounded px-1.5 py-0.5 text-[11px] leading-tight " +
+            (w.tone === "warn" ? "bg-warn-soft text-warn" : "bg-info-soft text-info")
+          }
+        >
+          {w.text}
+        </span>
+      </div>
+    );
+  };
+}
+
+const baseComponents: Components = {
   a: ({ node: _node, href, ...props }: { node?: unknown; href?: string; children?: ReactNode }) =>
     !href ? (
       <span>{props.children}</span>
@@ -73,7 +96,8 @@ const components: Components = {
     src ? <img src={src} {...props} loading="lazy" decoding="async" /> : null,
 } as Components;
 
-function toReact(tree: Root, docId: string): ReactNode {
+function toReact(tree: Root, docId: string, warnings?: ReadonlyMap<number, PageWarning>): ReactNode {
+  const components = warnings?.size ? ({ ...baseComponents, div: pageAnchorDiv(warnings) } as Components) : baseComponents;
   return toJsxRuntime(rewriteUrls(tree, docId), {
     Fragment,
     jsx,
@@ -90,15 +114,17 @@ type Props = {
   docId: string;
   /** the scroll container; with it, large documents are rendered a block at a time near the viewport */
   scrollRef?: React.RefObject<HTMLElement | null>;
+  /** notes shown at the page anchors of flagged pages (spec 2026-10-01 §9.4) */
+  warnings?: ReadonlyMap<number, PageWarning>;
 };
 
-function MarkdownViewImpl({ markdown, docId, scrollRef }: Props) {
-  if (markdown.length <= SMALL || !scrollRef) return <WholeMarkdown markdown={markdown} docId={docId} />;
-  return <BlockMarkdown markdown={markdown} docId={docId} scrollRef={scrollRef} />;
+function MarkdownViewImpl({ markdown, docId, scrollRef, warnings }: Props) {
+  if (markdown.length <= SMALL || !scrollRef) return <WholeMarkdown markdown={markdown} docId={docId} warnings={warnings} />;
+  return <BlockMarkdown markdown={markdown} docId={docId} scrollRef={scrollRef} warnings={warnings} />;
 }
 
-function WholeMarkdown({ markdown, docId }: { markdown: string; docId: string }) {
-  const content = useMemo(() => toReact(processBlock(markdown, NONCE), docId), [markdown, docId]);
+function WholeMarkdown({ markdown, docId, warnings }: { markdown: string; docId: string; warnings?: ReadonlyMap<number, PageWarning> }) {
+  const content = useMemo(() => toReact(processBlock(markdown, NONCE), docId, warnings), [markdown, docId, warnings]);
   return <div className="md-body">{content}</div>;
 }
 
@@ -110,7 +136,7 @@ function estimateBlock(b: MdBlock, width: number): number {
 
 const KEEP_TREES = 24;
 
-function BlockMarkdown({ markdown, docId, scrollRef }: Required<Props>) {
+function BlockMarkdown({ markdown, docId, scrollRef, warnings }: Omit<Required<Props>, "warnings"> & Pick<Props, "warnings">) {
   const blocks = useMemo(() => splitMarkdown(markdown), [markdown]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const renderer = useMemo(() => new BlockRenderer(NONCE), []);
@@ -123,8 +149,8 @@ function BlockMarkdown({ markdown, docId, scrollRef }: Required<Props>) {
   useMemo(() => {
     for (const c of pending.current.values()) c();
     pending.current.clear();
-    trees.current = new Map([[0, toReact(processBlock(blocks[0].text, NONCE), docId)]]);
-  }, [blocks, docId]);
+    trees.current = new Map([[0, toReact(processBlock(blocks[0].text, NONCE), docId, warnings)]]);
+  }, [blocks, docId, warnings]);
 
   const anchorOffsets = useRef<(number[] | undefined)[]>([]);
   useMemo(() => (anchorOffsets.current = []), [blocks]);
@@ -152,7 +178,7 @@ function BlockMarkdown({ markdown, docId, scrollRef }: Required<Props>) {
         i,
         renderer.render(blocks[i].text, () => Math.abs(i - center.current), (tree) => {
           pending.current.delete(i);
-          trees.current.set(i, toReact(tree, docId));
+          trees.current.set(i, toReact(tree, docId, warnings));
           while (trees.current.size > KEEP_TREES) {
             // evict the cached block farthest from the view
             let far = -1;
@@ -163,7 +189,7 @@ function BlockMarkdown({ markdown, docId, scrollRef }: Required<Props>) {
         }),
       );
     }
-  }, [lo, hi, blocks, renderer, docId]);
+  }, [lo, hi, blocks, renderer, docId, warnings]);
   useEffect(
     () => () => {
       for (const c of pending.current.values()) c();

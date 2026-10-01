@@ -268,6 +268,8 @@
     color: var(--muted-foreground);
   }
   .md-body > .page-anchor:first-child { margin-top: 0.4em; }
+  /* a flagged page (spec 2026-10-01 §9.4): room for the note under the rule */
+  .md-body .page-anchor.page-anchor-warned { margin-bottom: 2.6em; }
 
   /* large documents: the body is a column of blocks (or placeholders), each its own formatting context so its
      height is exactly what the virtualizer measures */
