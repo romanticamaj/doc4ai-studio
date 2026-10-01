@@ -102,3 +102,24 @@ def test_junction_pointing_outside_is_rejected(roots):
     with pytest.raises(ToolFailure) as e:
         check_local_path(str(allowed / "jn" / "secret.pdf"), [str(allowed)])
     assert e.value.code == "path_not_allowed"
+
+
+def test_convert_path_applies_the_same_file_type_checks(mcp_server, mcp_env, roots, fixtures):
+    """S-phase finding 5: extension + magic bytes, exactly like convert_document."""
+    allowed, _ = roots
+    ctx = mcp_env.ctx
+    (allowed / "tool.exe").write_bytes(b"MZ\x90\x00")
+    (allowed / "fake.pdf").write_bytes(b"PK\x03\x04 a zip pretending to be a pdf")
+    shutil.copy(fixtures / "text.pdf", allowed / "notes.md")                 # binary content behind a text name
+    (allowed / "ok.md").write_text("# fine\n\ntext\n", encoding="utf-8")
+    raw, _ = mcp_env.issue(scopes=("doc4ai:read", "doc4ai:convert:local"))
+    ctx.config.mcp.local_path_roots = [str(allowed)]
+    try:
+        for name in ("tool.exe", "fake.pdf", "notes.md"):
+            e = _err(mcp_call(mcp_server, raw, "convert_path", {"path": str(allowed / name)}))
+            assert e["code"] == "unsupported_file", name
+        assert not [j for j in ctx.store.list_jobs() if j["origin"] == "mcp"]
+        out = mcp_call(mcp_server, raw, "convert_path", {"path": str(allowed / "ok.md")}).structured_content
+        assert out["status"] == "queued"
+    finally:
+        ctx.config.mcp.local_path_roots = []

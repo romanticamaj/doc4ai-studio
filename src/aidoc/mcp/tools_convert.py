@@ -201,6 +201,8 @@ def register_convert_path_tool(mcp, ctx) -> None:
         cfg = ctx.config
         principal = current_principal.get()
         real = check_local_path(path, cfg.mcp.local_path_roots)
+        with open(real, "rb") as f:                           # same type checks as convert_document (A-M10)
+            check_magic(real.name, f.read(16))
         opts = build_convert_options(cfg, engine=engine, lang=lang, force=force)
         sha = file_sha256(real)
         out_dir = planned_output_dir(ctx.store, opts.output_dir, real, sha)
