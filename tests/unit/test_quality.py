@@ -169,3 +169,18 @@ def test_segment_quick_check_spot_checks_every_page(monkeypatch, tmp_path):
     assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x", quick=True)
     assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x")
     assert seen[0] >= 40 and seen[1] == 30
+
+
+def test_one_misplaced_page_is_not_a_misaligned_page_map(monkeypatch, tmp_path):
+    """Head First Android segment 81-120 (25 of 40 pages excluded for broken fonts): 6/7 aligned, the one miss is an
+    exercise's code repeated on its solution page. A shifted map misplaces nearly every decidable page."""
+    import aidoc.quality as qm
+    result = {}
+    monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: dict(result))
+    md = _doc([GOOD_EN] * 40)
+    result.update(sampled=15, decidable=7, aligned=6, ratio=0.8571, misplaced=[16], excluded_pages=25)
+    assert "page_map_misaligned" not in assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x",
+                                               quick=True).reasons
+    result.update(decidable=7, aligned=5, ratio=0.7143, misplaced=[16, 35])
+    assert "page_map_misaligned" in assess(md, _probe(40), 40, pdf=tmp_path / "x.pdf", page_map_method="x",
+                                           quick=True).reasons
