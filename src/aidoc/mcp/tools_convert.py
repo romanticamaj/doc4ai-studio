@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import os
 import re
 import shutil
 import time
@@ -14,11 +15,13 @@ import anyio
 from mcp.server.mcpserver import Context
 from pydantic import Field
 
+from aidoc.batch import register_source
 from aidoc.mcp.errors import ToolFailure
-from aidoc.mcp.principal import SCOPE_CONVERT, current_principal
+from aidoc.mcp.principal import SCOPE_CONVERT, SCOPE_CONVERT_LOCAL, current_principal
 from aidoc.mcp.registry import doc4ai_tool
 from aidoc.mcp.schemas import ConvertOut
 from aidoc.models import ConvertOptions, TaskStatus
+from aidoc.names import file_sha256
 from aidoc.output import lookup_cached, planned_output_dir
 from aidoc.server.serialize import serialize_task
 from aidoc.server.uploads import UploadError, display_name
@@ -128,6 +131,72 @@ def _result(ctx, task_id: str, job_id: str) -> ConvertOut:
     return ConvertOut(job_id=job_id, status=task["status"], doc_id=doc["id"] if doc else None)
 
 
+def check_local_path(path: str, roots: list[str]) -> Path:
+    deny = ToolFailure("path_not_allowed", "this path cannot be converted from here",
+                       hint="only files under the server's configured local roots are accepted; use convert_document instead")
+    if not path or "\x00" in path:
+        raise deny
+    s = path.replace("\\", "/")
+    if s.startswith("//") or path.startswith(("\\\\?\\", "\\\\.\\")):
+        raise deny
+    p = Path(path)
+    if not p.is_absolute():
+        raise deny
+    try:
+        real = p.resolve()                                   # follows symlinks and junctions; no network paths get here
+    except (OSError, RuntimeError):
+        raise deny from None
+    real_n = os.path.normcase(str(real))
+    inside = False
+    for root in roots:
+        try:
+            r = os.path.normcase(str(Path(root).resolve()))
+        except (OSError, RuntimeError):
+            continue
+        if real_n == r or real_n.startswith(r.rstrip(os.sep) + os.sep):
+            inside = True
+            break
+    if not inside:
+        raise deny
+    if not real.is_file():
+        raise ToolFailure("path_not_found", f"{path} is not an existing file", hint="give the absolute path of a file")
+    return real
+
+
+def register_convert_path_tool(mcp, ctx) -> None:
+    @doc4ai_tool(mcp, ctx, name="convert_path", title="Convert a file by server path",
+                 description="Convert a file that already sits on the Doc4AI Studio host, by absolute path. Only paths under "
+                             "the server's configured local roots are accepted. Returns a job_id (or status \"cached\").",
+                 scope=SCOPE_CONVERT_LOCAL, idempotent=True, destructive=False)
+    async def convert_path(path: Annotated[str, Field(min_length=1, max_length=1024)],
+                           engine: Literal["markitdown", "docling", "mineru"] | None = None,
+                           lang: Literal["cht", "en"] | None = None,
+                           force: bool = False,
+                           wait_seconds: Annotated[int, Field(ge=0, le=30)] = 0,
+                           ctx_: Context = None) -> ConvertOut:
+        cfg = ctx.config
+        principal = current_principal.get()
+        real = check_local_path(path, cfg.mcp.local_path_roots)
+        opts = build_convert_options(cfg, engine=engine, lang=lang, force=force)
+        sha = file_sha256(real)
+        out_dir = planned_output_dir(ctx.store, opts.output_dir, real, sha)
+        if not force:
+            hit = lookup_cached(ctx.store, sha, out_dir)
+            if hit is not None and hit.get("id"):
+                return ConvertOut(job_id=None, status="cached", doc_id=hit["id"])
+        _guard_capacity(ctx, principal.token_id if principal else None, real.stat().st_size)
+
+        def start() -> tuple[str, str]:
+            job_id = ctx.store.create_job(opts, "mcp")
+            tid, _ = register_source(ctx.store, job_id, real, opts)
+            _publish(ctx, job_id, tid)
+            return job_id, tid
+        job_id, tid = await anyio.to_thread.run_sync(start)
+        if wait_seconds > 0:
+            await wait_for_task(ctx, tid, wait_seconds, ctx_.report_progress if ctx_ is not None else None)
+        return _result(ctx, tid, job_id)
+
+
 def register_convert_tools(mcp, ctx) -> None:
     @doc4ai_tool(mcp, ctx, name="convert_document", title="Convert a document (upload)",
                  description="Upload a file as base64 and convert it to Markdown. Returns a job_id to poll with get_job; "
@@ -159,3 +228,5 @@ def register_convert_tools(mcp, ctx) -> None:
         if wait_seconds > 0:
             await wait_for_task(ctx, tid, wait_seconds, ctx_.report_progress if ctx_ is not None else None)
         return _result(ctx, tid, job_id)
+
+    register_convert_path_tool(mcp, ctx)
