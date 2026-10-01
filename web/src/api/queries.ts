@@ -14,7 +14,7 @@ import type {
   Task,
 } from "./types";
 
-export type DocFilters = { q?: string; engine?: string; status?: string };
+export type DocFilters = { q?: string; engine?: string; status?: string; flag?: string };
 
 export const qk = {
   jobs: () => ["jobs", "list"] as const,
@@ -161,7 +161,22 @@ export function useDeleteOrphaned() {
 export function useRescan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<{ orphaned: number }>("/api/documents/rescan"),
+    mutationFn: () =>
+      api.post<{ orphaned: number; assessed: number; page_map_incomplete: number; page_quality: number }>(
+        "/api/documents/rescan",
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["documents"] }),
+  });
+}
+
+/** POST /documents/reconvert (spec 2026-10-01 §9.2): one job, a forced auto-routed task per document. */
+export function useReconvert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.post<{ job: Job }>("/api/documents/reconvert", { ids }).then((r) => r.job),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["documents"] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
   });
 }

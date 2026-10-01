@@ -12,7 +12,8 @@ export type TaskStatus =
   | "skipped"
   | "cancelled";
 export type SegmentStatus = "queued" | "converting" | "done" | "failed";
-export type DocStatus = "ok" | "low" | "orphaned";
+export type DocStatus = "ok" | "warn" | "low" | "orphaned";
+export type DocFlag = "page_map_incomplete" | "page_quality" | "unassessed";
 export type EngineName = "markitdown" | "docling" | "mineru";
 export type Lang = "cht" | "en";
 export type ErrorKind = "transient" | "engine" | "input";
@@ -47,11 +48,51 @@ export interface Attempt {
   error_msg?: string | null;
 }
 
+export interface PageAlignment {
+  sampled: number;
+  decidable: number;
+  aligned: number;
+  ratio: number | null;
+  misplaced: number[];
+  excluded_pages: number;
+}
+
+export interface PageMap {
+  expected: number;
+  found: number;
+  coverage: number;
+  missing: number[];
+  missing_truncated?: boolean;
+  method: string | null;
+  alignment?: PageAlignment | null;
+}
+
+/** A flagged page (spec 2026-10-01 §5.1): reasons page_map_missing | broken_text_layer | garbage. */
+export interface PageFlag {
+  page: number;
+  reasons: string[];
+  metrics?: Record<string, number>;
+  repaired_by?: string;
+}
+
 export interface Quality {
   score: number;
-  level: "ok" | "low";
+  level: "ok" | "warn" | "low";
   reasons: string[];
   metrics?: Record<string, unknown>;
+  page_check?: number;
+  page_map?: PageMap | null;
+  pages?: PageFlag[];
+  pages_flagged?: number;
+  pages_unrepaired?: number;
+}
+
+export interface PageSummary {
+  expected: number;
+  found: number;
+  coverage: number;
+  flagged: number;
+  unrepaired: number;
 }
 
 export interface Segment {
@@ -80,7 +121,7 @@ export interface Task {
   error_msg: string | null;
   quality: Quality | null;
   output_dir: string;
-  flags?: { force?: boolean };
+  flags?: { force?: boolean; auto_engine?: boolean; reconvert?: boolean };
   document_id: string | null;
   pages: number | null;
   progress: { pages_done: number; pages_total: number | null };
@@ -107,6 +148,8 @@ export interface Document {
   created_at: number;
   status: DocStatus;
   stem: string;
+  flags: DocFlag[];
+  page_summary: PageSummary | null;
 }
 
 export interface Sidecar {

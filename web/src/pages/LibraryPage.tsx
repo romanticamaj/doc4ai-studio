@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { FileSearch, FolderX, LayoutGrid, Library, Rows3, Search, X } from "lucide-react";
+import { FileSearch, FileWarning, FolderX, LayoutGrid, Library, RefreshCw, Rows3, Search, X } from "lucide-react";
 import { Page, PageHeader } from "@/components/layout/Page";
 import { Panel } from "@/components/Panel";
 import { StatusBadge, Tag } from "@/components/StatusBadge";
@@ -10,9 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useDeleteOrphaned, useDocuments, useRescan } from "@/api/queries";
+import { useDeleteOrphaned, useDocuments, useReconvert, useRescan } from "@/api/queries";
+import { ApiError } from "@/api/client";
 import type { Document } from "@/api/types";
 import { parseFilters, toQuery, toSearch, type Filters } from "@/features/library/filters";
+import { PageBadges } from "@/features/library/PageBadges";
+import { needsReconvert } from "@/features/library/badges";
 import { fileIcon } from "@/features/convert/fileIcon";
 import { baseName, formatDateTime, formatRelative } from "@/lib/format";
 import { describeError } from "@/lib/errors";
@@ -21,6 +24,7 @@ import { cn } from "@/lib/utils";
 const STATUS_OPTIONS = [
   { value: "", label: "全部" },
   { value: "ok", label: "ok" },
+  { value: "warn", label: "warn" },
   { value: "low", label: "low" },
   { value: "orphaned", label: "orphaned" },
 ];
@@ -39,7 +43,12 @@ export default function LibraryPage() {
   const rescan = useRescan();
   const purge = useDeleteOrphaned();
   const nOrphaned = orphaned.data?.length ?? 0;
-  const filtered = !!(f.q || f.engine || f.status);
+  const filtered = !!(f.q || f.engine || f.status || f.flag);
+  const clear = { q: "", engine: "", status: "", flag: "" } as const;
+  const incomplete = useDocuments({ flag: "page_map_incomplete" });
+  const pageIssues = useDocuments({ flag: "page_quality" });
+  const flaggedIds = [...new Set([...(incomplete.data ?? []), ...(pageIssues.data ?? [])].map((d) => d.id))];
+  const reconvert = useReconvertAction();
 
   const doRescan = () =>
     rescan.mutateAsync().then(
@@ -82,6 +91,24 @@ export default function LibraryPage() {
         </div>
       )}
 
+      {flaggedIds.length > 0 && (
+        <div role="status" data-testid="page-flag-banner" className="mb-5 flex flex-col gap-3 rounded-[10px] border border-danger/30 bg-danger-soft px-4 py-3 sm:flex-row sm:items-center">
+          <FileWarning className="size-4 shrink-0 text-danger" />
+          <p className="flex-1 text-[13px]">
+            有 {flaggedIds.length} 份文件頁碼不完整或有問題頁
+            <span className="text-muted-foreground">（左右同步可能失準，或部分頁面是亂碼）。重新轉換會重做頁碼與逐頁品質檢查。</span>
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => set({ flag: incomplete.data?.length ? "page_map_incomplete" : "page_quality" })}>
+              只看這些
+            </Button>
+            <Button size="sm" onClick={() => reconvert.run(flaggedIds)} disabled={reconvert.pending}>
+              <RefreshCw /> 全部重新轉換
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="mb-4 flex flex-col gap-2.5 md:flex-row md:items-center">
         <div className="relative md:w-72">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -117,8 +144,18 @@ export default function LibraryPage() {
               </button>
             ))}
           </div>
+          <Select value={f.flag || "all"} onValueChange={(v) => set({ flag: v === "all" ? "" : (v as Filters["flag"]) })}>
+            <SelectTrigger aria-label="頁面問題" className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部文件</SelectItem>
+              <SelectItem value="page_map_incomplete">頁碼不完整</SelectItem>
+              <SelectItem value="page_quality">有問題頁</SelectItem>
+            </SelectContent>
+          </Select>
           {filtered && (
-            <Button variant="ghost" size="sm" onClick={() => set({ q: "", engine: "", status: "" })}>
+            <Button variant="ghost" size="sm" onClick={() => set(clear)}>
               <X /> 清除篩選
             </Button>
           )}
@@ -155,7 +192,7 @@ export default function LibraryPage() {
         <CardSkeletons />
       ) : docs.data.length === 0 ? (
         filtered ? (
-          <EmptyState icon={Search} title="沒有符合的文件" description="換個關鍵字，或清除篩選條件。" action={<Button variant="outline" onClick={() => set({ q: "", engine: "", status: "" })}>清除篩選</Button>} />
+          <EmptyState icon={Search} title="沒有符合的文件" description="換個關鍵字，或清除篩選條件。" action={<Button variant="outline" onClick={() => set(clear)}>清除篩選</Button>} />
         ) : (
           <EmptyState
             icon={Library}
@@ -169,12 +206,23 @@ export default function LibraryPage() {
           />
         )
       ) : f.view === "table" ? (
-        <DocTable docs={docs.data} />
+        <DocTable docs={docs.data} onReconvert={(id) => reconvert.run([id])} busy={reconvert.pending} />
       ) : (
         <ul className={cn("grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4", docs.isPlaceholderData && "opacity-60")}>
           {docs.data.map((d) => (
-            <li key={d.id}>
+            <li key={d.id} className="relative">
               <DocCard doc={d} />
+              {needsReconvert(d) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="absolute right-3 bottom-3 h-7 px-2 text-xs"
+                  onClick={() => reconvert.run([d.id])}
+                  disabled={reconvert.pending}
+                >
+                  <RefreshCw /> 重新轉換
+                </Button>
+              )}
             </li>
           ))}
         </ul>
@@ -190,6 +238,24 @@ function QualityBadge({ doc }: { doc: Document }) {
       {doc.status !== "orphaned" && doc.quality?.score != null && <span className="opacity-70">{doc.quality.score.toFixed(2)}</span>}
     </StatusBadge>
   );
+}
+
+/** One-click reconvert: on success go to the job; a 410 means neither the original nor the work copy is left. */
+function useReconvertAction() {
+  const navigate = useNavigate();
+  const m = useReconvert();
+  const run = (ids: string[]) =>
+    m.mutateAsync(ids).then(
+      (job) => {
+        toast.success(`已排入重新轉換（${ids.length} 份）`);
+        navigate(`/jobs/${job.id}`);
+      },
+      (e) =>
+        toast.error(
+          e instanceof ApiError && e.status === 410 ? "原始檔與工作副本都不在了，請重新上傳原始檔" : describeError(e),
+        ),
+    );
+  return { run, pending: m.isPending };
 }
 
 function DocCard({ doc }: { doc: Document }) {
@@ -212,18 +278,19 @@ function DocCard({ doc }: { doc: Document }) {
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-1.5">
         <QualityBadge doc={doc} />
+        <PageBadges doc={doc} />
         <Tag>{doc.engine}</Tag>
         <Tag>{doc.lang}</Tag>
       </div>
       <div className="mt-auto flex items-center justify-between pt-4 text-xs text-muted-foreground">
         <span className="tabular">{doc.pages ? `${doc.pages} 頁` : "無頁碼"}</span>
-        <span title={formatDateTime(doc.created_at)}>{formatRelative(doc.created_at)}</span>
+        {!needsReconvert(doc) && <span title={formatDateTime(doc.created_at)}>{formatRelative(doc.created_at)}</span>}
       </div>
     </Link>
   );
 }
 
-function DocTable({ docs }: { docs: Document[] }) {
+function DocTable({ docs, onReconvert, busy }: { docs: Document[]; onReconvert: (id: string) => void; busy: boolean }) {
   const navigate = useNavigate();
   return (
     <Panel className="overflow-x-auto">
@@ -235,6 +302,9 @@ function DocTable({ docs }: { docs: Document[] }) {
             <th className="px-4 py-2 font-medium">品質</th>
             <th className="px-4 py-2 text-right font-medium">頁數</th>
             <th className="px-4 py-2 font-medium">建立時間</th>
+            <th className="px-4 py-2 font-medium">
+              <span className="sr-only">動作</span>
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -248,10 +318,29 @@ function DocTable({ docs }: { docs: Document[] }) {
               </td>
               <td className="px-4 py-2.5 font-mono text-xs">{d.engine}</td>
               <td className="px-4 py-2.5">
-                <QualityBadge doc={d} />
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <QualityBadge doc={d} />
+                  <PageBadges doc={d} />
+                </span>
               </td>
               <td className="px-4 py-2.5 text-right tabular">{d.pages ?? "—"}</td>
               <td className="px-4 py-2.5 text-xs whitespace-nowrap text-muted-foreground tabular">{formatDateTime(d.created_at)}</td>
+              <td className="px-4 py-2.5 text-right">
+                {needsReconvert(d) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReconvert(d.id);
+                    }}
+                    disabled={busy}
+                  >
+                    <RefreshCw /> 重新轉換
+                  </Button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

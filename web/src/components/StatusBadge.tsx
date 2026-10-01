@@ -13,6 +13,7 @@ const TONE: Record<Tone, string> = {
 const STATUS_TONE: Record<string, Tone> = {
   done: "ok",
   ok: "ok",
+  warn: "warn",
   low: "warn",
   failed: "danger",
   running: "info",
