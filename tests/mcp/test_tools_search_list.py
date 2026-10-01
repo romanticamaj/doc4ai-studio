@@ -101,6 +101,37 @@ def test_search_store_error_is_a_tool_error(mcp_server, mcp_env, make_doc, monke
 
     def boom(*a, **kw):
         raise sqlite3.OperationalError("fts5: syntax error")
-    monkeypatch.setattr(mcp_env.ctx.store, "search_page_index", boom)
+    monkeypatch.setattr(mcp_env.ctx.store, "search_hits", boom)              # the primitive search_library uses
     res = mcp_call(mcp_server, raw, "search_library", {"query": "gradient"})
     assert res.is_error is True and res.structured_content["code"] == "search_unavailable"
+
+
+def _all_hits(base, raw, args):
+    out, hits = _out(mcp_call(base, raw, "search_library", args)), []
+    hits += out["hits"]
+    while out.get("next_cursor"):
+        out = _out(mcp_call(base, raw, "search_library", {**args, "cursor": out["next_cursor"]}))
+        hits += out["hits"]
+    return hits, out
+
+
+def test_short_cjk_fallback_reaches_every_document(mcp_server, mcp_env, make_doc):
+    """Item 6: one big document matching on 450 pages must not hide the others (the scan used to stop at 400 rows
+    in insertion order)."""
+    big = make_doc("big", pages=450, md="".join(page_md(n, body=f"身分驗證 第{n}頁") for n in range(1, 451)))
+    small = [make_doc(f"s{i}", pages=1, md=page_md(1, body="另一份文件也提到驗證")) for i in range(3)]
+    raw, _ = mcp_env.issue()
+    hits, last = _all_hits(mcp_server, raw, {"query": "驗證", "limit": 2})
+    assert {h["doc_id"] for h in hits} == {big["id"], *(d["id"] for d in small)}
+    big_hits = [h for h in hits if h["doc_id"] == big["id"]]
+    assert len(big_hits) == 3 and big_hits[0]["more_in_doc"] == 447
+    assert last.get("truncated") is False
+
+
+def test_search_says_when_it_hit_the_scan_cap(mcp_server, mcp_env, make_doc, monkeypatch):
+    from aidoc import pageindex
+    monkeypatch.setattr(pageindex, "SEARCH_SCAN_CAP", 50)
+    make_doc("big", pages=120, md="".join(page_md(n, body=f"驗證 {n}") for n in range(1, 121)))
+    raw, _ = mcp_env.issue()
+    out = _out(mcp_call(mcp_server, raw, "search_library", {"query": "驗證"}))
+    assert out["truncated"] is True and "narrow" in out["hint"]

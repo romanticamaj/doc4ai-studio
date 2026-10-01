@@ -68,6 +68,21 @@ def fts_query(q: str) -> str | None:
     return " ".join('"' + t.replace('"', '""') + '"' for t in terms)
 
 
+SEARCH_SCAN_CAP = 20000            # matching pages considered per search; beyond it the result says truncated
+
+
+def search_hits(store, query: str, *, doc_ids: list[str] | None = None, per_doc: int = 3) -> tuple[list[dict], bool]:
+    """search_library's primitive: every matching document (best `per_doc` pages each, with `doc_matches`) and
+    whether the scan cap was hit. Same FTS / substring choice as search_pages."""
+    terms = _terms(query)
+    if not terms:
+        return [], False
+    match = fts_query(query)
+    if match is not None:
+        return store.search_hits(match=match, doc_ids=doc_ids, per_doc=per_doc, cap=SEARCH_SCAN_CAP)
+    return store.search_hits(needle=max(terms, key=len), doc_ids=doc_ids, per_doc=per_doc, cap=SEARCH_SCAN_CAP)
+
+
 def search_pages(store, query: str, *, doc_ids: list[str] | None = None, limit: int = 50) -> list[dict]:
     terms = _terms(query)
     if not terms:

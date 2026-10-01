@@ -645,6 +645,31 @@ class Store:
                         f"instr(lower(text), lower(?)) > 0{f} LIMIT ?", [needle, *args, int(min(limit, scan_cap))])
         return rows
 
+    def search_hits(self, *, match: str | None = None, needle: str | None = None, doc_ids=None, per_doc: int = 3,
+                    cap: int = 20000) -> tuple[list[dict], bool]:
+        """Every matching document with its best `per_doc` pages (`doc_matches` = all its matching pages), over at
+        most `cap` matching pages. FTS (`match`): pages in bm25 order (the best `cap` kept when capped). Substring
+        fallback (`needle`): documents with the most matching pages first, then doc id and page — a deterministic
+        order, so cursors stay valid. Returns (rows, capped)."""
+        f, args = self._doc_filter(doc_ids)
+        if match is not None:
+            inner = (f"SELECT doc_id, page, text, bm25(page_index) AS rank FROM page_index WHERE page_index MATCH ?{f} "
+                     "ORDER BY rank LIMIT ?")
+            params, order = [match, *args, cap + 1], "rank, doc_id, page"
+        else:
+            inner = (f"SELECT doc_id, page, text, 0.0 AS rank FROM page_index WHERE instr(lower(text), lower(?)) > 0{f} "
+                     "LIMIT ?")
+            params, order = [needle, *args, cap + 1], "doc_matches DESC, doc_id, page"
+        with self.con.lock:
+            capped = int(self._q1(f"SELECT COUNT(*) FROM ({inner})", params)[0]) > cap
+            params[-1] = cap
+            rows = self._qa(
+                f"SELECT doc_id, page, text, rank, doc_matches FROM (SELECT doc_id, page, text, rank, "
+                f"ROW_NUMBER() OVER (PARTITION BY doc_id ORDER BY rank, page) AS rn, "
+                f"COUNT(*) OVER (PARTITION BY doc_id) AS doc_matches FROM ({inner})) WHERE rn <= ? ORDER BY {order}",
+                [*params, per_doc])
+        return rows, capped
+
     def active_mcp_jobs(self, token_id) -> int:
         """MCP jobs of this token still queued or running: those recorded in `mcp_jobs` (every MCP-created job since
         the fix, reconverts included) plus, for older rows, jobs attributed only through `mcp_calls.job_id` (D8)."""

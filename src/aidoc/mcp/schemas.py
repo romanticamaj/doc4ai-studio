@@ -45,6 +45,8 @@ class SearchOut(BaseModel):
     hits: list[SearchHit]
     next_cursor: str | None = None
     query: str
+    truncated: bool = False            # the scan cap was hit: some matching pages were not considered
+    hint: str | None = None
 
 
 class QualityBrief(BaseModel):

@@ -141,30 +141,29 @@ def register_read_tools(mcp, ctx) -> None:
             if not allowed:                              # an empty id list would mean "no filter" to the store
                 return SearchOut(hits=[], next_cursor=None, query=query)
         try:
-            rows = pageindex.search_pages(store, query, doc_ids=allowed, limit=400)
+            rows, capped = pageindex.search_hits(store, query, doc_ids=allowed, per_doc=MAX_PAGES_PER_DOC)
         except sqlite3.Error as e:                      # never an UnexpectedToolError (review focus 2)
             raise ToolFailure("search_unavailable", f"the search index could not run this query ({e})",
                               hint="rephrase the query with plain words") from None
-        per_doc: dict[str, list[dict]] = {}
-        for r in rows:
-            per_doc.setdefault(r["doc_id"], []).append(r)
         hits: list[SearchHit] = []
         titles: dict[str, str] = {}
-        for r in rows:                                   # rank order preserved; the first 3 pages of a doc are kept
-            lst = per_doc[r["doc_id"]]
-            if lst.index(r) >= MAX_PAGES_PER_DOC:
-                continue
+        seen: set[str] = set()
+        for r in rows:                                   # at most 3 pages per document, already in result order
             if r["doc_id"] not in titles:
                 row = store.get_document(r["doc_id"])
                 titles[r["doc_id"]] = Path(row["output_dir"]).name if row else r["doc_id"]
+            first = r["doc_id"] not in seen
+            seen.add(r["doc_id"])
             uri = f"doc4ai://documents/{r['doc_id']}" + (f"/pages/{r['page']}" if r["page"] is not None else "")
             hits.append(SearchHit(doc_id=r["doc_id"], title=titles[r["doc_id"]], page=r["page"],
                                   snippet=pageindex.make_snippet(r["text"], query), score=_score(r["rank"]),
-                                  more_in_doc=max(0, len(lst) - MAX_PAGES_PER_DOC) if lst.index(r) == 0 else 0, uri=uri))
+                                  more_in_doc=max(0, int(r["doc_matches"]) - MAX_PAGES_PER_DOC) if first else 0, uri=uri))
         skip = int(cur["skip"])
         page = hits[skip: skip + limit]
         nxt = _next(fp, skip=skip + limit) if skip + limit < len(hits) else None
-        return SearchOut(hits=page, next_cursor=nxt, query=query)
+        hint = ("more pages match than one search scans; narrow the query (more words, filters.doc_ids)"
+                if capped else None)
+        return SearchOut(hits=page, next_cursor=nxt, query=query, truncated=capped, hint=hint)
 
     @doc4ai_tool(mcp, ctx, name="list_documents", title="List documents",
                  description="Converted documents in the library with page count, engine and quality. Sorted by last "
