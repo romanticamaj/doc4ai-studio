@@ -68,3 +68,13 @@ def test_other_commands_report_unsafe_config_without_a_traceback(tmp_root, capsy
     assert main(["convert", str(tmp_root / "x.pdf")]) == 6
     err = capsys.readouterr().err
     assert err.startswith("error: ") and "local_path_roots" in err and "Traceback" not in err
+
+
+def test_call_log_retention_must_be_at_least_one_day(tmp_root, client):
+    """Item 10: 0 days made every maintenance run delete the whole call log."""
+    _write(tmp_root, "[mcp]\ncall_log_retention_days = 0\n")
+    with pytest.raises(ConfigError) as e:
+        load_config()
+    assert "call_log_retention_days" in str(e.value)
+    r = client.put("/api/settings", json={"mcp": {"call_log_retention_days": 0}})
+    assert r.status_code == 422 and ">= 1" in r.json()["detail"]

@@ -93,6 +93,10 @@ def mcp_list_problem(key: str, value: str) -> tuple[str, bool] | None:
 
 
 def _check_mcp(cfg: AidocConfig, where: Path) -> None:
+    days = cfg.mcp.call_log_retention_days
+    if not isinstance(days, int) or isinstance(days, bool) or days < 1:
+        raise ConfigError(f"{where}: mcp.call_log_retention_days must be an integer >= 1 (0 would delete the whole "
+                          f"MCP call log on every maintenance run)")
     for key in MCP_LISTS:
         val = getattr(cfg.mcp, key)
         if not isinstance(val, list) or not all(isinstance(v, str) for v in val):

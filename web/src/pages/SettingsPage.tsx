@@ -334,8 +334,8 @@ function McpSettingsForm({ original }: { original: Settings }) {
           <Field label="上傳上限（MB）" hint="convert_document 的檔案大小" htmlFor="mcp-upload">
             {num("max_upload_mb", "mcp-upload", 1, 2048, "MB")}
           </Field>
-          <Field label="呼叫紀錄保留天數" hint="0 = 只受筆數上限限制" htmlFor="mcp-retention">
-            {num("call_log_retention_days", "mcp-retention", 0, 3650, "天")}
+          <Field label="呼叫紀錄保留天數" hint="至少 1 天；另受筆數上限限制" htmlFor="mcp-retention">
+            {num("call_log_retention_days", "mcp-retention", 1, 3650, "天")}
           </Field>
           <Field label="呼叫紀錄筆數上限" htmlFor="mcp-rows">
             {num("call_log_max_rows", "mcp-rows", 1000, 10_000_000, "筆")}

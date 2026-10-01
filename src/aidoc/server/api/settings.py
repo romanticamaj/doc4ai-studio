@@ -25,7 +25,7 @@ _INT_MAX = 10 ** 9                      # any other int (timeouts in seconds): ~
 _MIN.update({("mcp", "default_token_ttl_days"): 1, ("mcp", "max_token_ttl_days"): 1, ("mcp", "rate_limit_per_min"): 1,
              ("mcp", "max_concurrent_jobs_per_token"): 1, ("mcp", "max_upload_mb"): 1,
              ("mcp", "response_token_budget"): 500, ("mcp", "call_log_max_rows"): 1000,
-             ("mcp", "call_log_retention_days"): 0})
+             ("mcp", "call_log_retention_days"): 1})          # 0 would delete the whole call log every run
 _MAX.update({("mcp", "max_upload_mb"): 2048, ("mcp", "response_token_budget"): 25000,
              ("mcp", "max_token_ttl_days"): 3650, ("mcp", "default_token_ttl_days"): 3650})
 
