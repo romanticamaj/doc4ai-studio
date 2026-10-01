@@ -71,3 +71,11 @@ def test_probe_compacts_broken_font_pages():
 
 def test_raw_result_page_map_method_default():
     assert RawResult(markdown="", image_paths=[], raw_dir=Path("."), has_page_markers=False).page_map_method is None
+
+
+def test_pages_unrepaired_counts_missing_pages_beyond_the_listed_200():
+    q = QualityResult(score=0.0, level="low", reasons=["page_map_incomplete"], page_check=1,
+                      page_map={"expected": 1192, "found": 30, "coverage": 0.0252, "missing": list(range(31, 231)),
+                                "missing_truncated": True},
+                      pages=[{"page": p, "reasons": ["page_map_missing"]} for p in range(31, 231)])
+    assert q.to_json()["pages_unrepaired"] == 1162

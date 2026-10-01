@@ -157,7 +157,11 @@ class QualityResult:
 
     @property
     def pages_unrepaired(self) -> int:
-        return sum(1 for p in self.pages if not p.get("repaired_by"))
+        listed = sum(1 for p in self.pages if not p.get("repaired_by"))
+        pm = self.page_map or {}
+        # page_map.missing lists at most 200 pages; the rest are unrepaired too
+        beyond = max(0, (pm.get("expected") or 0) - (pm.get("found") or 0) - len(pm.get("missing") or []))
+        return listed + beyond
 
     def to_json(self) -> dict:
         d = {"score": self.score, "level": self.level, "reasons": list(self.reasons), "metrics": dict(self.metrics)}
