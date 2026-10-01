@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -86,7 +87,31 @@ def build_context(cfg: AidocConfig, token: str | None, start_workers: bool = Tru
     ctx.queue = JobQueue(ctx)
     if start_workers:
         ctx.queue.start()
+        start_reassessment(ctx)
     return ctx
+
+
+def start_reassessment(ctx: ServerContext, log=None) -> threading.Thread:
+    """Background re-assessment of existing outputs after startup recovery (spec 2026-10-01 §11): never blocks
+    the server; the store lock is taken per statement, not for the whole run."""
+    import sys
+
+    from aidoc.reassess import reassess_all
+
+    def emit(line: str) -> None:
+        print(f"reassess: {line}", file=sys.stderr, flush=True)
+
+    def run() -> None:
+        try:
+            counts = reassess_all(ctx.store, log=log or emit)
+        except Exception as e:  # noqa: BLE001  a background helper must never take the server down
+            (log or emit)(f"failed: {type(e).__name__}: {e}")
+            return
+        if counts["assessed"]:
+            ctx.bus.publish("system.updated", None, {"documents_reassessed": counts["assessed"], **counts})
+    th = threading.Thread(target=run, name="aidoc-reassess", daemon=True)
+    th.start()
+    return th
 
 
 def create_app(ctx: ServerContext) -> FastAPI:

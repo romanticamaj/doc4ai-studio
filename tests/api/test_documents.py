@@ -84,3 +84,10 @@ def test_rescan_restores_a_document_whose_output_came_back(client, ctx, tmp_root
     shutil.move(str(tmp_root / "moved"), str(out))
     assert client.post("/api/documents/rescan").json()["orphaned"] == 0
     assert client.get(f"/api/documents/{did}").json()["document"]["status"] == "ok"
+
+
+def test_rescan_reports_page_flags(client, ctx, tmp_root, fixtures):
+    converted(client, ctx, tmp_root, fixtures)
+    r = client.post("/api/documents/rescan?all=1").json()
+    assert {"orphaned", "assessed", "page_map_incomplete", "page_quality"} <= set(r)
+    assert r["assessed"] >= 1 and r["page_map_incomplete"] == 0

@@ -185,8 +185,9 @@ def delete_orphaned(request: Request) -> dict:
 
 
 @router.post("/documents/rescan")
-def rescan(request: Request) -> dict:
-    """Mark documents whose output (sidecar) is gone as orphaned (index A17); restore ones whose output is back."""
+def rescan(request: Request, all: int = 0) -> dict:
+    """Mark documents whose output (sidecar) is gone as orphaned (index A17); restore ones whose output is back;
+    re-assess page map / page quality of documents never assessed (or all with ?all=1; spec 2026-10-01 §11)."""
     ctx = request.app.state.ctx
     store = ctx.store
     n = 0
@@ -198,5 +199,7 @@ def rescan(request: Request) -> dict:
         elif doc["status"] == "orphaned" and present:
             level = (doc.get("quality") or {}).get("level")
             store.set_document_status(doc["id"], level if level in ("ok", "warn", "low") else "ok")
-    ctx.bus.publish("system.updated", None, {"documents_rescanned": True, "orphaned": n})
-    return {"orphaned": n}
+    from aidoc.reassess import reassess_all
+    counts = reassess_all(store, force=bool(all), log=lambda line: None)
+    ctx.bus.publish("system.updated", None, {"documents_rescanned": True, "orphaned": n, **counts})
+    return {"orphaned": n, **counts}

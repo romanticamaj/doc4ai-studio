@@ -356,7 +356,7 @@ class Store:
     def get_document_by_output(self, output_dir) -> dict | None:
         return _row(self._q1("SELECT * FROM documents WHERE output_dir=?", (str(output_dir),)))
 
-    def list_documents(self, status=None, engine=None, q=None) -> list[dict]:
+    def list_documents(self, status=None, engine=None, q=None, flag=None) -> list[dict]:
         sql, args = "SELECT * FROM documents WHERE 1=1", []
         if status is not None:
             sql += " AND status=?"
@@ -367,7 +367,14 @@ class Store:
         if q:
             sql += " AND (source_path LIKE ? OR output_dir LIKE ?)"
             args += [f"%{q}%", f"%{q}%"]
-        return self._qa(sql + " ORDER BY created_at DESC", args)
+        rows = self._qa(sql + " ORDER BY created_at DESC", args)
+        if flag is not None:                       # spec 2026-10-01 §9.2: flags derive from the stored quality
+            from aidoc.reassess import doc_flags
+            rows = [r for r in rows if flag in doc_flags(r)]
+        return rows
+
+    def update_document_quality(self, doc_id, quality: dict, status: str) -> None:
+        self._update("documents", "id", doc_id, {"quality": quality, "status": status})
 
     def update_document(self, doc_id, **fields) -> None:
         self._update("documents", "id", doc_id, fields)

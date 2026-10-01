@@ -142,3 +142,14 @@ def test_store_is_safe_to_share_between_threads(store):
     for t in ts:
         t.join(60)
     assert errors == []
+
+
+def test_update_document_quality(tmp_path):
+    from aidoc.store import Store
+    store = Store(tmp_path / "a.db")
+    did = store.upsert_document(sha256="q" * 64, source_path="a.pdf", output_dir="out/q", engine="docling",
+                                quality={"score": 1.0, "level": "ok", "reasons": []}, pages=2, lang="cht",
+                                aidoc_version="0.1.0", status="ok", created_at=1.0)
+    store.update_document_quality(did, {"score": 0.5, "level": "warn", "reasons": [], "page_check": 1}, "warn")
+    d = store.get_document(did)
+    assert d["status"] == "warn" and d["quality"]["page_check"] == 1 and d["quality"]["level"] == "warn"
