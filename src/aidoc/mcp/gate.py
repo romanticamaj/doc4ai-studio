@@ -4,6 +4,7 @@ request the SDK middleware did not record itself."""
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from urllib.parse import parse_qs
@@ -33,6 +34,23 @@ class CallState:
     started: float
     protocol_version: str | None
     logged: bool = False
+
+
+SMALL_BODY_BYTES = MIB                     # every request but a convert_document upload
+_UPLOAD_RE = (re.compile(rb'"method"\s*:\s*"tools/call"'), re.compile(rb'"name"\s*:\s*"convert_document"'))
+_ID_RE = re.compile(rb'"id"\s*:\s*("(?:[^"\\]|\\.){0,200}"|-?\d{1,18})')
+
+
+def _looks_like_upload(prefix: bytes) -> bool:
+    """Decided on the first 1 MB (the JSON-RPC envelope comes before the base64 payload); verified on the whole
+    parsed body afterwards."""
+    return all(r.search(prefix) for r in _UPLOAD_RE)
+
+
+def _tool_name(parsed) -> str | None:
+    params = parsed.get("params") if isinstance(parsed, dict) else None
+    name = params.get("name") if isinstance(params, dict) else None
+    return name if isinstance(name, str) else None
 
 
 def max_body_bytes(cfg) -> int:
@@ -75,6 +93,24 @@ class McpGate:
     def __init__(self, ctx, inner, verifier: PatVerifier, limiter, recorder, guard: AuthFailureGuard | None = None):
         self.ctx, self.inner, self.verifier, self.limiter, self.recorder = ctx, inner, verifier, limiter, recorder
         self.guard = guard if guard is not None else AuthFailureGuard(recorder)
+
+    async def _upload_too_large(self, send, prefix: bytes, principal, ip, pv, ts) -> None:
+        """A convert_document upload over mcp.max_upload_mb: answered as the tool error file_too_large (JSON-RPC
+        result, HTTP 200) when the request id can be read, so the model sees the spec error, not a transport 413."""
+        limit = self.ctx.config.mcp.max_upload_mb * MIB
+        m = _ID_RE.search(prefix)
+        self.recorder.record(status="tool_error", error_code="file_too_large", http_status=200 if m else 413, ip=ip,
+                             token_id=principal.token_id, method="tools/call", tool_name="convert_document",
+                             protocol_version=pv, ts=ts)
+        if m is None:
+            return await _send_json(send, 413, {"error": "payload_too_large", "max_bytes": max_body_bytes(self.ctx.config),
+                                                "error_description": "The upload is larger than mcp.max_upload_mb"})
+        payload = {"code": "file_too_large", "message": f"the file is larger than the {limit // MIB} MB limit",
+                   "hint": "split the document or raise mcp.max_upload_mb", "limit_bytes": limit}
+        text = f"file_too_large: {payload['message']} ({payload['hint']})"
+        await _send_json(send, 200, {"jsonrpc": "2.0", "id": json.loads(m.group(1)),
+                                     "result": {"content": [{"type": "text", "text": text}], "isError": True,
+                                                "structuredContent": payload}})
 
     async def _flooded(self, send, retry: int, reason: str) -> None:
         """An IP over the failed-auth limit: 429 (counted into its aggregate row instead of a row per attempt), but
@@ -131,8 +167,18 @@ class McpGate:
             return await _send_json(send, 405, {"error": "method_not_allowed",
                                                 "error_description": "This server is stateless: POST JSON-RPC to /mcp"},
                                     [(b"allow", b"POST")])
-        # read the body once (bounded), learn the method, replay it to the SDK (D5)
-        parts, size, limit = [], 0, max_body_bytes(cfg)       # a list + one join: linear, not body += chunk
+        # read the body once (bounded), learn the method, replay it to the SDK (D5). Item 13: only a convert_document
+        # upload may use the large limit; everything else is capped at SMALL_BODY_BYTES.
+        large = max_body_bytes(cfg)
+
+        async def too_large(max_bytes: int):
+            self.recorder.record(status="protocol_error", error_code="payload_too_large", http_status=413, ip=ip,
+                                 token_id=principal.token_id, protocol_version=pv, ts=ts)
+            return await _send_json(send, 413, {"error": "payload_too_large", "max_bytes": max_bytes,
+                                                "error_description": f"The request body is larger than {max_bytes} bytes"})
+        declared = _header(scope, "content-length")
+        over_declared = bool(declared and declared.strip().isdigit() and int(declared) > large)
+        parts, size, upload = [], 0, None                       # upload: None = undecided, True/False after 1 MB
         while True:
             msg = await receive()
             if msg["type"] == "http.disconnect":
@@ -140,10 +186,18 @@ class McpGate:
             chunk = msg.get("body", b"")
             parts.append(chunk)
             size += len(chunk)
-            if size > limit:
-                self.recorder.record(status="protocol_error", error_code="payload_too_large", http_status=413, ip=ip,
-                                     token_id=principal.token_id, protocol_version=pv, ts=ts)
-                return await _send_json(send, 413, {"error": "payload_too_large", "max_bytes": limit})
+            if over_declared and (size >= SMALL_BODY_BYTES or not msg.get("more_body")):
+                # declared too big: never read past the first 1 MB, only enough to answer in the right shape
+                prefix = b"".join(parts)[:SMALL_BODY_BYTES]
+                if _looks_like_upload(prefix):
+                    return await self._upload_too_large(send, prefix, principal, ip, pv, ts)
+                return await too_large(large)
+            if size > SMALL_BODY_BYTES and upload is None:
+                upload = _looks_like_upload(b"".join(parts)[:SMALL_BODY_BYTES])
+                if not upload:
+                    return await too_large(SMALL_BODY_BYTES)
+            if size > large:
+                return await self._upload_too_large(send, b"".join(parts)[:SMALL_BODY_BYTES], principal, ip, pv, ts)
             if not msg.get("more_body"):
                 break
         body = b"".join(parts)
@@ -152,7 +206,7 @@ class McpGate:
         # can never relabel a tools/call to dodge the rate limit or the audit row (the SDK checks the header
         # against the body only in the 2026-07-28 era)
         header_method = _header(scope, "mcp-method")
-        body_method = None
+        body_method, parsed = None, None
         if scope["method"] == "POST" and body:
             try:
                 parsed = json.loads(body)
@@ -167,6 +221,8 @@ class McpGate:
             return await _send_json(send, 400, {"error": "method_mismatch",
                                                 "error_description": "Mcp-Method does not match the JSON-RPC method"})
         method = body_method or header_method
+        if size > SMALL_BODY_BYTES and not (method == "tools/call" and _tool_name(parsed) == "convert_document"):
+            return await too_large(SMALL_BODY_BYTES)        # the prefix looked like an upload, the body was not one
         if method == "tools/call":
             ok, retry = self.limiter.acquire(principal.token_id or principal.subject, principal.rate_limit_per_min)
             if not ok:

@@ -234,7 +234,8 @@ def test_body_is_buffered_linearly(gate_client):
         await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": b"{}"})
     gate = McpGate(ctx, inner, PatVerifier(ctx.store, SECRET), RateLimiter(lambda: 60), CallRecorder(ctx))
-    chunks = [b'{"method":"tools/list","pad":"'] + [b"A" * 4096] * 6000 + [b'"}']       # ~24 MB in 4 KiB chunks
+    chunks = ([b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"convert_document","arguments":'
+               b'{"filename":"a.pdf","content_base64":"'] + [b"A" * 4096] * 6000 + [b'"}}}'])   # ~24 MB in 4 KiB chunks
     msgs = [{"type": "http.request", "body": ch, "more_body": i < len(chunks) - 1} for i, ch in enumerate(chunks)]
 
     async def receive():
@@ -262,3 +263,55 @@ def test_access_token_query_parameter_is_rejected_too(gate_client):
         assert _rows(ctx)[0]["token_prefix_seen"] == raw[:15]
     line = f'1.2.3.4 - "POST /mcp?x=1&access_token={raw}&Token={raw} HTTP/1.1" 400'
     assert raw not in redact(line)
+
+
+SMALL = 1024 * 1024
+
+
+def _post_big(c, raw, body: bytes, headers=None):
+    return c.post("/mcp", content=body, headers={**MODERN, "Authorization": f"Bearer {raw}", **(headers or {})})
+
+
+def test_only_convert_document_may_send_a_large_body(gate_client):
+    """Item 13: every other request is capped at 1 MB (the large limit used to apply to anything authenticated)."""
+    c, ctx = gate_client
+    raw, _ = _issue(ctx)
+    pad = b"A" * (SMALL + 200_000)
+    r = _post_big(c, raw, b'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"' + pad + b'"}}',
+                  {"Mcp-Method": "tools/list"})
+    assert r.status_code == 413 and r.json()["error"] == "payload_too_large" and r.json()["max_bytes"] == SMALL
+    assert r.json()["error_description"]
+    r = _post_big(c, raw, b'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_library",'
+                          b'"arguments":{"query":"' + pad + b'"}}}')
+    assert r.status_code == 413
+    ok = _post_big(c, raw, b'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"convert_document",'
+                           b'"arguments":{"filename":"a.pdf","content_base64":"' + pad + b'"}}}')
+    assert ok.status_code == 200 and ok.json()["method"] == "tools/call"
+    # a spoofed header cannot open the large limit for another tool
+    r = _post_big(c, raw, b'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_library",'
+                          b'"arguments":{"query":"' + pad + b'"}}}', {"Mcp-Name": "convert_document"})
+    assert r.status_code == 413
+
+
+def test_declared_content_length_over_the_limit_is_refused_before_reading(gate_client):
+    c, ctx = gate_client
+    raw, _ = _issue(ctx)
+    r = c.post("/mcp", content=b"{}", headers={**MODERN, "Authorization": f"Bearer {raw}",
+                                               "Content-Length": str(10 ** 10)})
+    assert r.status_code == 413 and r.json()["error"] == "payload_too_large"
+
+
+def test_oversized_convert_upload_is_a_file_too_large_tool_error(gate_client):
+    c, ctx = gate_client
+    raw, _ = _issue(ctx)
+    ctx.config.mcp.max_upload_mb = 1
+    body = (b'{"jsonrpc":"2.0","id":"req-7","method":"tools/call","params":{"name":"convert_document","arguments":'
+            b'{"filename":"a.pdf","content_base64":"' + b"A" * (3 * 1024 * 1024) + b'"}}}')
+    r = _post_big(c, raw, body, {"Mcp-Name": "convert_document"})
+    ctx.config.mcp.max_upload_mb = 20
+    assert r.status_code == 200
+    res = r.json()
+    assert res["id"] == "req-7" and res["result"]["isError"] is True
+    assert res["result"]["structuredContent"]["code"] == "file_too_large"
+    row = _rows(ctx)[0]
+    assert (row["status"], row["error_code"], row["tool_name"]) == ("tool_error", "file_too_large", "convert_document")
