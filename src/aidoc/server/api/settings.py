@@ -13,7 +13,7 @@ from aidoc.server.auth import ApiError
 router = APIRouter()
 
 _CHOICES = {("general", "lang"): {"cht", "en"}, ("engines", "mineru_tier"): {"basic", "standard"},
-            ("engines", "docling_ocr"): {"easyocr", "rapidocr"}}
+            ("engines", "docling_ocr"): {"easyocr", "rapidocr"}, ("compat", "json_content"): {"null", "doc4ai"}}
 _MIN = {("general", "work_retention_days"): 0, ("engines", "docling_page_batch_size"): 1,
         ("server", "port"): 1, ("limits", "disk_space_factor"): 1, ("limits", "upload_max_bytes"): 1}
 _MAX = {("server", "port"): 65535, ("limits", "upload_max_bytes"): 2 ** 40,        # 1 TiB
@@ -30,6 +30,15 @@ _MIN.update({("mcp", "default_token_ttl_days"): 1, ("mcp", "max_token_ttl_days")
              ("mcp", "call_log_retention_days"): 1})          # 0 would delete the whole call log every run
 _MAX.update({("mcp", "max_upload_mb"): 2048, ("mcp", "response_token_budget"): 25000,
              ("mcp", "max_token_ttl_days"): 3650, ("mcp", "default_token_ttl_days"): 3650})
+
+
+# [compat] (compat spec §7, plan §4)
+_MIN.update({("compat", "sync_timeout_s"): 10, ("compat", "max_file_mb"): 1, ("compat", "max_source_mb"): 1,
+             ("compat", "embed_images_max_mb"): 1, ("compat", "max_concurrent_jobs_per_token"): 1,
+             ("compat", "poll_max_wait_s"): 1, ("compat", "task_retention_days"): 1})
+_MAX.update({("compat", "sync_timeout_s"): 3600, ("compat", "max_file_mb"): 4096, ("compat", "max_source_mb"): 1024,
+             ("compat", "embed_images_max_mb"): 1024, ("compat", "max_concurrent_jobs_per_token"): 100,
+             ("compat", "poll_max_wait_s"): 300, ("compat", "task_retention_days"): 3650})
 
 
 def _validate_mcp_lists(key: str, val, allow_drive_root: bool = False) -> None:

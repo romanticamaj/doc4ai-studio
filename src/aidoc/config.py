@@ -76,6 +76,20 @@ class Preview:
     max_mb: int = 200
 
 
+@dataclass
+class Compat:
+    """[compat] docling-serve compatible API (spec 2026-10-05 compat §7)."""
+    enabled: bool = True
+    sync_timeout_s: int = 600
+    max_file_mb: int = 200
+    max_source_mb: int = 50
+    embed_images_max_mb: int = 20
+    max_concurrent_jobs_per_token: int = 8
+    poll_max_wait_s: int = 60
+    task_retention_days: int = 30
+    json_content: str = "null"          # "null" | "doc4ai" (spike S1: RAGFlow reads md_content first)
+
+
 class ConfigError(ValueError):
     """aidoc.toml holds a value that is unsafe to run with (the server refuses to start)."""
 
@@ -140,7 +154,7 @@ def _check_mcp(cfg: AidocConfig, where: Path) -> None:
 
 
 _SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp,
-             "preview": Preview}
+             "preview": Preview, "compat": Compat}
 
 
 @dataclass
@@ -151,6 +165,7 @@ class AidocConfig:
     server: Server = field(default_factory=Server)
     mcp: Mcp = field(default_factory=Mcp)
     preview: Preview = field(default_factory=Preview)
+    compat: Compat = field(default_factory=Compat)
     root: Path = field(default_factory=paths.project_root)
     data_dir: Path = field(default_factory=paths.data_dir)
     warnings: list[str] = field(default_factory=list)            # load-time problems that were ignored

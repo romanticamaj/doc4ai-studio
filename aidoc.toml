@@ -39,3 +39,14 @@ enabled = true                     # Office files (docx/pptx/xlsx/odt/rtf/...) s
 soffice_path = ""                  # LibreOffice soffice(.exe); empty = PATH, then the usual install locations
 timeout_s = 180
 max_mb = 200
+
+[compat]
+enabled = true                     # docling-serve compatible API at /v1 (Open WebUI, RAGFlow, curl); PAT auth
+sync_timeout_s = 600               # longest wait of /v1/convert/*; then 504 with a task_id for /v1/status/poll
+max_file_mb = 200                  # /v1/convert/file upload limit (streamed to disk)
+max_source_mb = 50                 # /v1/convert/source JSON body limit (base64 included)
+embed_images_max_mb = 20           # image_export_mode=embedded: total inline image bytes per response
+max_concurrent_jobs_per_token = 8  # sync requests over it wait for a slot; async requests get 429
+poll_max_wait_s = 60               # cap of /v1/status/poll ?wait=
+task_retention_days = 30           # async task records; /v1/result answers 404 after this
+json_content = "null"              # "null" | "doc4ai"; json_content is always null for now (spike S1)

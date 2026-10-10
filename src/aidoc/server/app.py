@@ -44,7 +44,9 @@ class EnvelopeMiddleware:
     async def __call__(self, scope, receive, send):
         path = scope.get("path", "")
         # MCP protocol responses (and Phase 2 /.well-known/) must reach clients byte for byte (MCP spec §4.1)
-        if scope["type"] != "http" or path == "/mcp" or path.startswith(("/mcp/", "/.well-known/")):
+        # docling-serve compatible routes (/v1, /v1alpha, /health) answer docling-shaped JSON, never an envelope
+        if (scope["type"] != "http" or path in ("/mcp", "/health")
+                or path.startswith(("/mcp/", "/.well-known/", "/v1/", "/v1alpha/"))):
             return await self.app(scope, receive, send)
         start: dict | None = None
         chunks: list[bytes] = []
@@ -171,6 +173,10 @@ def create_app(ctx: ServerContext) -> FastAPI:
     api.include_router(mcp_api.router)
     app.include_router(api)
     app.add_route("/mcp", rt.app, methods=["GET", "POST", "DELETE"])     # before the SPA catch-all (D2, spike S2)
+
+    @app.get("/health", include_in_schema=False)
+    def health():
+        return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})   # public; Docker HEALTHCHECK
     _mount_web(app, Path(ctx.config.root) / "web" / "dist")
     app.add_middleware(EnvelopeMiddleware)
     app.add_middleware(CompressionMiddleware)       # outermost: compresses the enveloped JSON, never SSE / ranges
