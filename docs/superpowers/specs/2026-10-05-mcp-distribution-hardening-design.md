@@ -512,7 +512,7 @@ Office 文件沒有頁的概念 → 旗標記在 `page = null`（整份）或以
 
 ### 9.5 資料與流程
 
-- **pipeline**：`check_document()` 之後、`_write_output()` 之前呼叫 `hidden.scan(src, kind, markdown_pages)`；結果寫進 `QualityResult.pages[]`（既有頁記錄；每頁 `reasons` 可同時含品質與安全代碍）與新的文件層欄位 `quality.untrusted = {"version": 1, "pages": [n…], "hidden_chars": N, "levels": {"high": 1, "info": 3}, "spans_truncated": bool}`；`quality.pages[].spans` ≤ 20／頁、全文件 ≤ 200 筆（pdf-mcp 同）。**不改** `level`／`score`。
+- **pipeline**：`check_document()` 之後、`_write_output()` 之前呼叫 `hidden.scan(src, kind, markdown_pages)`；結果寫進 `QualityResult.pages[]`（既有頁記錄；每頁 `reasons` 可同時含品質與安全代碼）與新的文件層欄位 `quality.untrusted = {"version": 1, "pages": [n…], "hidden_chars": N, "levels": {"high": 1, "info": 3}, "spans_truncated": bool}`；`quality.pages[].spans` ≤ 20／頁、全文件 ≤ 200 筆（pdf-mcp 同）。**不改** `level`／`score`。
 - **sidecar**：同上欄位；`untrusted.version` 讓重新評估知道該不該重跑。
 - **DB**：`documents.quality_json` 已含 `quality`；`Store.list_documents(flag=...)` 的 `flag` 多 `untrusted`；`doc_flags()` 多 `untrusted_content`（高）、`untrusted_info`（僅 info 等級）。
 - **既有文件**：`reassess.py` 在啟動／rescan 時對 `untrusted.version` 缺或較舊的文件重跑（來源 PDF 在時掃 PDF；不在時只做 `hidden_unicode` + `injection_pattern` 掃 Markdown）。
