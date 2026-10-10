@@ -130,3 +130,14 @@ def test_settings_mcp_rejects_bad_values(client, tmp_root):
     for body in bad:
         r = client.put("/api/settings", json={"mcp": body})
         assert r.status_code == 422 and r.json()["error"] == "invalid_settings", (body, r.text)
+
+
+def test_settings_compat_roundtrip_and_ranges(client):
+    s = client.get("/api/settings").json()["settings"]
+    assert s["compat"]["sync_timeout_s"] == 600
+    r = client.put("/api/settings", json={"compat": {"sync_timeout_s": 900, "json_content": "doc4ai"}})
+    assert r.status_code == 200 and r.json()["settings"]["compat"]["sync_timeout_s"] == 900
+    for bad in [{"sync_timeout_s": 5}, {"sync_timeout_s": 4000}, {"max_file_mb": 0}, {"poll_max_wait_s": 301},
+                {"json_content": "docling"}, {"enabled": 1}, {"task_retention_days": 0}]:
+        r = client.put("/api/settings", json={"compat": bad})
+        assert r.status_code == 422 and r.json()["error"] == "invalid_settings", (bad, r.text)
