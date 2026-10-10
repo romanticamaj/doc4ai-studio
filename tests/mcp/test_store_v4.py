@@ -16,8 +16,8 @@ def store(tmp_path):
 def test_schema_v4_tables_and_version(store):
     names = {r[0] for r in store.con.execute("SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
     assert {"api_tokens", "mcp_clients", "mcp_calls", "oauth_clients", "mcp_calls_ts", "mcp_calls_token_ts"} <= names
-    assert SCHEMA_VERSION == 4
-    assert store._q1("SELECT value FROM meta WHERE key='schema_version'")[0] == "4"
+    assert SCHEMA_VERSION == 5                     # v5 (compat) only adds compat_tasks
+    assert store._q1("SELECT value FROM meta WHERE key='schema_version'")[0] == "5"
 
 
 def test_v2_database_upgrades_in_place(tmp_path):
@@ -32,7 +32,7 @@ def test_v2_database_upgrades_in_place(tmp_path):
     con.commit()
     con.close()
     s = Store(db)
-    assert s._q1("SELECT value FROM meta WHERE key='schema_version'")[0] == "4"
+    assert s._q1("SELECT value FROM meta WHERE key='schema_version'")[0] == "5"
     assert s.list_api_tokens() == []
     s.close()
 

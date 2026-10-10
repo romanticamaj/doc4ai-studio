@@ -11,7 +11,7 @@ from pathlib import Path
 
 from aidoc.models import TERMINAL_TASK, Attempt, ConvertOptions, JobStatus, TaskStatus
 
-SCHEMA_VERSION = 4   # v3 was never issued: the MCP work (spec 2026-10-01) goes straight to the spec's "v4"
+SCHEMA_VERSION = 5   # v3 was never issued (MCP went to "v4"); v5 adds compat_tasks (docling-serve compatible API)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS oauth_clients(
 -- which token started an MCP job, written in the same locked step that checks the per-token cap (S-phase finding 4)
 CREATE TABLE IF NOT EXISTS mcp_jobs(job_id TEXT PRIMARY KEY, token_id TEXT NOT NULL, created_at REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS mcp_jobs_token ON mcp_jobs(token_id);
+-- schema v5 (compat spec 2026-10-05 §6): the options an async /v1 request was made with, for /v1/result
+CREATE TABLE IF NOT EXISTS compat_tasks(
+  job_id TEXT PRIMARY KEY, token_id TEXT NOT NULL, options_json TEXT NOT NULL, created_at REAL NOT NULL,
+  protocol TEXT NOT NULL);
 """
 
 _ACTIVE = {TaskStatus.probing.value, TaskStatus.converting.value, TaskStatus.checking.value}
@@ -672,6 +676,18 @@ class Store:
                 f"COUNT(*) OVER (PARTITION BY doc_id) AS doc_matches FROM ({inner})) WHERE rn <= ? ORDER BY {order}",
                 [*params, per_doc])
         return rows, capped
+
+    # ---- compat_tasks (schema v5)
+    def create_compat_task(self, job_id, *, token_id: str, options: dict, protocol: str) -> None:
+        self.con.execute("INSERT OR REPLACE INTO compat_tasks(job_id, token_id, options_json, created_at, protocol) "
+                         "VALUES(?,?,?,?,?)", (job_id, token_id, json.dumps(options, ensure_ascii=False), time.time(), protocol))
+
+    def get_compat_task(self, job_id) -> dict | None:
+        """The row with `options` parsed from options_json; None when unknown (or pruned)."""
+        return _row(self._q1("SELECT * FROM compat_tasks WHERE job_id=?", (job_id,)))
+
+    def prune_compat_tasks(self, *, older_than_ts: float) -> int:
+        return self.con.execute("DELETE FROM compat_tasks WHERE created_at < ?", (older_than_ts,)).rowcount
 
     def active_mcp_jobs(self, token_id) -> int:
         """MCP jobs of this token still queued or running: those recorded in `mcp_jobs` (every MCP-created job since
