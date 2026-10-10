@@ -1,0 +1,24 @@
+{
+  "source": "docs/integrations/curl.md (compat spec §8.5): curl -F files=@a.pdf .../v1/convert/file/async, then GET /v1/status/poll/{task_id}?wait=5 and GET /v1/result/{task_id}",
+  "method": "POST",
+  "path": "/v1/convert/file/async",
+  "file_field": "files",
+  "headers": {
+    "X-Api-Key": "<TOKEN>",
+    "User-Agent": "curl/8.9.1"
+  },
+  "form": {
+    "md_page_break_placeholder": "<!-- pagebreak -->"
+  },
+  "expect": {
+    "status_code": 200,
+    "schema": "TaskStatusResponse",
+    "checks": [
+      {
+        "path": "task_type",
+        "op": "equals",
+        "value": "convert"
+      }
+    ]
+  }
+}

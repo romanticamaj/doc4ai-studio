@@ -1,0 +1,44 @@
+{
+  "source": "https://github.com/infiniflow/ragflow/blob/v1.0.0-rc1/internal/parser/parser/pdf_parser_docling.go (parsePDFWithDocling, v1.0.0-rc1) — candidate 3 (the one whose answer RAGFlow uses against Doc4AI, spike S1): /v1/convert/source, doclingStandardPayload(alpha=false)",
+  "method": "POST",
+  "path": "/v1/convert/source",
+  "headers": {
+    "Authorization": "Bearer <TOKEN>",
+    "Content-Type": "application/json",
+    "User-Agent": "Go-http-client/1.1"
+  },
+  "json": {
+    "options": {
+      "from_formats": [
+        "pdf"
+      ],
+      "to_formats": [
+        "json",
+        "md",
+        "text"
+      ]
+    },
+    "sources": [
+      {
+        "filename": "a.pdf",
+        "base64_string": "<B64>",
+        "kind": "file"
+      }
+    ]
+  },
+  "expect": {
+    "status_code": 200,
+    "schema": "ConvertDocumentResponse",
+    "checks": [
+      {
+        "path": "status",
+        "op": "equals",
+        "value": "success"
+      },
+      {
+        "path": "document.md_content",
+        "op": "not_null"
+      }
+    ]
+  }
+}

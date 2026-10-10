@@ -152,3 +152,16 @@ def test_expired_task_record_is_404(workers):
     env.ctx.store.prune_compat_tasks(older_than_ts=time.time() + 1)
     r = env.client.get(f"/v1/result/{tid}", headers={"X-Api-Key": raw})
     assert r.status_code == 404 and r.json() == {"detail": "task not found"}
+
+
+def test_low_quality_task_is_success_and_its_result_partial_success(workers):
+    """Task status is about the task (clients such as Haystack stop polling only on success|failure); the result's
+    conversion status carries partial_success (spec §4.3 step 5)."""
+    from tests.fakes.scenario import write_scenario
+    env = workers
+    write_scenario(env.ctx.config.root / "sc.json", default="low")
+    raw, _ = env.issue()
+    tid = _submit(env, raw, name="low.pdf", data=PDF + b"\n% low\n").json()["task_id"]
+    st = env.client.get(f"/v1/status/poll/{tid}", params={"wait": 10}, headers={"X-Api-Key": raw}).json()
+    assert st["task_status"] == "success" and st["task_meta"]["num_partially_succeeded"] == 1
+    assert env.client.get(f"/v1/result/{tid}", headers={"X-Api-Key": raw}).json()["status"] == "partial_success"

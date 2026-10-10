@@ -1,0 +1,37 @@
+{
+  "source": "https://github.com/open-webui/open-webui/blob/v0.11.4/backend/open_webui/retrieval/loaders/main.py (DoclingLoader.load, v0.11.4 2026-09-21); an older Open WebUI that does not split on \\f relies on DOCLING_PARAMS={\"doc4ai_keep_page_markers\": true}",
+  "method": "POST",
+  "path": "/v1/convert/file",
+  "file_field": "files",
+  "headers": {
+    "X-Api-Key": "<TOKEN>",
+    "User-Agent": "python-requests/2.31.0"
+  },
+  "form": {
+    "image_export_mode": "placeholder",
+    "md_page_break_placeholder": "\f",
+    "doc4ai_keep_page_markers": "true"
+  },
+  "expect": {
+    "status_code": 200,
+    "schema": "ConvertDocumentResponse",
+    "checks": [
+      {
+        "path": "document.md_content",
+        "op": "count",
+        "needle": "\f",
+        "equals": "pages-1"
+      },
+      {
+        "path": "document.md_content",
+        "op": "contains",
+        "value": "<!-- page: 1 -->"
+      },
+      {
+        "path": "document.md_content",
+        "op": "contains",
+        "value": "<!-- page: 3 -->"
+      }
+    ]
+  }
+}

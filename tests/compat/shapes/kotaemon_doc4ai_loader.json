@@ -1,0 +1,26 @@
+{
+  "source": "docs/integrations/kotaemon_doc4ai_loader.py (the reference Doc4AIReader of compat spec §8.3)",
+  "method": "POST",
+  "path": "/v1/convert/file",
+  "file_field": "files",
+  "headers": {
+    "X-Api-Key": "<TOKEN>",
+    "User-Agent": "python-requests/2.32.3"
+  },
+  "form": {
+    "md_page_break_placeholder": "\f",
+    "image_export_mode": "placeholder"
+  },
+  "expect": {
+    "status_code": 200,
+    "schema": "ConvertDocumentResponse",
+    "checks": [
+      {
+        "path": "document.md_content",
+        "op": "count",
+        "needle": "\f",
+        "equals": "pages-1"
+      }
+    ]
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "source": "https://github.com/infiniflow/ragflow/blob/v1.0.0-rc1/internal/parser/parser/pdf_parser_docling.go (parsePDFWithDocling, v1.0.0-rc1) — candidate 2: /v1alpha/convert/source, doclingChunkedPayload(alpha=true)",
+  "method": "POST",
+  "path": "/v1alpha/convert/source",
+  "headers": {
+    "Authorization": "Bearer <TOKEN>",
+    "Content-Type": "application/json",
+    "User-Agent": "Go-http-client/1.1"
+  },
+  "json": {
+    "options": {
+      "from_formats": [
+        "pdf"
+      ],
+      "to_formats": [
+        "json",
+        "md",
+        "text"
+      ],
+      "do_chunking": true,
+      "chunking_options": {
+        "max_tokens": 512,
+        "overlap": 50,
+        "tokenizer": "sentencepiece"
+      }
+    },
+    "file_sources": [
+      {
+        "filename": "a.pdf",
+        "base64_string": "<B64>"
+      }
+    ]
+  },
+  "expect": {
+    "status_code": 200,
+    "schema": "ConvertDocumentResponse",
+    "checks": [
+      {
+        "path": "document.md_content",
+        "op": "not_null"
+      },
+      {
+        "path": "document.text_content",
+        "op": "not_null"
+      },
+      {
+        "path": "document.json_content",
+        "op": "is_null"
+      }
+    ]
+  }
+}

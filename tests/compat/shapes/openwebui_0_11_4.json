@@ -1,0 +1,55 @@
+{
+  "source": "https://github.com/open-webui/open-webui/blob/v0.11.4/backend/open_webui/retrieval/loaders/main.py (DoclingLoader.load, v0.11.4 2026-09-21); DOCLING_PARAMS={\"doc4ai_lang\": \"en\"} is merged into the form as-is",
+  "method": "POST",
+  "path": "/v1/convert/file",
+  "file_field": "files",
+  "file_name": "/app/backend/data/uploads/3f2a9c4e-1b2d-4c5e-8f90-a1b2c3d4e5f6_report.pdf",
+  "headers": {
+    "X-Api-Key": "<TOKEN>",
+    "User-Agent": "python-requests/2.32.3"
+  },
+  "form": {
+    "image_export_mode": "placeholder",
+    "md_page_break_placeholder": "\f",
+    "doc4ai_lang": "en"
+  },
+  "expect": {
+    "status_code": 200,
+    "schema": "ConvertDocumentResponse",
+    "checks": [
+      {
+        "path": "status",
+        "op": "equals",
+        "value": "success"
+      },
+      {
+        "path": "document.md_content",
+        "op": "count",
+        "needle": "\f",
+        "equals": "pages-1"
+      },
+      {
+        "path": "document.md_content",
+        "op": "not_contains",
+        "needle": "<!-- page:"
+      },
+      {
+        "path": "document.md_content",
+        "op": "segment_contains",
+        "needle": "\f",
+        "index": 1,
+        "value": "Heading 2"
+      },
+      {
+        "path": "document.filename",
+        "op": "equals",
+        "value": "report.pdf"
+      },
+      {
+        "path": "document.doc4ai.lang",
+        "op": "equals",
+        "value": "en"
+      }
+    ]
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "source": "https://github.com/infiniflow/ragflow/blob/v1.0.0-rc1/internal/parser/parser/pdf_parser_docling.go (parsePDFWithDocling, v1.0.0-rc1) — candidate 1: /v1/convert/source, doclingChunkedPayload(alpha=false)",
+  "method": "POST",
+  "path": "/v1/convert/source",
+  "headers": {
+    "Authorization": "Bearer <TOKEN>",
+    "Content-Type": "application/json",
+    "User-Agent": "Go-http-client/1.1"
+  },
+  "json": {
+    "options": {
+      "from_formats": [
+        "pdf"
+      ],
+      "to_formats": [
+        "json",
+        "md",
+        "text"
+      ],
+      "do_chunking": true,
+      "chunking_options": {
+        "max_tokens": 512,
+        "overlap": 50,
+        "tokenizer": "sentencepiece"
+      }
+    },
+    "sources": [
+      {
+        "filename": "a.pdf",
+        "base64_string": "<B64>",
+        "kind": "file"
+      }
+    ]
+  },
+  "expect": {
+    "status_code": 200,
+    "schema": "ConvertDocumentResponse",
+    "checks": [
+      {
+        "path": "document.md_content",
+        "op": "not_null"
+      },
+      {
+        "path": "document.text_content",
+        "op": "not_null"
+      },
+      {
+        "path": "document.json_content",
+        "op": "is_null"
+      },
+      {
+        "path": "document.doc4ai.unsupported_formats",
+        "op": "equals",
+        "value": [
+          "json"
+        ]
+      },
+      {
+        "path": "document.doc4ai.ignored_options",
+        "op": "list_contains",
+        "value": "do_chunking"
+      },
+      {
+        "path": "document.md_content",
+        "op": "contains",
+        "value": "<!-- page: 1 -->"
+      }
+    ]
+  }
+}
