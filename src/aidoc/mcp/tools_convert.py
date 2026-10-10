@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import time
+import uuid
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -81,12 +82,20 @@ def _too_many(cfg) -> ToolFailure:
                        hint="wait for get_job to report done", limit=cfg.mcp.max_concurrent_jobs_per_token)
 
 
-def reserve_job(ctx, opts: ConvertOptions, token_id: str | None) -> str:
+def reserve_job_once(ctx, opts: ConvertOptions, token_id: str | None, *, origin: str = "mcp",
+                     limit: int | None = None) -> str | None:
+    """Create a job for a token, checking its cap atomically (Store.create_mcp_job); None when the cap is reached.
+    The cap counts every MCP and compat job of the token (both are recorded in mcp_jobs)."""
+    if token_id is None:
+        return ctx.store.create_job(opts, origin)
+    return ctx.store.create_mcp_job(opts, token_id=token_id, origin=origin,
+                                    limit=limit or ctx.config.mcp.max_concurrent_jobs_per_token)
+
+
+def reserve_job(ctx, opts: ConvertOptions, token_id: str | None, *, origin: str = "mcp", limit: int | None = None) -> str:
     """Create an MCP job, checking the per-token cap atomically (Store.create_mcp_job). Every MCP-originated job
     goes through here (convert_document, convert_path, reconvert_document)."""
-    if token_id is None:
-        return ctx.store.create_job(opts, "mcp")
-    jid = ctx.store.create_mcp_job(opts, token_id=token_id, limit=ctx.config.mcp.max_concurrent_jobs_per_token)
+    jid = reserve_job_once(ctx, opts, token_id, origin=origin, limit=limit)
     if jid is None:
         raise _too_many(ctx.config)
     return jid
@@ -122,17 +131,19 @@ def _check_not_busy(ctx, sha: str, out_dir) -> None:
         raise busy_failure(ctx, tid)
 
 
-def start_job_for_bytes(ctx, filename: str, data: bytes, opts: ConvertOptions, token_id: str | None = None) -> tuple[str, str]:
+def start_job_for_file(ctx, filename: str, part_path: Path, sha: str, size: int, opts: ConvertOptions,
+                       token_id: str | None = None, *, origin: str = "mcp", job_id: str | None = None) -> tuple[str, str]:
+    """Job + task for a file already written to `part_path` (moved into the upload area, then into the task's work
+    dir). `job_id`: a job reserved by the caller; else one is reserved here. Raises ToolFailure already_converting
+    (with the converting task's ids) when another process converts the same file."""
     store = ctx.store
-    job_id = reserve_job(ctx, opts, token_id)
+    job_id = job_id or reserve_job(ctx, opts, token_id, origin=origin)
     try:
-        name = display_name(filename)
-        sha = hashlib.sha256(data).hexdigest()
-        uid = store.create_upload(name, len(data), sha)
+        uid = store.create_upload(display_name(filename), size, sha)
         part = ctx.uploads.part_path(uid)
         part.parent.mkdir(parents=True, exist_ok=True)
-        part.write_bytes(data)
-        store.update_upload(uid, received=len(data), status="complete")
+        os.replace(part_path, part)
+        store.update_upload(uid, received=size, status="complete")
         tid = ctx.uploads.create_task_from_upload(job_id, uid, opts)
     except UploadError as e:
         _abandon(ctx, job_id)
@@ -144,6 +155,19 @@ def start_job_for_bytes(ctx, filename: str, data: bytes, opts: ConvertOptions, t
         raise
     _publish(ctx, job_id, tid)
     return job_id, tid
+
+
+def start_job_for_bytes(ctx, filename: str, data: bytes, opts: ConvertOptions, token_id: str | None = None) -> tuple[str, str]:
+    job_id = reserve_job(ctx, opts, token_id)
+    try:
+        sha = hashlib.sha256(data).hexdigest()
+        tmp = ctx.uploads.dir / f"mcp-{uuid.uuid4().hex}.part"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(data)
+    except BaseException:
+        _abandon(ctx, job_id)
+        raise
+    return start_job_for_file(ctx, filename, tmp, sha, len(data), opts, token_id, job_id=job_id)
 
 
 def _publish(ctx, job_id: str, tid: str) -> None:

@@ -268,6 +268,15 @@ class Store:
             return old["id"]
         return None
 
+    def live_task_for_sha(self, sha256) -> dict | None:
+        """The newest queued or running task converting this content (any output dir), else None."""
+        return _row(self._q1("SELECT * FROM tasks WHERE sha256=? AND status IN ('queued','probing','converting','checking') "
+                             "ORDER BY created_at DESC LIMIT 1", (sha256,)))
+
+    def documents_by_sha(self, sha256) -> list[dict]:
+        """Every document with this content, newest first."""
+        return self._qa("SELECT * FROM documents WHERE sha256=? ORDER BY created_at DESC", (sha256,))
+
     def requeue_task(self, task_id, *, reset_segments: bool, new_sha: str | None = None) -> None:
         """Back to `queued` (errors and pid cleared). `new_sha` = "convert the new version": sha256/size/mtime
         are re-read from source_path by the caller and stored here."""
@@ -697,7 +706,7 @@ class Store:
                      "SELECT job_id FROM mcp_calls WHERE token_id=? AND job_id IS NOT NULL)", (token_id, token_id))
         return int(r[0]) if r else 0
 
-    def create_mcp_job(self, options: ConvertOptions, *, token_id: str, limit: int) -> str | None:
+    def create_mcp_job(self, options: ConvertOptions, *, token_id: str, limit: int, origin: str = "mcp") -> str | None:
         """Check the per-token cap and create the job in one locked step, so concurrent calls cannot overshoot.
         None when the token already has `limit` jobs in flight."""
         with self.con.lock:
@@ -706,7 +715,7 @@ class Store:
                 if self.active_mcp_jobs(token_id) >= limit:
                     self.con.execute("ROLLBACK")
                     return None
-                jid = self.create_job(options, "mcp")
+                jid = self.create_job(options, origin)
                 self.con.execute("INSERT INTO mcp_jobs(job_id, token_id, created_at) VALUES(?,?,?)", (jid, token_id, time.time()))
             except BaseException:
                 self.con.execute("ROLLBACK")
