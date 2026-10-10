@@ -93,3 +93,29 @@ test("copy buttons work without navigator.clipboard (plain-HTTP tailnet origin)"
   expect(await reader.evaluate(() => navigator.clipboard.readText())).toBe(firstEndpoint);
   await reader.close();
 });
+
+test("貼上 token fills the snippets in the browser only (no request carries it, nothing stored)", async ({ page }) => {
+  const pat = "doc4ai_pat_xGW2n8zGcJdieMqBmDCjiu10YwpYVPWuO187gPXtTYj_450QG8"; // well-formed, never issued
+  const leaks: string[] = [];
+  page.on("request", (r) => {
+    const all = `${r.url()} ${r.postData() ?? ""} ${JSON.stringify(r.headers())}`;
+    if (all.includes(pat)) leaks.push(r.url());
+  });
+  await page.goto("/mcp-admin");
+  const box = page.getByLabel("貼上你的 MCP token 以填入設定");
+  await expect(box).toHaveAttribute("type", "password");
+  await box.fill(pat);
+  const panel = page.locator("[role=tabpanel][data-state=active] pre").last();
+  await expect(panel).toContainText(`Bearer ${pat}`);
+  await page.getByRole("tab", { name: "Cursor" }).click();
+  await expect(page.locator("[role=tabpanel][data-state=active] pre").last()).toContainText(`Bearer ${pat}`);
+  await box.fill("not-a-pat");
+  await expect(page.getByRole("alert")).toContainText("doc4ai_pat_");
+  await box.fill(pat);
+  const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
+  expect(stored).not.toContain(pat);
+  await page.getByRole("link", { name: "Library" }).first().click();
+  await page.goBack();
+  await expect(page.getByLabel("貼上你的 MCP token 以填入設定")).toHaveValue("");
+  expect(leaks).toEqual([]);
+});
