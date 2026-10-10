@@ -10,7 +10,14 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from aidoc.compat import jobs
-from aidoc.compat.auth import CompatError, compat_principal, compat_principal_read, new_call, require_enabled
+from aidoc.compat.auth import (
+    CompatError,
+    compat_principal,
+    compat_principal_assets,
+    compat_principal_read,
+    new_call,
+    require_enabled,
+)
 from aidoc.compat.options import parse_options
 from aidoc.mcp.errors import ToolFailure
 from aidoc.mcp.principal import Principal
@@ -183,6 +190,31 @@ def task_result(request: Request, task_id: str, principal: Annotated[Principal, 
     call.tool_name = "result"
     call.args = {"task_id": task_id}
     return jobs.result(request.app.state.ctx, request, call, task_id)
+
+
+@router.get("/v1/doc4ai/documents/{doc_id}/assets/{path:path}")
+def document_asset(request: Request, doc_id: str, path: str,
+                   principal: Annotated[Principal, Depends(compat_principal_assets)]):
+    """Where image_export_mode=referenced links point (Doc4AI extension). Same path rules and safe headers as
+    /api/documents/{id}/assets (nosniff, CSP sandbox, inline only for images)."""
+    from pathlib import Path
+
+    from aidoc.server.api.documents import safe_file_response
+    from aidoc.server.app import safe_relative
+    ctx = request.app.state.ctx
+    call = request.state.compat
+    call.tool_name = "asset"
+    call.args = {"doc_id": doc_id[:64], "name": path[:200]}
+    doc = ctx.store.get_document(doc_id)
+    if doc is None or doc["status"] not in jobs.VISIBLE:
+        raise CompatError(404, "document not found")
+    rel = safe_relative(path)
+    if rel is None:
+        raise CompatError(400, "bad path")
+    target = Path(doc["output_dir"]) / "assets" / rel
+    if not target.is_file():
+        raise CompatError(404, "asset not found")
+    return safe_file_response(target, target.name, request)
 
 
 def _whoami(request: Request, principal: Annotated[Principal, Depends(compat_principal)]):
