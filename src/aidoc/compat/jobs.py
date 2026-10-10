@@ -390,3 +390,135 @@ async def run_sync(ctx, request, call: CompatCall, upload: Upload, opts: CompatO
         key = adm.job_id if adm.kind == "started" else attach_key(ctx, call, adm, opts, name)
         return JSONResponse(_timeout_body(key, "conversion still running"), status_code=504)
     return response_for_task(ctx, request, call, task, opts, attached=adm.kind == "attached", name=name)
+
+
+# ---- async (spec §4.5)
+
+def _status_model(ctx, key: str, *, task: dict | None = None, state: str | None = None, message: str | None = None):
+    from aidoc.compat.render import TaskStatusResponse, failure_info
+    if task is not None:
+        state = task_to_docling_status(task)
+        if state == "failure":
+            message = task_message(task)
+        meta = task_meta(ctx, task)
+        position = task_position(ctx, task) if task["status"] in ("queued",) else (
+            None if task["status"] in _TERMINAL else 0)
+    else:
+        meta = {"num_docs": 1, "num_processed": 1, "num_succeeded": int(state == "success"),
+                "num_partially_succeeded": int(state == "partial_success"), "num_failed": int(state == "failure")}
+        position = None
+    return TaskStatusResponse(task_id=key, task_status=state, task_position=position, task_meta=meta,
+                              error_message=message if state == "failure" else None,
+                              failure=failure_info(message, task) if state == "failure" else None)
+
+
+def _synthetic(ctx, call: CompatCall, opts: CompatOptions, name: str, **extra) -> str:
+    key = "t" + uuid.uuid4().hex
+    ctx.store.create_compat_task(key, token_id=call.principal.token_id or "",
+                                 options={**opts.to_json(), "_filename": name, **extra}, protocol=call.protocol)
+    return key
+
+
+async def submit_async(ctx, request, call: CompatCall, upload: Upload, opts: CompatOptions):
+    """The sync prelude once, then an immediate TaskStatusResponse (task_id = job_id, D5). A full token gets 429."""
+    name = clean_name(upload.filename)
+    summarize(call, upload, name, opts)
+    failed = precheck(ctx, call, upload, name)
+    if failed is not None:
+        message = failed.errors[0].error_message
+        key = _synthetic(ctx, call, opts, name, _failure=message)
+        return respond(_status_model(ctx, key, state="failure", message=message))
+    convert = build_convert_options(ctx.config, engine=opts.engine, lang=opts.lang, force=opts.force)
+    try:
+        adm = await anyio.to_thread.run_sync(admit, ctx, call, upload, name, convert, opts)
+    except ToolFailure as f:
+        upload.part_path.unlink(missing_ok=True)
+        call.fail(f.code)
+        message = f"{f.code}: {f.message}"
+        return respond(_status_model(ctx, _synthetic(ctx, call, opts, name, _failure=message), state="failure",
+                                     message=message))
+    except BaseException:
+        upload.part_path.unlink(missing_ok=True)
+        raise
+    if adm is None:
+        upload.part_path.unlink(missing_ok=True)
+        call.fail("too_many_jobs", "rate_limited")
+        raise CompatError(429, "too many jobs in progress", headers={"Retry-After": "5"}, retry_after=5)
+    if adm.kind != "started":
+        upload.part_path.unlink(missing_ok=True)
+    if adm.kind == "cached":
+        key = _synthetic(ctx, call, opts, name, _cached_doc_id=adm.doc["id"])
+        return respond(_status_model(ctx, key, state="success"))
+    call.job_id = adm.job_id
+    key = adm.job_id if adm.kind == "started" else attach_key(ctx, call, adm, opts, name)
+    return respond(_status_model(ctx, key, task=ctx.store.get_task(adm.task_id)))
+
+
+@dataclass
+class Resolved:
+    key: str
+    opts: CompatOptions
+    name: str
+    task: dict | None = None
+    doc: dict | None = None
+    failure: str | None = None
+
+    @property
+    def terminal(self) -> bool:
+        return self.task is None or self.task["status"] in _TERMINAL
+
+
+def resolve(ctx, key: str, principal) -> Resolved:
+    """A task id this token created (D5); anything else — unknown, pruned, another token's — is 404."""
+    row = ctx.store.get_compat_task(key) if key else None
+    if row is None or row["token_id"] != (principal.token_id or ""):
+        raise CompatError(404, "task not found")
+    o = row["options"] or {}
+    res = Resolved(key=key, opts=CompatOptions.from_json(o), name=o.get("_filename") or "document")
+    if o.get("_failure"):
+        res.failure = o["_failure"]
+    elif o.get("_cached_doc_id"):
+        res.doc = ctx.store.get_document(o["_cached_doc_id"])
+        if res.doc is None:
+            res.failure = "output_missing: the document was deleted"
+    else:
+        tid = o.get("_task_id")
+        res.task = ctx.store.get_task(tid) if tid else next(iter(ctx.store.list_tasks(job_id=key)), None)
+        if res.task is None:
+            res.failure = "cancelled: the conversion no longer exists"
+    return res
+
+
+def status_of(ctx, res: Resolved):
+    if res.failure:
+        return _status_model(ctx, res.key, state="failure", message=res.failure)
+    if res.doc is not None:
+        return _status_model(ctx, res.key, state="success")
+    return _status_model(ctx, res.key, task=res.task)
+
+
+async def poll(ctx, call: CompatCall, key: str, wait: float):
+    deadline = time.monotonic() + max(0.0, min(wait, ctx.config.compat.poll_max_wait_s))
+    while True:
+        res = resolve(ctx, key, call.principal)
+        call.job_id = res.task["job_id"] if res.task else None
+        if res.terminal or time.monotonic() >= deadline:
+            return respond(status_of(ctx, res))
+        await anyio.sleep(min(0.5, max(0.05, deadline - time.monotonic())))
+
+
+def result(ctx, request, call: CompatCall, key: str):
+    from aidoc.compat.render import TaskFailureResult, failure_info
+    res = resolve(ctx, key, call.principal)
+    call.job_id = res.task["job_id"] if res.task else None
+    if not res.terminal:
+        raise CompatError(404, "task not finished")
+    if res.failure or (res.task is not None and res.task["status"] in ("failed", "cancelled")):
+        message = res.failure or task_message(res.task)
+        call.fail("conversion_failed")
+        return respond(TaskFailureResult(failure=failure_info(message, res.task)))
+    if res.doc is not None:
+        model = build_response(ctx, request, res.doc, None, res.opts, cached=True, attached=False, started=0.0,
+                               filename=res.name)
+        return respond(model, call, model.document.md_content)
+    return response_for_task(ctx, request, call, res.task, res.opts, attached=False, name=res.name)

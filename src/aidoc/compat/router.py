@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from aidoc.compat import jobs
-from aidoc.compat.auth import CompatError, compat_principal, new_call, require_enabled
+from aidoc.compat.auth import CompatError, compat_principal, compat_principal_read, new_call, require_enabled
 from aidoc.compat.options import parse_options
 from aidoc.mcp.errors import ToolFailure
 from aidoc.mcp.principal import Principal
@@ -139,6 +139,50 @@ async def convert_source(request: Request, principal: Annotated[Principal, Depen
 async def convert_source_v1alpha(request: Request, principal: Annotated[Principal, Depends(compat_principal)]):
     """RAGFlow's fallback path (spike S1): the old `file_sources` shape (or `sources`); same response as v1."""
     return await _convert_source(request, principal, alpha=True)
+
+
+@router.post("/v1/convert/file/async")
+async def convert_file_async(request: Request, principal: Annotated[Principal, Depends(compat_principal)]):
+    ctx = request.app.state.ctx
+    call = request.state.compat
+    call.tool_name = "convert_file_async"
+    _rate_limit(ctx, principal, call)
+    upload = await jobs.stream_upload(request, call, max_mb=ctx.config.compat.max_file_mb)
+    try:
+        opts = parse_options(upload.fields, ctx.config, multipart=True)
+    except BaseException:
+        upload.part_path.unlink(missing_ok=True)
+        raise
+    return await jobs.submit_async(ctx, request, call, upload, opts)
+
+
+@router.post("/v1/convert/source/async")
+async def convert_source_async(request: Request, principal: Annotated[Principal, Depends(compat_principal)]):
+    ctx = request.app.state.ctx
+    call = request.state.compat
+    call.tool_name = "convert_source_async"
+    _rate_limit(ctx, principal, call)
+    body = await _read_json(request, call, ctx.config.compat.max_source_mb)
+    opts = parse_options(body.get("options") or {}, ctx.config, multipart=False)
+    upload = _source_upload(ctx, call, body, alpha=False)
+    return await jobs.submit_async(ctx, request, call, upload, opts)
+
+
+@router.get("/v1/status/poll/{task_id}")
+async def status_poll(request: Request, task_id: str, principal: Annotated[Principal, Depends(compat_principal_read)],
+                      wait: float = 0.0):
+    call = request.state.compat
+    call.tool_name = "status_poll"
+    call.args = {"task_id": task_id, "wait": wait}
+    return await jobs.poll(request.app.state.ctx, call, task_id, wait)
+
+
+@router.get("/v1/result/{task_id}")
+def task_result(request: Request, task_id: str, principal: Annotated[Principal, Depends(compat_principal_read)]):
+    call = request.state.compat
+    call.tool_name = "result"
+    call.args = {"task_id": task_id}
+    return jobs.result(request.app.state.ctx, request, call, task_id)
 
 
 def _whoami(request: Request, principal: Annotated[Principal, Depends(compat_principal)]):

@@ -29,6 +29,14 @@ def compat_env(ctx, monkeypatch):
         yield SimpleNamespace(ctx=ctx, issue=issue, client=c, app=app)
 
 
+@pytest.fixture
+def workers(compat_env):
+    """The ctx fixture starts no worker; sync conversion needs the queue running (fake engines: ~0.3 s per file)."""
+    compat_env.ctx.queue.start()
+    yield compat_env
+    compat_env.ctx.queue.stop()
+
+
 def last_call(ctx):
     rows = ctx.store.list_mcp_calls(limit=1)
     return rows[0] if rows else None

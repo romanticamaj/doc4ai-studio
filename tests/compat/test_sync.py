@@ -3,8 +3,6 @@ import json
 import threading
 import time
 
-import pytest
-
 from tests.compat.conftest import last_call
 
 PDF = (b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
@@ -15,14 +13,6 @@ PDF = (b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
 def _post_file(env, raw, name="a.pdf", data=PDF, headers=None, **form):
     return env.client.post("/v1/convert/file", files={"files": (name, io.BytesIO(data), "application/pdf")},
                            data=form, headers={"X-Api-Key": raw, **(headers or {})})
-
-
-@pytest.fixture
-def workers(compat_env):
-    """The ctx fixture starts no worker; sync conversion needs the queue running (fake engines: ~0.3 s per file)."""
-    compat_env.ctx.queue.start()
-    yield compat_env
-    compat_env.ctx.queue.stop()
 
 
 def test_openwebui_shape_sync_success(workers):
