@@ -189,17 +189,17 @@ def write_part(ctx, data: bytes, filename: str) -> Upload:
 # ---- status
 
 def task_to_docling_status(task: dict) -> str:
-    """D6: queued → pending; probing|converting|checking → started; done|skipped → success; low → partial_success;
-    failed|cancelled → failure."""
+    """D6 (as amended in Task 11): queued → pending; probing|converting|checking → started; done|low|skipped →
+    success; failed|cancelled → failure. A low-quality conversion is a finished *task* — docling-serve's task states
+    are pending|started|success|failure and clients (Haystack) stop polling only on success|failure; the result's
+    conversion status says partial_success."""
     s = task["status"]
     if s == "queued":
         return "pending"
     if s in ("probing", "converting", "checking"):
         return "started"
-    if s in ("done", "skipped"):
+    if s in ("done", "low", "skipped"):
         return "success"
-    if s == "low":
-        return "partial_success"
     return "failure"
 
 
@@ -213,9 +213,10 @@ def task_meta(ctx, task: dict) -> dict:
     """docling's TaskProcessingMeta (spike S2) plus our page progress."""
     prog = serialize_task(ctx.store, task, with_segments=False)["progress"]
     state = task_to_docling_status(task)
-    done = state in ("success", "partial_success", "failure")
-    return {"num_docs": 1, "num_processed": int(done), "num_succeeded": int(state == "success"),
-            "num_partially_succeeded": int(state == "partial_success"), "num_failed": int(state == "failure"),
+    low = task["status"] == "low"
+    return {"num_docs": 1, "num_processed": int(state in ("success", "failure")),
+            "num_succeeded": int(state == "success" and not low), "num_partially_succeeded": int(low),
+            "num_failed": int(state == "failure"),
             "pages_done": prog["pages_done"], "pages_total": prog["pages_total"]}
 
 

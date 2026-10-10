@@ -1,0 +1,29 @@
+{
+  "source": "https://github.com/deepset-ai/haystack-core-integrations/blob/main/integrations/docling_serve/src/haystack_integrations/components/converters/docling_serve/converter.py (docling-serve-haystack 1.1.1) — DoclingServeConverter._post_file (export_type=markdown)",
+  "method": "POST",
+  "path": "/v1/convert/file",
+  "file_field": "files",
+  "headers": {
+    "X-Api-Key": "<TOKEN>",
+    "User-Agent": "python-httpx/0.28.1"
+  },
+  "form": {
+    "to_formats": "md"
+  },
+  "expect": {
+    "status_code": 200,
+    "schema": "ConvertDocumentResponse",
+    "checks": [
+      {
+        "path": "status",
+        "op": "equals",
+        "value": "success"
+      },
+      {
+        "path": "document.md_content",
+        "op": "contains",
+        "value": "<!-- page: 2 -->"
+      }
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "source": "https://github.com/deepset-ai/haystack-core-integrations/blob/main/integrations/docling_serve/src/haystack_integrations/components/converters/docling_serve/converter.py (docling-serve-haystack 1.1.1) — DoclingServeConverter._post_url: URL sources are not fetched by Doc4AI (spec §1.3, SSRF)",
+  "method": "POST",
+  "path": "/v1/convert/source",
+  "headers": {
+    "X-Api-Key": "<TOKEN>",
+    "Content-Type": "application/json",
+    "User-Agent": "python-httpx/0.28.1"
+  },
+  "json": {
+    "options": {
+      "to_formats": [
+        "md"
+      ]
+    },
+    "sources": [
+      {
+        "kind": "http",
+        "url": "https://arxiv.org/pdf/2206.01062"
+      }
+    ],
+    "target": {
+      "kind": "inbody"
+    }
+  },
+  "expect": {
+    "status_code": 422,
+    "checks": [
+      {
+        "path": "detail",
+        "op": "equals",
+        "value": "unsupported_source: http"
+      }
+    ]
+  }
+}
