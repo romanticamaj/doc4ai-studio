@@ -167,11 +167,21 @@ export interface Sidecar {
   [k: string]: unknown;
 }
 
+/** Office preview (LibreOffice -> PDF). Reasons: soffice_missing, disabled, source_missing, source_changed,
+ *  too_large, timeout, conversion_failed. */
+export type PreviewState =
+  | { status: "none" }
+  | { status: "pending" }
+  | { status: "ready"; pages: number | null }
+  | { status: "failed"; reason: string };
+
 export interface DocumentDetail {
   document: Document;
   source_available: boolean;
   output_available: boolean;
   sidecar: Sidecar | null;
+  /** null for sources that are not Office files */
+  preview?: PreviewState | null;
 }
 
 export interface EngineInfo {
@@ -198,6 +208,7 @@ export interface SystemInfo {
   output_dir: string;
   version: string;
   long_paths_enabled: boolean;
+  libreoffice?: { found: boolean; path: string | null; version: string | null; configured: boolean };
 }
 
 export interface Settings {
@@ -228,6 +239,7 @@ export interface Settings {
     call_log_retention_days: number;
     call_log_max_rows: number;
   };
+  preview?: { enabled: boolean; soffice_path: string; timeout_s: number; max_mb: number };
 }
 
 export type SettingsPatch = { [S in keyof Settings]?: Partial<Settings[S]> };
@@ -281,6 +293,7 @@ export interface EventPayloads {
   "mcp.call": McpCallEvent;
   "mcp.client": McpClient & { state: "new" | "active" | "idle" };
   "mcp.token": { id: string; name: string; prefix: string; action: "created" | "updated" | "revoked" | "rotated" };
+  "document.preview": { document_id: string } & PreviewState;
   resync: Record<string, never>;
 }
 export type EventKind = keyof EventPayloads;
@@ -297,6 +310,7 @@ export const EVENT_KINDS: EventKind[] = [
   "mcp.call",
   "mcp.client",
   "mcp.token",
+  "document.preview",
   "resync",
 ];
 

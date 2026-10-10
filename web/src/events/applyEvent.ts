@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { qk } from "@/api/queries";
 import { qk as mcpQk, type CallFilters } from "@/api/mcp";
-import type { AidocEvent, Job, JobDetail, McpCall, McpCallsPage, McpClient, McpToken, Segment, SystemInfo, Task } from "@/api/types";
+import type { AidocEvent, DocumentDetail, EventPayloads, PreviewState, Job, JobDetail, McpCall, McpCallsPage, McpClient, McpToken, Segment, SystemInfo, Task } from "@/api/types";
 import { mergeLiveCall } from "@/features/mcp/mergeCalls";
 import { logStore as defaultLogs, type LogStore } from "./useTaskLogs";
 
@@ -179,6 +179,11 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
       return;
     case "upload.updated":
       return; // the upload routine tracks its own progress
+    case "document.preview": {
+      const { document_id, ...preview } = ev.payload as EventPayloads["document.preview"];
+      qc.setQueryData<DocumentDetail>(qk.document(document_id), (old) => (old ? { ...old, preview: preview as PreviewState } : old));
+      return;
+    }
     case "mcp.call": {
       const call = ev.payload as unknown as McpCall;
       for (const [key, data] of qc.getQueriesData<{ pages: McpCallsPage[]; pageParams: unknown[] }>({ queryKey: ["mcp", "calls"] })) {

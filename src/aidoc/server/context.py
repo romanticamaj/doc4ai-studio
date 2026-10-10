@@ -24,7 +24,7 @@ class ServerContext:
     extras: dict[str, Any] = field(default_factory=dict)     # setup runner, maintenance thread, ...
 
     def close(self) -> None:
-        for name in ("maintenance", "setup"):
+        for name in ("maintenance", "setup", "preview"):
             obj = self.extras.get(name)
             if obj is not None and hasattr(obj, "stop"):
                 obj.stop()

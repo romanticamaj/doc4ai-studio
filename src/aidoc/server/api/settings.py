@@ -19,6 +19,8 @@ _MIN = {("general", "work_retention_days"): 0, ("engines", "docling_page_batch_s
 _MAX = {("server", "port"): 65535, ("limits", "upload_max_bytes"): 2 ** 40,        # 1 TiB
         ("engines", "docling_page_batch_size"): 1024, ("limits", "disk_space_factor"): 100000,
         ("general", "work_retention_days"): 3650}
+_MIN.update({("preview", "timeout_s"): 10, ("preview", "max_mb"): 1})
+_MAX.update({("preview", "timeout_s"): 3600, ("preview", "max_mb"): 2048})
 _INT_MAX = 10 ** 9                      # any other int (timeouts in seconds): ~30 years is already absurd
 
 # [mcp] (MCP spec §10, plan index §4 §7)
@@ -62,6 +64,11 @@ def _validate(body: dict, cfg) -> dict:
                 if val in ("***", cur):              # the masked or unchanged value a settings form echoes back
                     continue
                 raise ApiError(403, "token_readonly")
+            if (section, key) == ("preview", "soffice_path"):
+                if val == cur:
+                    continue                         # a settings form echoes the value back
+                # an executable path set over the API would let any token holder run any program on the host
+                raise ApiError(403, "preview_path_readonly", detail="set preview.soffice_path in aidoc.toml")
             if section == "mcp" and key in ("allowed_hosts", "local_path_roots"):
                 allow = values.get("allow_drive_root", cfg.mcp.allow_drive_root)
                 _validate_mcp_lists(key, val, allow is True)

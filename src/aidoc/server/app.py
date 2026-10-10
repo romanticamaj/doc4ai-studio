@@ -89,6 +89,10 @@ def build_context(cfg: AidocConfig, token: str | None, start_workers: bool = Tru
     ctx.bus = EventBus(store)
     ctx.uploads = UploadManager(ctx)
     ctx.queue = JobQueue(ctx)
+    from aidoc.preview import PreviewManager
+    ctx.extras["preview"] = PreviewManager(
+        cfg.data_dir, lambda: ctx.config.preview,
+        publish=lambda payload: ctx.bus.publish("document.preview", payload["document_id"], payload))
     if start_workers:
         ctx.queue.start()
         start_reassessment(ctx)

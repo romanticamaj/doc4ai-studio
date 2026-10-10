@@ -108,3 +108,21 @@ def purge_expired_work_copies(store, now: float) -> int:
         store.update_document(doc["id"], work_copy_path=None, work_copy_expires_at=None)
         n += 1
     return n
+
+
+def document_source(doc: dict) -> Path | None:
+    """A document's source file: the staged work copy (src.*) while retained, else the original when it is a local
+    path that still exists (upload display names are never paths)."""
+    wc = doc.get("work_copy_path")
+    if wc:
+        w = Path(wc)
+        if w.is_file():
+            return w
+        if w.is_dir():
+            for f in sorted(w.glob("src.*")):
+                if f.is_file():
+                    return f
+    src = Path(doc["source_path"])
+    if src.is_absolute() and src.is_file():
+        return src
+    return None

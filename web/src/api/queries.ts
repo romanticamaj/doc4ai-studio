@@ -4,6 +4,7 @@ import { reconvertAll } from "@/features/library/reconvertAll";
 import type {
   Document,
   DocumentDetail,
+  PreviewState,
   EngineName,
   Job,
   JobCreateBody,
@@ -63,6 +64,21 @@ export function useDocument(id: string | undefined) {
     queryKey: qk.document(id ?? ""),
     queryFn: ({ signal }) => api.get<DocumentDetail>(`/api/documents/${id}`, signal),
     enabled: !!id,
+  });
+}
+
+/** Ask for an Office document's PDF preview (LibreOffice); the answer and the later SSE event update the detail. */
+export function useRequestPreview(docId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (retry: boolean) =>
+      api.post<{ preview: PreviewState }>(`/api/documents/${docId}/preview`, retry ? { retry: true } : {}).then((r) => r.preview),
+    onSuccess: (preview) =>
+      qc.setQueryData<DocumentDetail>(qk.document(docId), (old) => {
+        // the SSE event of a quick conversion can arrive before this answer: never step back from ready
+        if (!old || (preview.status === "pending" && old.preview?.status === "ready")) return old;
+        return { ...old, preview };
+      }),
   });
 }
 
