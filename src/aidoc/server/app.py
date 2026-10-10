@@ -126,7 +126,13 @@ def start_reassessment(ctx: ServerContext, log=None) -> threading.Thread:
     return th
 
 
+def _is_compat_path(path: str) -> bool:
+    return path.startswith(("/v1/", "/v1alpha/"))
+
+
 def create_app(ctx: ServerContext) -> FastAPI:
+    from aidoc.compat import router as compat_router
+    from aidoc.compat.auth import CompatError, CompatLogMiddleware
     from aidoc.mcp.server import build_mcp
     from aidoc.server import sse
     from aidoc.server.api import chunks, documents, jobs, settings, system, uploads
@@ -155,11 +161,16 @@ def create_app(ctx: ServerContext) -> FastAPI:
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request: Request, exc: StarletteHTTPException):
+        if isinstance(exc, CompatError) or _is_compat_path(request.url.path):    # docling-serve style bodies
+            return JSONResponse({"detail": exc.detail, **getattr(exc, "extra", {})}, status_code=exc.status_code,
+                                headers=getattr(exc, "headers", None))
         err = _ERROR_NAMES.get(exc.status_code) or (exc.detail if isinstance(exc.detail, str) else "http_error")
         return error_response(exc.status_code, err, headers=getattr(exc, "headers", None))
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError):
+        if _is_compat_path(request.url.path):
+            return JSONResponse({"detail": json.loads(json.dumps(exc.errors(), default=str))}, status_code=422)
         return error_response(422, "validation_error", detail=json.loads(json.dumps(exc.errors(), default=str)))
 
     api = APIRouter(prefix="/api", dependencies=[Depends(auth.require_token)])
@@ -173,11 +184,13 @@ def create_app(ctx: ServerContext) -> FastAPI:
     api.include_router(mcp_api.router)
     app.include_router(api)
     app.add_route("/mcp", rt.app, methods=["GET", "POST", "DELETE"])     # before the SPA catch-all (D2, spike S2)
+    compat_router.install(app)                          # docling-serve compatible /v1 (compat spec §4), PAT auth
 
     @app.get("/health", include_in_schema=False)
     def health():
         return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})   # public; Docker HEALTHCHECK
     _mount_web(app, Path(ctx.config.root) / "web" / "dist")
+    app.add_middleware(CompatLogMiddleware)          # innermost: logs each /v1 request with its real status
     app.add_middleware(EnvelopeMiddleware)
     app.add_middleware(CompressionMiddleware)       # outermost: compresses the enveloped JSON, never SSE / ranges
     return app

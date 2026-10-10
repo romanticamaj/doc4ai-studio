@@ -36,6 +36,16 @@ def summarize_args(args: dict | None) -> str | None:
     return s if len(s) <= ARGS_MAX else s[: ARGS_MAX - 1] + "…"
 
 
+def ua_identity(ua: str | None) -> tuple[str, str | None]:
+    """(client name, version) from a User-Agent's first product token, for clients without MCP clientInfo (the
+    docling-serve compatible API): `python-requests/2.32.3` -> ("python-requests", "2.32.3"); empty -> ("unknown", None)."""
+    first = (ua or "").strip().split(None, 1)[0] if (ua or "").strip() else ""
+    if not first:
+        return "unknown", None
+    name, _, version = first.partition("/")
+    return (name or "unknown")[:CLIENT_NAME_MAX], (version[:CLIENT_VERSION_MAX] or None)
+
+
 class CallRecorder:
     def __init__(self, ctx):
         self.ctx = ctx
