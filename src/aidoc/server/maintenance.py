@@ -70,6 +70,8 @@ class Maintenance:
                                                             max_rows=mcp.call_log_max_rows)
         from aidoc.mcp.calllog import CLIENT_RETENTION_DAYS
         res["mcp_clients_pruned"] = ctx.store.prune_mcp_clients(idle_before_ts=now - CLIENT_RETENTION_DAYS * 86400)
+        res["compat_tasks_pruned"] = ctx.store.prune_compat_tasks(
+            older_than_ts=now - ctx.config.compat.task_retention_days * 86400)
         ctx.store.prune_events(keep=self.keep_events)
         ctx.bus.publish("system.updated", None, {"maintenance": res})
         return res
