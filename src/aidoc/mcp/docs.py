@@ -107,6 +107,21 @@ def rewrite_assets(md: str, doc_id: str) -> str:
     return _ASSET_HTML.sub(lambda m: f'src="{base}{m.group(1)}"', md)
 
 
+_IMAGE_MD = re.compile(r"!\[[^\]]*\]\((assets/[^)\s]+)\)")
+_IMAGE_HTML = re.compile(r'<img\b[^>]*?\bsrc="(assets/[^"]+)"[^>]*>', re.IGNORECASE)
+
+
+def asset_refs(md: str) -> list[tuple[tuple[int, int], tuple[int, int], str]]:
+    """Every image of the output that points into `assets/`, in document order: (span of the whole image construct
+    (`![..](..)` or `<img ..>`), span of its `assets/<name>` reference, name). Shared by the compat API's
+    image_export_mode handling; the same `assets/` rule as rewrite_assets()."""
+    out = []
+    for rx in (_IMAGE_MD, _IMAGE_HTML):
+        for m in rx.finditer(md):
+            out.append(((m.start(), m.end()), (m.start(1), m.end(1)), m.group(1)[len("assets/"):]))
+    return sorted(out)
+
+
 def page_warnings(row: dict, start: int | None = None, end: int | None = None) -> list[PageWarning]:
     out = []
     for p in (row.get("quality") or {}).get("pages") or []:
