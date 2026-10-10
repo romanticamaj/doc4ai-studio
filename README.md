@@ -15,6 +15,7 @@ What exists today:
 - **CLI** — `aidoc convert`, `aidoc batch`, `aidoc chunk` (heading-aware RAG chunks with page ranges, tables never split), `aidoc serve`.
 - **Claude Code skill** — [`skill/SKILL.md`](skill/SKILL.md).
 - **MCP server** — Streamable HTTP at `/mcp` with personal access tokens (scopes, expiry, revoke, rotate, rate limits) and an admin dashboard showing tokens, connected clients and every call.
+- **docling-serve compatible API** — `/v1/convert/*` on the same port, so Open WebUI (and other RAG platforms that can call a docling-serve server) use Doc4AI as their document parser, page numbers included.
 
 ## Screenshots
 
@@ -151,6 +152,20 @@ Tokens never go in the URL; the endpoint answers `401` with `WWW-Authenticate: B
 
 MCP tools: `search_library`, `get_document_info`, `read_document` (page ranges; every response is capped at a token budget and continues with a cursor), `get_chunks`, `list_documents`, `convert_document`, `get_job`, `cancel_job`, `reconvert_document`, and `convert_path` (only when `[mcp] local_path_roots` is set). The web studio's MCP page lists tokens, connected clients and the call log; its Overview has a field where you can paste a token to fill the snippets above in the browser (the token is never sent or stored).
 
+## RAG platforms (docling-serve compatible API)
+
+The same server also speaks the [docling-serve](https://github.com/docling-project/docling-serve) v1 HTTP API (`/v1/convert/file`, `/v1/convert/source`, the async `…/async` + `/v1/status/poll` + `/v1/result`, `/health`), so RAG platforms whose document parser can be pointed at a docling-serve URL get Doc4AI's routing, per-page checks and OCR repair instead — with page numbers: the placeholder a client asks for (`md_page_break_placeholder`) goes between every two pages, empty pages included. Authentication is the MCP personal access token (`doc4ai:convert`) in `X-Api-Key` or `Authorization: Bearer`; every request shows up in the MCP page's call log, and jobs carry the source 「相容 API」. Already-converted content (same bytes, any file name) answers from the library at once.
+
+Open WebUI (its "Docling" content extraction engine; the token dialog on the MCP page shows this block with the token filled in):
+
+```bash
+CONTENT_EXTRACTION_ENGINE=docling
+DOCLING_SERVER_URL=http://<host>:<port>
+DOCLING_API_KEY=<YOUR_TOKEN>
+```
+
+Recipes, with what is and is not verified: [Open WebUI](docs/integrations/open-webui.md) (works by configuration), [RAGFlow](docs/integrations/ragflow.md) (works, but RAGFlow 1.0 only connects to a publicly routable URL), [Kotaemon](docs/integrations/kotaemon.md) (a drop-in reader file), [Dify](docs/integrations/dify.md) (needs a Dify plugin, not written yet) and [curl / any docling-serve client](docs/integrations/curl.md). Not supported: server-side URL fetching (`sources[].kind = "http"`), docling chunking endpoints, `json_content` (always `null`).
+
 ## When to use something else
 
 Doc4AI Studio is useful when you have a mixed pile of documents (scanned and born-digital PDFs, Office files, Traditional Chinese), want the conversion checked rather than trusted, and want to share the result with AI clients over a network. It is heavier than the alternatives below — several GB of models, uv + pnpm, no one-line install, no Docker image, no public benchmark yet — so a single tool is often the better choice:
@@ -163,7 +178,7 @@ Doc4AI Studio is useful when you have a mixed pile of documents (scanned and bor
 | only convert PDFs and want a library / CLI with per-page routing, or to audit another engine's output | [pdfmux](https://github.com/NameetP/pdfmux) |
 | need a multi-user platform with RBAC, SSO and webhooks around MinerU | [MinerU Tianshu](https://github.com/magicyuan876/mineru-tianshu) |
 | only convert Office / HTML files to Markdown | [MarkItDown](https://github.com/microsoft/markitdown) (and its `markitdown-mcp`) |
-| want a parser inside a RAG platform | RAGFlow, Open WebUI and Dify already let you pick MinerU or Docling |
+| want a parser inside a RAG platform | RAGFlow, Open WebUI and Dify already let you pick MinerU or Docling (Doc4AI can stand in for the Docling server: see above) |
 
 ## Engines and licenses
 
@@ -192,7 +207,7 @@ Design specs, implementation plans and research notes live in `docs/superpowers/
 
 ## 繁體中文
 
-Doc4AI Studio 不是新的解析模型，而是編排層：不知道該用 MarkItDown、Docling 還是 MinerU 時，它依每份文件的特徵選引擎、逐頁檢查轉換結果，文字層壞掉的頁面用 OCR 修復後接回原位，整份不合格就換下一個引擎；產出帶頁碼標記的 Markdown 與 JSON 中繼資料。支援繁體中文與英文 OCR、上千頁文件分段轉換與續跑，並提供 Web 介面（原始檔與 Markdown 左右對照）、CLI、Claude Code skill，以及有 token 權限控管與管理後台的 MCP server。如果只需要單一引擎，或只想要一行安裝的本機 MCP，上面「When to use something else」列的工具可能更適合。
+Doc4AI Studio 不是新的解析模型，而是編排層：不知道該用 MarkItDown、Docling 還是 MinerU 時，它依每份文件的特徵選引擎、逐頁檢查轉換結果，文字層壞掉的頁面用 OCR 修復後接回原位，整份不合格就換下一個引擎；產出帶頁碼標記的 Markdown 與 JSON 中繼資料。支援繁體中文與英文 OCR、上千頁文件分段轉換與續跑，並提供 Web 介面（原始檔與 Markdown 左右對照）、CLI、Claude Code skill，以及有 token 權限控管與管理後台的 MCP server；同一個 port 也提供 docling-serve 相容 API，Open WebUI 等 RAG 平台把 Docling 伺服器網址指過來就能用（頁碼保留）。如果只需要單一引擎，或只想要一行安裝的本機 MCP，上面「When to use something else」列的工具可能更適合。
 
 ## License
 
