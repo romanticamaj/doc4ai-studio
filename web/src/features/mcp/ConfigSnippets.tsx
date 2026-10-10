@@ -5,6 +5,7 @@ import type { McpSnippet } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { fillToken } from "./patToken";
 
 /** execCommand("copy") through an off-screen textarea: works on plain-HTTP origins (the tailnet URL), where
  *  `navigator.clipboard` does not exist. Focus and the user's selection are put back afterwards. */
@@ -74,8 +75,9 @@ export function CopyButton({ text, label = "複製", className }: { text: string
   );
 }
 
-/** One tab per client (Claude Code / Cursor / VS Code / Claude Desktop), each with its snippet and a copy button. */
-export function ConfigSnippets({ snippets, className }: { snippets: McpSnippet[]; className?: string }) {
+/** One tab per client (Claude Code / Cursor / VS Code / Claude Desktop), each with its snippet and a copy button.
+ *  `token` (a pasted, checked PAT; never sent anywhere) replaces <YOUR_TOKEN> in what is shown and copied. */
+export function ConfigSnippets({ snippets, token, className }: { snippets: McpSnippet[]; token?: string; className?: string }) {
   if (!snippets.length) return null;
   return (
     <Tabs defaultValue={snippets[0].client} className={cn("min-w-0", className)}>
@@ -86,17 +88,23 @@ export function ConfigSnippets({ snippets, className }: { snippets: McpSnippet[]
           </TabsTrigger>
         ))}
       </TabsList>
-      {snippets.map((s) => (
-        <TabsContent key={s.client} value={s.client} className="min-w-0">
-          <div className="flex items-center justify-between gap-2 pb-1.5">
-            <span className="min-w-0 truncate text-xs text-muted-foreground">{s.title}</span>
-            <CopyButton text={s.text} />
-          </div>
-          <pre className="max-h-72 overflow-auto rounded-md border bg-muted/50 p-3 font-mono text-[12px] leading-relaxed whitespace-pre">
-            {s.text}
-          </pre>
-        </TabsContent>
-      ))}
+      {snippets.map((s) => {
+        const text = token ? fillToken(s.text, token) : s.text;
+        return (
+          <TabsContent key={s.client} value={s.client} className="min-w-0">
+            <div className="flex items-center justify-between gap-2 pb-1.5">
+              <span className="min-w-0 truncate text-xs text-muted-foreground">{s.title}</span>
+              <CopyButton text={text} />
+            </div>
+            {token && s.client === "vscode" && (
+              <p className="pb-1.5 text-xs text-muted-foreground">VS Code 會在第一次連線時詢問 token（存進它的密碼儲存區，不寫進這個檔案），這份設定不需要填 token。</p>
+            )}
+            <pre className="max-h-72 overflow-auto rounded-md border bg-muted/50 p-3 font-mono text-[12px] leading-relaxed whitespace-pre">
+              {text}
+            </pre>
+          </TabsContent>
+        );
+      })}
     </Tabs>
   );
 }

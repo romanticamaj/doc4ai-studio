@@ -10,6 +10,8 @@ import { ErrorState } from "@/components/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { ConfigSnippets, CopyButton } from "./ConfigSnippets";
+import { TokenFill } from "./TokenFill";
+import { checkPat } from "./patToken";
 import { Sparkline } from "./Sparkline";
 
 export function OverviewTab() {
@@ -18,6 +20,9 @@ export function OverviewTab() {
   const [endpoint, setEndpoint] = useState<string | undefined>(undefined);
   const snippets = useConfigSnippets(endpoint);
   const chosen = endpoint ?? snippets.data?.endpoint_url;
+  // a pasted PAT lives only in this component's state: never sent, never stored, gone when the tab/page unmounts
+  const [pasted, setPasted] = useState("");
+  const pat = checkPat(pasted) === "ok" ? pasted.trim() : undefined;
 
   if (status.isError) return <ErrorState title="無法讀取 MCP 狀態" error={status.error} onRetry={() => status.refetch()} />;
   if (status.isPending)
@@ -37,12 +42,13 @@ export function OverviewTab() {
       </div>
       <Metrics s={s} stats={stats.data} />
       <Panel>
-        <PanelHeader title="連線設定" description="token 的位置先放占位字；建立 token 時會給填好的版本。" />
-        <div className="p-4">
+        <PanelHeader title="連線設定" description="token 的位置先放占位字；在下面貼上 token 就會填好，建立 token 時也會給填好的版本。" />
+        <div className="grid gap-4 p-4">
+          <TokenFill value={pasted} onChange={setPasted} />
           {snippets.isError ? (
             <ErrorState title="無法產生設定" error={snippets.error} onRetry={() => snippets.refetch()} />
           ) : snippets.data ? (
-            <ConfigSnippets key={snippets.data.endpoint_url} snippets={snippets.data.snippets} />
+            <ConfigSnippets key={snippets.data.endpoint_url} snippets={snippets.data.snippets} token={pat} />
           ) : (
             <Skeleton className="h-40" />
           )}
