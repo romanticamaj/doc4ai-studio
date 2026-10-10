@@ -6,6 +6,7 @@ export function matchesFilters(c: McpCall, f: CallFilters): boolean {
   if (f.client_id && c.client_id !== f.client_id) return false;
   if (f.tool && c.tool_name !== f.tool) return false;
   if (f.status && c.status !== f.status) return false;
+  if (f.method && c.method !== f.method) return false;
   return true;
 }
 

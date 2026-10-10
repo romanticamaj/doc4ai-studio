@@ -567,9 +567,10 @@ class Store:
         return _row(self._q1("SELECT * FROM mcp_calls WHERE id=?", (call_id,)))
 
     def list_mcp_calls(self, *, token_id=None, client_id=None, tool=None, status=None, since=None, until=None,
-                       before_id=None, limit=100) -> list[dict]:
+                       before_id=None, limit=100, method=None) -> list[dict]:
         sql, args = "SELECT * FROM mcp_calls WHERE 1=1", []
-        for col, val in (("token_id", token_id), ("client_id", client_id), ("tool_name", tool), ("status", status)):
+        for col, val in (("token_id", token_id), ("client_id", client_id), ("tool_name", tool), ("status", status),
+                         ("method", method)):
             if val is not None:
                 sql += f" AND {col}=?"
                 args.append(val)
@@ -584,8 +585,11 @@ class Store:
             args.append(before_id)
         return self._qa(sql + " ORDER BY id DESC LIMIT ?", [*args, max(1, min(int(limit), 1000))])
 
-    def count_mcp_calls(self, since: float, token_id=None, errors_only=False) -> int:
+    def count_mcp_calls(self, since: float, token_id=None, errors_only=False, method: str | None = None) -> int:
         sql, args = "SELECT COUNT(*) FROM mcp_calls WHERE ts >= ?", [since]
+        if method is not None:
+            sql += " AND method=?"
+            args.append(method)
         if token_id is not None:
             sql += " AND token_id=?"
             args.append(token_id)

@@ -2,7 +2,7 @@ import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClie
 import { api } from "./client";
 import type { McpCallsPage, McpClient, McpSnippet, McpStats, McpStatus, McpToken, McpTokenCreated } from "./types";
 
-export type CallFilters = { token_id?: string; client_id?: string; tool?: string; status?: string; since?: string; until?: string };
+export type CallFilters = { token_id?: string; client_id?: string; tool?: string; status?: string; since?: string; until?: string; method?: string };
 export type ClientFilters = { active?: boolean; token_id?: string };
 
 export const qk = {

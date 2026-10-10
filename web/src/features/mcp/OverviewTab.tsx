@@ -99,6 +99,18 @@ function StatusPanel({ s, chosen, onChoose }: { s: McpStatus; chosen?: string; o
             })}
           </ul>
         </div>
+        {s.compat?.enabled && (
+          <div>
+            <p className="text-xs text-muted-foreground">docling-serve 相容 API</p>
+            <div className="mt-1.5 flex min-w-0 items-center gap-2 rounded-md border bg-muted/30 px-2 py-1">
+              <code className="min-w-0 flex-1 truncate font-mono text-[12px]">{s.compat.base_url}</code>
+              <CopyButton text={s.compat.base_url} className="h-6 px-2 text-xs" />
+            </div>
+            <p className="mt-1 text-xs text-pretty text-muted-foreground">
+              Open WebUI 等填這個位址（不加 /v1），用同一種 token（需要 doc4ai:convert）。24 小時 {s.compat.calls_24h} 次呼叫。
+            </p>
+          </div>
+        )}
         <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-xs">
           <dt className="text-muted-foreground">協定版本</dt>
           <dd className="flex flex-wrap gap-1">

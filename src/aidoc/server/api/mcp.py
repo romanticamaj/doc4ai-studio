@@ -12,7 +12,7 @@ from aidoc.mcp import tokens as T
 from aidoc.mcp.middleware import TOOL_SCOPES
 from aidoc.mcp.principal import SCOPE_READ, SCOPES
 from aidoc.mcp.server import PROTOCOL_VERSIONS, SDK_VERSION, endpoint_urls, transport_security_for
-from aidoc.mcp.snippets import render_snippets
+from aidoc.mcp.snippets import compat_base_url, render_snippets
 from aidoc.server.auth import ApiError
 
 router = APIRouter()
@@ -139,7 +139,10 @@ def status(request: Request) -> dict:
             "errors_24h": ctx.store.count_mcp_calls(since=now - DAY, errors_only=True),
             "tokens_expiring_soon": expiring, "local_path_roots": list(cfg.mcp.local_path_roots),
             "plaintext_http": True, "tokenizer": ctx.store.page_index_tokenizer(),
-            "config_warnings": list(getattr(cfg, "warnings", []))}
+            "config_warnings": list(getattr(cfg, "warnings", [])),
+            # docling-serve compatible API (compat spec §6): Open WebUI's DOCLING_SERVER_URL, no /v1
+            "compat": {"enabled": cfg.compat.enabled, "base_url": compat_base_url(_default_endpoint(ctx)[1]),
+                       "calls_24h": ctx.store.count_mcp_calls(since=now - DAY, method="compat/docling")}}
 
 
 @router.get("/mcp/tokens")
@@ -243,7 +246,7 @@ def serialize_call(row: dict, token_names: dict, client_names: dict) -> dict:
 @router.get("/mcp/calls")
 def list_calls(request: Request, token_id: str | None = None, client_id: str | None = None, tool: str | None = None,
                status: str | None = None, since: float | None = None, until: float | None = None, cursor: str | None = None,
-               limit: int = 50) -> dict:
+               limit: int = 50, method: str | None = None) -> dict:
     store = _ctx(request).store
     if not 1 <= limit <= 100:
         raise ApiError(422, "validation_error", detail="limit must be 1..100")
@@ -253,7 +256,7 @@ def list_calls(request: Request, token_id: str | None = None, client_id: str | N
             raise ApiError(422, "invalid_cursor")
         before = int(cursor)
     rows = store.list_mcp_calls(token_id=token_id, client_id=client_id, tool=tool, status=status, since=since, until=until,
-                                before_id=before, limit=limit + 1)
+                                before_id=before, limit=limit + 1, method=method)
     more = len(rows) > limit
     rows = rows[:limit]
     token_names = {t["id"]: t["name"] for t in store.list_api_tokens()}

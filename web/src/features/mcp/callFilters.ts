@@ -1,7 +1,9 @@
 import type { CallFilters } from "@/api/mcp";
 
-const MAP: Record<string, keyof CallFilters> = { token: "token_id", client: "client_id", tool: "tool", status: "status", since: "since", until: "until" };
+const MAP: Record<string, keyof CallFilters> = { token: "token_id", client: "client_id", tool: "tool", status: "status", since: "since", until: "until", method: "method" };
 export const STATUS_OPTIONS = ["ok", "tool_error", "protocol_error", "auth_error", "forbidden_scope", "rate_limited"] as const;
+/** Request sources in the call log: MCP JSON-RPC methods, or the docling-serve compatible API. */
+export const METHOD_OPTIONS = [{ value: "compat/docling", label: "相容 API（compat/docling）" }] as const;
 export const RANGE_OPTIONS = [{ label: "1 小時", s: 3600 }, { label: "24 小時", s: 86400 }, { label: "7 天", s: 604800 }, { label: "全部", s: 0 }] as const;
 
 export function filtersFromParams(p: URLSearchParams): CallFilters {

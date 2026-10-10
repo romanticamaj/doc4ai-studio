@@ -35,7 +35,7 @@ export interface Job {
   created_at: number;
   options: ConvertOptionsJson;
   status: JobStatus;
-  origin: "cli" | "web" | "mcp";
+  origin: "cli" | "web" | "mcp" | "compat";
   progress: { done: number; total: number };
 }
 
@@ -327,6 +327,8 @@ export interface McpStatus {
   protocol_versions: string[]; sdk_version: string; active_clients: number; calls_24h: number; errors_24h: number;
   tokens_expiring_soon: number; local_path_roots: string[]; plaintext_http: boolean; tokenizer: string;
   config_warnings?: string[];
+  /** docling-serve compatible API (compat spec §6): base_url is what Open WebUI's DOCLING_SERVER_URL takes. */
+  compat?: { enabled: boolean; base_url: string; calls_24h: number };
 }
 export interface McpToken {
   id: string; name: string; prefix: string; scopes: McpScope[]; note: string | null; created_at: number; expires_at: number | null;
@@ -334,7 +336,7 @@ export interface McpToken {
   last_used_at: number | null; last_used_ip: string | null; last_client: string | null; status: "active" | "expired" | "revoked";
   calls_24h: number; errors_24h: number;
 }
-export interface McpSnippet { client: "claude-code" | "cursor" | "vscode" | "claude-desktop"; title: string; language: "bash" | "json"; text: string }
+export interface McpSnippet { client: "claude-code" | "cursor" | "vscode" | "claude-desktop" | "openwebui"; title: string; language: "bash" | "json"; text: string }
 export interface McpTokenCreated { token: string; record: McpToken; snippets: McpSnippet[]; revoked?: McpToken }
 export interface McpClient {
   id: string; token_id: string | null; token_name: string | null; client_name: string; client_version: string | null;
