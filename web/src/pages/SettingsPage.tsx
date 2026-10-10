@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Cpu, KeyRound, Lock, RotateCcw, TriangleAlert } from "lucide-react";
+import { Cpu, FileText, KeyRound, Lock, RotateCcw, TriangleAlert } from "lucide-react";
 import { Page, PageHeader } from "@/components/layout/Page";
 import { Panel, PanelHeader } from "@/components/Panel";
 import { Meter } from "@/components/Meter";
@@ -31,6 +32,11 @@ export default function SettingsPage() {
   const sys = useSystem();
   const settings = useSettings();
   const unauthorized = [sys.error, settings.error].some((e) => e instanceof ApiError && e.status === 401);
+  const { hash } = useLocation();
+  useEffect(() => {
+    // deep links such as /settings#office-preview (from the Document view) once the panels have their height
+    if (hash && !sys.isPending) document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView?.({ block: "start" });
+  }, [hash, sys.isPending]);
 
   return (
     <Page>
@@ -97,6 +103,33 @@ export default function SettingsPage() {
                     </dd>
                   )}
                 </dl>
+              )}
+            </Panel>
+            <Panel className="p-4 md:col-span-2" id="office-preview" data-testid="office-preview">
+              <div className="flex items-center gap-2 text-[13px] font-semibold">
+                <FileText className="size-4 text-muted-foreground" strokeWidth={1.75} /> Office 預覽（LibreOffice）
+              </div>
+              {sys.isPending ? (
+                <Skeleton className="mt-3 h-10" />
+              ) : sys.data?.libreoffice?.found ? (
+                <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+                  <dt className="text-muted-foreground">狀態</dt>
+                  <dd className="text-ok">已偵測到：Word／PowerPoint／Excel 等檔案在文件頁以 PDF 預覽</dd>
+                  <dt className="text-muted-foreground">版本</dt>
+                  <dd className="font-mono">{sys.data.libreoffice.version ?? "未知"}</dd>
+                  <dt className="text-muted-foreground">位置</dt>
+                  <dd className="truncate font-mono" title={sys.data.libreoffice.path ?? undefined}>
+                    {sys.data.libreoffice.path}
+                  </dd>
+                </dl>
+              ) : (
+                <p className="mt-2 flex items-start gap-1.5 text-[13px] text-muted-foreground">
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warn" />
+                  <span>
+                    未偵測到 LibreOffice：Office 檔仍可轉換，只是文件頁左側沒有預覽。安裝 LibreOffice 後重新整理即可；裝在非預設位置時，在
+                    aidoc.toml 的 <code className="font-mono">[preview] soffice_path</code> 指定 soffice 的路徑。
+                  </span>
+                </p>
               )}
             </Panel>
           </div>

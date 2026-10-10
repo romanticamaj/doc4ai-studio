@@ -22,6 +22,7 @@ from aidoc.output import read_sidecar, sidecar_path
 from aidoc.server.auth import ApiError
 from aidoc.server.serialize import serialize_document, serialize_job
 from aidoc.server.transfer import etag_matches, file_etag
+from aidoc.sources import document_source
 
 router = APIRouter()
 
@@ -33,21 +34,7 @@ def _doc(request: Request, doc_id: str) -> dict:
     return doc
 
 
-def source_file(doc: dict) -> Path | None:
-    """The staged work copy (src.*) while retained, else the original when it is a local path that still exists."""
-    wc = doc.get("work_copy_path")
-    if wc:
-        w = Path(wc)
-        if w.is_file():
-            return w
-        if w.is_dir():
-            for f in sorted(w.glob("src.*")):
-                if f.is_file():
-                    return f
-    src = Path(doc["source_path"])
-    if src.is_absolute() and src.is_file():            # upload display names are never paths
-        return src
-    return None
+source_file = document_source
 
 
 def output_available(doc: dict) -> bool:
@@ -68,7 +55,64 @@ def list_documents(request: Request, status: str | None = None, engine: str | No
 def get_document(doc_id: str, request: Request) -> dict:
     doc = _doc(request, doc_id)
     return {"document": serialize_document(doc), "source_available": source_file(doc) is not None,
-            "output_available": output_available(doc), "sidecar": read_sidecar(Path(doc["output_dir"]))}
+            "output_available": output_available(doc), "sidecar": read_sidecar(Path(doc["output_dir"])),
+            "preview": _preview_status(request, doc)}
+
+
+# ---- Office preview (LibreOffice -> PDF, aidoc.preview): the left pane of the Document view
+
+def _is_office_doc(doc: dict) -> bool:
+    from aidoc.preview import is_office
+    return is_office(Path(doc["source_path"]).name)
+
+
+def _preview_status(request: Request, doc: dict) -> dict | None:
+    if not _is_office_doc(doc):
+        return None
+    return request.app.state.ctx.extras["preview"].status(doc)
+
+
+class PreviewIn(BaseModel):
+    retry: bool = False
+
+
+@router.post("/documents/{doc_id}/preview")
+async def request_preview(doc_id: str, request: Request) -> Response:
+    """Queue the PDF preview of an Office document (on demand; one soffice run at a time, never on the job queue).
+    202 while it is pending, 200 when it is already ready or cannot be made (status failed + reason). The SSE event
+    `document.preview` {document_id, status, pages | reason} follows when a pending preview finishes."""
+    from fastapi.responses import JSONResponse
+    doc = _doc(request, doc_id)
+    raw = await request.body()
+    body = PreviewIn.model_validate_json(raw) if raw.strip() else PreviewIn()
+    if not _is_office_doc(doc):
+        raise ApiError(409, "not_office")
+    st = request.app.state.ctx.extras["preview"].request(doc, retry=body.retry)
+    return JSONResponse({"preview": st}, status_code=202 if st["status"] == "pending" else 200)
+
+
+def _preview_file(request: Request, doc_id: str) -> Path:
+    doc = _doc(request, doc_id)
+    if not _is_office_doc(doc):
+        raise ApiError(409, "not_office")
+    mgr = request.app.state.ctx.extras["preview"]
+    pdf = mgr.pdf_path(doc)
+    if pdf is None or not pdf.is_file():
+        raise ApiError(409, "preview_not_ready", preview=mgr.status(doc))
+    return pdf
+
+
+@router.get("/documents/{doc_id}/preview")
+def get_preview(doc_id: str, request: Request) -> Response:
+    """The preview PDF, served exactly like a PDF source (inline, nosniff, sandbox CSP, ETag, byte ranges)."""
+    pdf = _preview_file(request, doc_id)
+    return safe_file_response(pdf, "preview.pdf", request)
+
+
+@router.get("/documents/{doc_id}/preview/open")
+def get_preview_open(doc_id: str, request: Request,
+                     chunk: int = Query(..., ge=1024, le=4 * 1024 * 1024)) -> Response:
+    return _open_bundle(_preview_file(request, doc_id), request, chunk)
 
 
 @router.get("/documents/{doc_id}/markdown")
@@ -122,11 +166,15 @@ def get_source_open(doc_id: str, request: Request,
     trip instead of one per xref section and object; aidoc.pdfprefetch). Body: those ranges back to back; header
     X-Pdf-Ranges lists them (`begin-end`, end exclusive, aligned to `chunk` = the viewer's rangeChunkSize) and
     X-Pdf-Size gives the file size. Revalidated like the source itself."""
-    from aidoc.pdfprefetch import open_ranges
     doc = _doc(request, doc_id)
     f = source_file(doc)
     if f is None:
         raise ApiError(410, "source_missing")
+    return _open_bundle(f, request, chunk)
+
+
+def _open_bundle(f: Path, request: Request, chunk: int) -> Response:
+    from aidoc.pdfprefetch import open_ranges
     with f.open("rb") as fh:
         if fh.read(1024).find(b"%PDF-") < 0:
             raise ApiError(415, "not_pdf")

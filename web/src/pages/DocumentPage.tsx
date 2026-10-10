@@ -12,6 +12,7 @@ import { ApiError, withToken } from "@/api/client";
 import type { DocumentDetail } from "@/api/types";
 import { MarkdownView } from "@/features/document/MarkdownView";
 import { PdfViewer } from "@/features/document/PdfViewer";
+import { OfficePreview } from "@/features/document/OfficePreview";
 import { RawSource } from "@/features/document/RawSource";
 import { useScrollSync } from "@/features/document/useScrollSync";
 import { GoToPage } from "@/features/document/GoToPage";
@@ -26,11 +27,12 @@ import { cn } from "@/lib/utils";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
 
-type SourceKind = "pdf" | "image" | "other";
+type SourceKind = "pdf" | "image" | "office" | "other";
 function sourceKind(d: DocumentDetail): SourceKind {
   const ext = extOf(d.sidecar?.source ?? d.document.source_path);
   if (ext === "pdf") return "pdf";
   if (IMAGE_EXT.has(ext)) return "image";
+  if (d.preview) return "office"; // the server gives Office sources (docx, pptx, xlsx, odt, rtf, ...) a preview state
   return "other";
 }
 
@@ -50,8 +52,10 @@ export default function DocumentPage() {
   const right = useRef<HTMLDivElement>(null);
   const raw = useRef<HTMLDivElement>(null);
   const [pdfPages, setPdfPages] = useState(0);
+  // Office previews have pages but the MarkItDown output has no page markers: no scroll sync (never faked)
+  const officeSource = q.data ? sourceKind(q.data) === "office" : false;
   const { enabled, page, goTo } = useScrollSync(left, right, {
-    active: sync && tab === "markdown" && wide,
+    active: sync && tab === "markdown" && wide && !officeSource,
     deps: [md.data, pdfPages, tab, wide, pane],
   });
   const quality = q.data?.document.quality;
@@ -111,9 +115,30 @@ export default function DocumentPage() {
         <span className="truncate text-muted-foreground" title={doc.source_path}>
           {baseName(doc.source_path)}
         </span>
-        {kind === "pdf" && pdfPages > 0 && <span className="ml-auto shrink-0 text-muted-foreground tabular">{pdfPages} 頁</span>}
+        {(kind === "pdf" || kind === "office") && pdfPages > 0 && (
+          <span className="ml-auto shrink-0 text-muted-foreground tabular">
+            {kind === "office" ? `PDF 預覽 · ${pdfPages} 頁` : `${pdfPages} 頁`}
+          </span>
+        )}
       </div>
-      {!showSource ? (
+      {kind === "office" && d.preview ? (
+        <OfficePreview
+          docId={doc.id}
+          preview={d.preview}
+          version={doc.created_at}
+          sourceUrl={sourceUrl}
+          ext={extOf(doc.source_path)}
+          renderPdf={(url) => (
+            <PdfViewer
+              ref={left}
+              url={url}
+              className="relative min-h-0 flex-1 overflow-auto"
+              onLoaded={setPdfPages}
+              onError={() => toast.error("PDF 預覽載入失敗")}
+            />
+          )}
+        />
+      ) : !showSource ? (
         <div className="flex flex-1 items-center justify-center p-6">
           <EmptyState icon={FileX2} className="border-0" title="原始檔已移除" description="原始檔與暫存的工作副本都已不存在。右側的轉換結果不受影響。" />
         </div>

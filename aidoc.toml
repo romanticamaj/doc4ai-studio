@@ -33,3 +33,9 @@ max_upload_mb = 20
 response_token_budget = 8000
 call_log_retention_days = 30
 call_log_max_rows = 200000
+
+[preview]
+enabled = true                     # Office files (docx/pptx/xlsx/odt/rtf/...) shown as PDF in the Document view
+soffice_path = ""                  # LibreOffice soffice(.exe); empty = PATH, then the usual install locations
+timeout_s = 180
+max_mb = 200

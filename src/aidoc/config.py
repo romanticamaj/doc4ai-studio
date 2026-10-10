@@ -67,6 +67,15 @@ class Mcp:
     call_log_max_rows: int = 200000
 
 
+@dataclass
+class Preview:
+    """[preview] Office preview via LibreOffice (aidoc.preview). soffice_path is read-only over the API."""
+    enabled: bool = True
+    soffice_path: str = ""          # empty = PATH, then the usual install locations
+    timeout_s: int = 180
+    max_mb: int = 200
+
+
 class ConfigError(ValueError):
     """aidoc.toml holds a value that is unsafe to run with (the server refuses to start)."""
 
@@ -130,7 +139,8 @@ def _check_mcp(cfg: AidocConfig, where: Path) -> None:
                                 f"mcp.allow_drive_root): any file on that drive can be converted by path")
 
 
-_SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp}
+_SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp,
+             "preview": Preview}
 
 
 @dataclass
@@ -140,6 +150,7 @@ class AidocConfig:
     limits: Limits = field(default_factory=Limits)
     server: Server = field(default_factory=Server)
     mcp: Mcp = field(default_factory=Mcp)
+    preview: Preview = field(default_factory=Preview)
     root: Path = field(default_factory=paths.project_root)
     data_dir: Path = field(default_factory=paths.data_dir)
     warnings: list[str] = field(default_factory=list)            # load-time problems that were ignored

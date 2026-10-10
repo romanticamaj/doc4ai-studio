@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 
 from aidoc import __version__, gpu, paths
 from aidoc.models import ENGINE_NAMES
+from aidoc.preview import soffice_info
 from aidoc.server.auth import ApiError
 from aidoc.server.setup_runner import SetupBusy, SetupRunner
 from aidoc.setup_engines import check_long_paths
@@ -39,7 +40,7 @@ def system_snapshot(ctx) -> dict:
         free = None
     return {"engines": {n: engine_status(n) for n in ENGINE_NAMES}, "gpu": gpu.query(),
             "queue": ctx.queue.snapshot(), "disk_free": free, "output_dir": str(out_root), "version": __version__,
-            "long_paths_enabled": check_long_paths()}
+            "long_paths_enabled": check_long_paths(), "libreoffice": soffice_info(ctx.config.preview.soffice_path)}
 
 
 @router.get("/system")

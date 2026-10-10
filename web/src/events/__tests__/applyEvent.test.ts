@@ -151,3 +151,13 @@ test("log lines lose ANSI escapes, keep only the last \r state, and a tqdm bar u
     "Predict: 100%|██████████| 3/3 [00:01<00:00]",
   ]);
 });
+
+test("document.preview puts the new preview state into the document detail", () => {
+  const qc = new QueryClient();
+  qc.setQueryData(qk.document("d1"), { document: { id: "d1" }, preview: { status: "pending" } });
+  applyEvent(qc, { kind: "document.preview", seq: 9, payload: { document_id: "d1", status: "ready", pages: 3 } } as any);
+  expect((qc.getQueryData(qk.document("d1")) as any).preview).toEqual({ status: "ready", pages: 3 });
+  // a document that is not cached is left alone (no fetch, no crash)
+  applyEvent(qc, { kind: "document.preview", seq: 10, payload: { document_id: "d2", status: "failed", reason: "timeout" } } as any);
+  expect(qc.getQueryData(qk.document("d2"))).toBeUndefined();
+});
