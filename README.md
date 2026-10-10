@@ -1,37 +1,46 @@
 # Doc4AI Studio
 
-**AI-friendly document conversion.**
+**Not sure whether to use MarkItDown, Docling or MinerU? Doc4AI picks one per document, checks the result page by page, repairs broken pages or switches engines when the output is wrong — and hands the Markdown to your AI through a web studio, a CLI and an MCP server.**
 
-Doc4AI Studio converts almost any document (PDF, scanned PDF, images, Word, PowerPoint, Excel, HTML, EPUB…) into clean **Markdown + JSON metadata** that LLMs and RAG pipelines can actually use. It picks the right engine per file, checks the output quality, and falls back automatically when a conversion looks wrong.
+Doc4AI Studio is an orchestrator, not a new parser. It runs three existing open-source converters ([MarkItDown](https://github.com/microsoft/markitdown), [Docling](https://github.com/docling-project/docling), [MinerU](https://github.com/opendatalab/MinerU)) side by side in isolated environments, probes each input (text layer, image coverage, formulas, ruled tables, fonts without a Unicode map) to route it, scores the Markdown it gets back, and falls back to the next engine or repairs individual pages when the score says the conversion failed. The output is Markdown with `<!-- page: N -->` markers plus a JSON sidecar describing how it was made, ready for LLMs and RAG pipelines.
 
-把各種文件轉成適合 AI 讀取的 Markdown 與中繼資料；支援繁體中文與英文 OCR。
+What exists today:
 
-## Engines
+- **Multi-engine routing with fallback** — one engine per document, chosen from a probe of the file; a failed quality check (characters per page, garbage ratio, missing tables, page-map coverage) moves the document to the next engine.
+- **Per-page quality and repair** — every page of a PDF is checked against its own text layer; pages with a broken text layer are re-run with OCR (Docling full-page RapidOCR, then MinerU OCR mode) and spliced back in place. Pages that cannot be repaired are flagged, not hidden.
+- **Isolated engine environments** — each engine has its own `uv` venv under `envs/` and runs as a subprocess, so MinerU 4, Docling 2 and MarkItDown never fight over torch / onnxruntime versions.
+- **Large documents** — PDFs over 40 pages are converted in 40-page segments with resume after a crash or cancel; tables that cross a segment boundary are joined. Tested on a 1,192-page book.
+- **Traditional Chinese + English OCR**, including mixed pages.
+- **Web studio** — resumable chunked uploads, live job progress (SSE), a library with quality badges, and a side-by-side view of the source and the Markdown with page-synced scrolling for PDFs. Word / PowerPoint / Excel / OpenDocument / RTF sources are shown as a PDF preview rendered by LibreOffice when it is installed (without scroll sync: MarkItDown output has no page markers).
+- **CLI** — `aidoc convert`, `aidoc batch`, `aidoc chunk` (heading-aware RAG chunks with page ranges, tables never split), `aidoc serve`.
+- **Claude Code skill** — [`skill/SKILL.md`](skill/SKILL.md).
+- **MCP server** — Streamable HTTP at `/mcp` with personal access tokens (scopes, expiry, revoke, rotate, rate limits) and an admin dashboard showing tokens, connected clients and every call.
 
-| Engine | Used for |
-|---|---|
-| [MarkItDown](https://github.com/microsoft/markitdown) | Office files, HTML, EPUB, CSV |
-| [Docling](https://github.com/docling-project/docling) | Born-digital PDFs (layout, tables, reading order) |
-| [MinerU](https://github.com/opendatalab/mineru) | Scanned PDFs, images, formulas, complex layouts (GPU) |
+## Screenshots
 
-Each engine runs in its own isolated `uv` environment (`envs/<engine>/`) and is called as a subprocess, so they can be upgraded independently.
+Document view — source PDF and Markdown side by side, scrolled in sync:
 
-## Features
+![Document view](docs/superpowers/screenshots/05-document-light.png)
 
-- **Routing + quality fallback** — probes each file (text layer, image coverage, formulas, tables) to choose an engine, scores the result (characters per page, garbage ratio, missing tables) and retries with the next engine when it fails.
-- **Traditional Chinese + English OCR**, including mixed-language pages.
-- **Large documents** — PDFs over 40 pages are converted in segments with resume after interruption; cross-segment tables are joined.
-- **RAG chunking** — `aidoc chunk` splits by heading hierarchy with page ranges, never splitting tables.
-- **Web app** — upload (chunked, resumable), live job progress over SSE, library, side-by-side PDF / Markdown view with page-synced scrolling, chunk preview, engine setup. Light and dark themes.
-- **Reliability** — SQLite job state, crash recovery, atomic output writes, source-change detection.
-- **Claude Code skill** — `skill/SKILL.md`.
+A 315-page PDF converted in eight 40-page segments:
+
+![Job detail with segments](docs/superpowers/screenshots/03-job-detail-light.png)
+
+Library with engine and quality per document:
+
+![Library](docs/superpowers/screenshots/04-library-light.png)
+
+MCP admin — endpoint, live numbers and ready-to-paste client configuration:
+
+![MCP overview](docs/superpowers/screenshots/10-mcp-overview-light.png)
 
 ## Requirements
 
 - Python 3.10+ and [uv](https://docs.astral.sh/uv/)
-- Node 20+ and pnpm (for the web app)
+- Node 20+ and pnpm (for the web studio)
 - An NVIDIA GPU is strongly recommended for Docling / MinerU. Engine environments pin CUDA 12.8 PyTorch wheels (needed for RTX 50-series / Blackwell).
-- Developed and tested on Windows 11; the code is cross-platform but other OSes are less tested.
+- Optional: [LibreOffice](https://www.libreoffice.org/) for the Office preview in the web studio (found on `PATH` or in the usual install folder; otherwise set `[preview] soffice_path` in `aidoc.toml`).
+- Developed and tested on Windows 11; the code is cross-platform but other OSes are less tested. There is no Docker image yet.
 
 ## Quick start
 
@@ -46,7 +55,7 @@ uv run aidoc batch ./inbox -o out
 uv run aidoc chunk out --max-tokens 800
 ```
 
-Web app:
+Web studio:
 
 ```bash
 pnpm --dir web install
@@ -55,29 +64,16 @@ uv run aidoc serve              # http://127.0.0.1:8765
 ```
 
 By default the server binds to `127.0.0.1`. To expose it on your network, a token is required:
-`uv run aidoc serve --host 0.0.0.0 --token <secret>`.
+`uv run aidoc serve --host 0.0.0.0 --token <secret>`. While the server runs, `aidoc convert` and `aidoc batch` hand their work to its queue.
 
 ## Output
 
 ```
 out/<name>/
 ├─ <name>.md      Markdown with <!-- page: N --> markers
-├─ <name>.json    engine, attempts, probe results, quality score, timings
+├─ <name>.json    engine, attempts, probe results, quality score and per-page flags, timings
 └─ assets/        extracted images
 ```
-
-## Tests
-
-```bash
-uv run pytest -m "not slow"     # fast suite, uses a fake engine (no GPU)
-uv run pytest -m slow           # real engines on the GPU
-pnpm --dir web test             # Vitest
-pnpm --dir web e2e              # Playwright
-```
-
-## Docs
-
-Design spec and implementation plans live in `docs/superpowers/`.
 
 ## MCP
 
@@ -153,6 +149,51 @@ claude mcp add --transport http doc4ai http://<host>:<port>/mcp --header "Author
 
 Tokens never go in the URL; the endpoint answers `401` with `WWW-Authenticate: Bearer realm="doc4ai"` when one is missing or revoked (after 10 failures a minute from one address: `429` with the same reason, for a minute). Scopes: `doc4ai:read`, `doc4ai:convert`, `doc4ai:convert:local`, `doc4ai:manage`.
 
+MCP tools: `search_library`, `get_document_info`, `read_document` (page ranges; every response is capped at a token budget and continues with a cursor), `get_chunks`, `list_documents`, `convert_document`, `get_job`, `cancel_job`, `reconvert_document`, and `convert_path` (only when `[mcp] local_path_roots` is set). The web studio's MCP page lists tokens, connected clients and the call log; its Overview has a field where you can paste a token to fill the snippets above in the browser (the token is never sent or stored).
+
+## When to use something else
+
+Doc4AI Studio is useful when you have a mixed pile of documents (scanned and born-digital PDFs, Office files, Traditional Chinese), want the conversion checked rather than trusted, and want to share the result with AI clients over a network. It is heavier than the alternatives below — several GB of models, uv + pnpm, no one-line install, no Docker image, no public benchmark yet — so a single tool is often the better choice:
+
+| If you… | Consider |
+|---|---|
+| only need MinerU, and its own web UI, router and document library are enough | [MinerU](https://github.com/opendatalab/MinerU) 4.0 directly |
+| need a Docling conversion API at scale, in containers | [docling-serve](https://github.com/docling-project/docling-serve) |
+| want an agent to read local PDFs through a lightweight stdio MCP server with a one-line install | [anymd](https://github.com/SylphxAI/anymd) or [pdf-mcp](https://github.com/jztan/pdf-mcp) |
+| only convert PDFs and want a library / CLI with per-page routing, or to audit another engine's output | [pdfmux](https://github.com/NameetP/pdfmux) |
+| need a multi-user platform with RBAC, SSO and webhooks around MinerU | [MinerU Tianshu](https://github.com/magicyuan876/mineru-tianshu) |
+| only convert Office / HTML files to Markdown | [MarkItDown](https://github.com/microsoft/markitdown) (and its `markitdown-mcp`) |
+| want a parser inside a RAG platform | RAGFlow, Open WebUI and Dify already let you pick MinerU or Docling |
+
+## Engines and licenses
+
+| Component | Role here | License |
+|---|---|---|
+| [MarkItDown](https://github.com/microsoft/markitdown) 0.1.8 | Office files, HTML, EPUB, CSV | MIT |
+| [Docling](https://github.com/docling-project/docling) 2.x (+ RapidOCR / EasyOCR) | Born-digital PDFs (layout, tables, reading order); full-page OCR repair | MIT (OCR backends: Apache-2.0) |
+| [MinerU](https://github.com/opendatalab/MinerU) 4.0.x | Scanned PDFs, images, formulas, complex layouts (GPU) | MinerU Open Source License (Apache-2.0 based, with additional conditions) |
+| [PyMuPDF](https://github.com/pymupdf/PyMuPDF) | Probing, splitting and checking PDFs in the main program | AGPL-3.0 |
+| [LibreOffice](https://www.libreoffice.org/) (optional, external program) | Office → PDF preview in the web studio | MPL-2.0 |
+
+The engines are separate projects installed into their own environments by `aidoc setup`; they are not redistributed with this repository. MinerU's license has additional conditions for large-scale or online-service use — check each project's license before redistributing Doc4AI Studio or offering it as a service.
+
+## Tests
+
+```bash
+uv run pytest -m "not slow"     # fast suite, uses a fake engine (no GPU)
+uv run pytest -m slow           # real engines on the GPU (and LibreOffice, when installed)
+pnpm --dir web test             # Vitest
+pnpm --dir web e2e              # Playwright
+```
+
+## Docs
+
+Design specs, implementation plans and research notes live in `docs/superpowers/`.
+
+## 繁體中文
+
+Doc4AI Studio 不是新的解析模型，而是編排層：不知道該用 MarkItDown、Docling 還是 MinerU 時，它依每份文件的特徵選引擎、逐頁檢查轉換結果，文字層壞掉的頁面用 OCR 修復後接回原位，整份不合格就換下一個引擎；產出帶頁碼標記的 Markdown 與 JSON 中繼資料。支援繁體中文與英文 OCR、上千頁文件分段轉換與續跑，並提供 Web 介面（原始檔與 Markdown 左右對照）、CLI、Claude Code skill，以及有 token 權限控管與管理後台的 MCP server。如果只需要單一引擎，或只想要一行安裝的本機 MCP，上面「When to use something else」列的工具可能更適合。
+
 ## License
 
-[AGPL-3.0](LICENSE). The engines are separate projects with their own licenses — notably MinerU's license has additional conditions for large-scale or online-service use; check each project before redistributing or offering this as a service.
+[AGPL-3.0](LICENSE). If you run a modified version as a network service, the AGPL requires you to offer its source to the users of that service. The engines keep their own licenses (see above).
