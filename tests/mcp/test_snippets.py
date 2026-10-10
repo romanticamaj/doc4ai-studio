@@ -8,8 +8,9 @@ URL = "http://ulove-arrangement.tail74077f.ts.net:3333/mcp"
 
 def test_four_snippets_with_placeholder():
     s = render_snippets(URL)
-    assert [x["client"] for x in s] == ["claude-code", "cursor", "vscode", "claude-desktop"]
-    assert all(x["title"] and x["language"] in ("bash", "json") and URL in x["text"] for x in s)
+    assert [x["client"] for x in s] == ["claude-code", "cursor", "vscode", "claude-desktop", "openwebui"]
+    mcp = [x for x in s if x["client"] != "openwebui"]           # Open WebUI: the docling-serve compatible API
+    assert all(x["title"] and x["language"] in ("bash", "json") and URL in x["text"] for x in mcp)
     assert all(PLACEHOLDER in x["text"] for x in s if x["client"] != "vscode")      # VS Code prompts for the token
     cc = s[0]["text"]
     assert cc.startswith("claude mcp add --transport http doc4ai " + URL) and '--header "Authorization: Bearer <YOUR_TOKEN>"' in cc
@@ -41,7 +42,7 @@ def test_config_snippets_endpoint(client, ctx):
     ctx.extras["bind_host"], ctx.extras["bind_port"] = "127.0.0.1", 8765
     r = client.get("/api/mcp/config-snippets")
     assert r.status_code == 200 and r.json()["endpoint_url"] == "http://127.0.0.1:8765/mcp"
-    assert [s["client"] for s in r.json()["snippets"]] == ["claude-code", "cursor", "vscode", "claude-desktop"]
+    assert [s["client"] for s in r.json()["snippets"]] == ["claude-code", "cursor", "vscode", "claude-desktop", "openwebui"]
     assert all(PLACEHOLDER in s["text"] for s in r.json()["snippets"] if s["client"] != "vscode")
     tid = client.post("/api/mcp/tokens", json={"name": "x", "scopes": ["doc4ai:read"]}).json()["record"]["id"]
     assert client.get(f"/api/mcp/config-snippets?token_id={tid}").status_code == 200
@@ -58,3 +59,10 @@ def test_config_snippets_endpoint(client, ctx):
 def test_create_token_response_snippets_carry_the_token(client, ctx):
     body = client.post("/api/mcp/tokens", json={"name": "x", "scopes": ["doc4ai:read"]}).json()
     assert body["snippets"] and all(body["token"] in s["text"] for s in body["snippets"] if s["client"] != "vscode")
+
+
+def test_openwebui_snippet():
+    s = next(x for x in render_snippets("http://box:8765/mcp", "doc4ai_pat_X") if x["client"] == "openwebui")
+    assert "DOCLING_SERVER_URL=http://box:8765" in s["text"] and "/v1" not in s["text"] and "/mcp" not in s["text"]
+    assert "DOCLING_API_KEY=doc4ai_pat_X" in s["text"] and "CONTENT_EXTRACTION_ENGINE=docling" in s["text"]
+    assert s["language"] == "bash"

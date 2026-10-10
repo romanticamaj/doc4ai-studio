@@ -8,7 +8,7 @@ export const TTL_CHOICES = [30, 90, 180, 365] as const;
 
 export const SCOPE_META: Record<McpScope, { label: string; risk: "low" | "medium" | "high"; hint: string }> = {
   "doc4ai:read": { label: "讀取", risk: "low", hint: "搜尋、列出、讀取、切段、查工作" },
-  "doc4ai:convert": { label: "轉換（上傳）", risk: "medium", hint: "以檔案內容送轉換" },
+  "doc4ai:convert": { label: "轉換（上傳）", risk: "medium", hint: "以檔案內容送轉換；也允許 docling-serve 相容 API（Open WebUI 等）" },
   "doc4ai:convert:local": { label: "轉換（主機路徑）", risk: "high", hint: "以主機路徑送轉換；只限白名單根目錄" },
   "doc4ai:manage": { label: "管理", risk: "high", hint: "取消工作、重新轉換" },
 };

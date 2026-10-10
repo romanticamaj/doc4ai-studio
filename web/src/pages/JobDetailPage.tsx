@@ -22,6 +22,7 @@ import { fileIcon } from "@/features/convert/fileIcon";
 import { baseName, formatBytes, formatDateTime, shortId } from "@/lib/format";
 import { describeError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
+import { originLabel } from "@/features/jobs/originLabel";
 
 const ACTIVE = new Set(["probing", "converting", "checking"]);
 const TERMINAL = new Set(["done", "low", "failed", "skipped", "cancelled"]);
@@ -79,7 +80,7 @@ export default function JobDetailPage() {
           <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span className="font-mono">{shortId(job.id)}</span>
             <span className="tabular">{formatDateTime(job.created_at)}</span>
-            <Tag>{job.origin}</Tag>
+            <Tag>{originLabel(job.origin)}</Tag>
             <span>{job.options?.engine ? <>只用 <span className="font-mono">{job.options.engine}</span></> : "自動選擇引擎"}</span>
             <span className="font-mono">{job.options?.lang}</span>
             {job.options?.force && <Tag>force</Tag>}

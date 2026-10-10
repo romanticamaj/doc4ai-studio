@@ -12,6 +12,7 @@ import type { Job } from "@/api/types";
 import { QueueButton } from "@/features/jobs/QueueButton";
 import { jobPercent } from "@/features/jobs/buildTimeline";
 import { formatDateTime, formatRelative, shortId } from "@/lib/format";
+import { originLabel } from "@/features/jobs/originLabel";
 
 function optionsSummary(job: Job): string {
   const o = job.options;
@@ -85,7 +86,7 @@ export default function JobsPage() {
                     <span className="hidden tabular md:inline">{formatDateTime(job.created_at)}</span>
                   </td>
                   <td className="order-4 justify-self-end md:px-4 md:py-3">
-                    <Tag>{job.origin}</Tag>
+                    <Tag>{originLabel(job.origin)}</Tag>
                   </td>
                   <td className="order-2 justify-self-end md:px-4 md:py-3">
                     <StatusBadge status={job.status} />

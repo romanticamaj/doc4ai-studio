@@ -14,7 +14,7 @@ import { formatBytes, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { clientLabel } from "./clientState";
 import { TokenSelect } from "./ClientsTab";
-import { filtersFromParams, paramsFromFilters, RANGE_OPTIONS, STATUS_OPTIONS } from "./callFilters";
+import { filtersFromParams, paramsFromFilters, RANGE_OPTIONS, METHOD_OPTIONS, STATUS_OPTIONS } from "./callFilters";
 
 const ALL = "all";
 const TOOLS = ["search_library", "list_documents", "get_document_info", "read_document", "get_chunks", "get_job", "convert_document",
@@ -76,6 +76,8 @@ export function CallsTab() {
           options={toolNames.map((t) => ({ value: t, label: t }))} onChange={(v) => set({ tool: pick(v) })} />
         <FilterSelect label="篩選狀態" allLabel="全部狀態" value={filters.status ?? ALL}
           options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))} onChange={(v) => set({ status: pick(v) })} />
+        <FilterSelect label="篩選來源" allLabel="全部來源" value={filters.method ?? ALL}
+          options={METHOD_OPTIONS.map((m) => ({ value: m.value, label: m.label }))} onChange={(v) => set({ method: pick(v) })} />
         <div role="radiogroup" aria-label="時間篩選" className="flex rounded-lg border p-0.5">
           {RANGE_OPTIONS.map((r) => (
             <button
