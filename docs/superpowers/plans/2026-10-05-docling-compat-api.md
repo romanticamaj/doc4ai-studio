@@ -1431,3 +1431,43 @@ def test_curl_async_shape(workers):
 ## Implementation notes / deviations
 
 (Filled in while executing. Each entry: what changed vs this plan, why, the pinning test, the commit.)
+
+Implemented 2026-10-10..12 on master (`668602b`..HEAD, pushed after each task), executed inline (superpowers:executing-plans).
+
+**Spike (Task 1, `docs/superpowers/spikes/2026-10-compat.md`)**
+- S1: RAGFlow 1.0.0-rc1 reads `md_content` first → D7 stays (`json_content: null`). New: its Docling parser uses a strict SSRF client that refuses private / loopback / CGNAT (Tailscale) hosts → the RAGFlow recipe needs a publicly routable Doc4AI URL. Its chunked attempts get no chunks and fall through; the third request (standard `/v1/convert/source`) is the one used.
+- S2: extra keys are ignored by docling's models, but its enums bind our shapes: `ErrorItem.component_type` ∈ `pipeline|user_input|…`, `category` ∈ `FailureCategory` (A2's `"quality"` → `category: "unknown"`, `module_name: "doc4ai.quality"`); `task_meta` = `TaskProcessingMeta` (+ `pages_done`, `pages_total`); failures are `PublicFailureInfo` (the plan's `failure.error_message` is `failure.message`). D7a/D7b added to §3.
+- S3: no container runtime running (Docker Desktop installed, daemon off, not started): the snapshot is `docling_serve.app.create_app().openapi()` of docling-serve 1.36.0 in a scratch venv.
+- S4: Starlette's `form()` spools file parts without a cap → `python_multipart.MultipartParser` streaming with a byte cap.
+- S5: Open WebUI processes each upload as its own request (40-thread pool) → keep `max_concurrent_jobs_per_token = 8`; sync requests wait for a slot.
+
+**Contract changes / deviations (each pinned by a test)**
+- Cache hit is by **sha256 across the library** (planned output dir first, then any visible document with that content), not by (sha, name-derived output dir): spec §4.3 step 2 / §8.1 say "同 sha", and Open WebUI uploads carry a per-upload UUID in the name (`test_cache_hit_makes_no_job`, renamed-file case). An explicit engine (`doc4ai_engine`, `force_ocr`) is not answered by another engine's result (`test_an_explicit_engine_is_not_answered_by_another_engines_cache`).
+- Open WebUI's `<uuid>_` stored-name prefix is stripped from the client file name (`test_openwebui_uuid_prefixed_path_is_reduced_to_the_name`).
+- "Converting right now" = any queued/running task with the same sha (`Store.live_task_for_sha`), checked together with job creation under one lock (`compat.jobs.admit`); `Store.busy_task_id` only sees live-locked tasks (`test_concurrent_same_file_waits_on_the_running_task`).
+- Opaque task ids `t<uuid>` for async cache hits, immediate failures and attaching to another token's job (the plan suggested `c`+sha) (`test_async_same_file_running_returns_a_pollable_task`).
+- **D6 amended:** a `low` task's `task_status` is `success` (docling-serve task states are pending|started|success|failure; Haystack polls until success|failure); the result's conversion status stays `partial_success` (`test_low_quality_task_is_success_and_its_result_partial_success`). `task_position`: the ahead-count while queued, 0 while running, null when finished.
+- Compat jobs share the `mcp_jobs` per-token table with MCP jobs (compat limit 8); a job a request only attaches to is logged as `args.attached_job_id`, not `job_id`, so it uses none of the token's slots.
+- Unknown `/v1/*`, `/v1alpha/*` paths answer docling-style `404 {"detail": "Not Found"}` (not the SPA); every HTTPException / validation error on those paths is `{"detail": …}`.
+- `/api/mcp/calls` gained a `method` filter and 呼叫紀錄 a 「篩選來源」 select (spec §6; the plan's Task 10 omitted it). `render_snippets` has a fifth snippet `openwebui`; `readme_section` still renders the four MCP clients.
+- The rate limit (spec §4.3 step 1) applies to the convert endpoints; a disk-space shortfall is `status: failure` `insufficient_disk`; async over the cap is `429`, logged `rate_limited/too_many_jobs`.
+- Plan test corrections: `test_source_shape_and_v1alpha`'s first request is `cached: False` (the plan's `True` contradicted its own comment); the 504→poll tail of `test_sync_timeout_504_then_async_result` moved to `test_async.py::test_sync_timeout_then_poll_and_result` (the poll endpoint is Task 8's).
+- 9 shape files (plan: 7): + `ragflow_1_0_v1_standard` (the request RAGFlow actually uses) and `haystack_url_source` (expected `422 unsupported_source: http`); the shapes use a 3-page PDF.
+- Kotaemon graded **B** (spec: C): Kotaemon's `flowsettings.FILE_INDEX_PIPELINE_FILE_EXTRACTORS` maps an extension to a reader's dotted path and overrides the UI choice, so `docs/integrations/kotaemon_doc4ai_loader.py` drops in without a Kotaemon change (not run live).
+- §9.3 slow tests live in `tests/integration/test_compat_real.py` (written in Task 13); the broken-font case sends `doc4ai_engine=docling` (auto routing OCRs that sample whole on MinerU, so there is no per-page repair to report).
+
+**Final whole-branch review (fresh reviewer) — fix pass**, each with a test that failed first:
+1. *Critical:* `image_export_mode=embedded` joined the image name from the Markdown onto `assets/`, so a document containing `![x](assets/../../../data/serve.token)` could leak any readable file (drive and UNC names too). Names now go through `safe_relative` and must resolve inside `assets/` (`test_embedded_mode_never_reads_outside_the_assets_dir`) — `6b32809`.
+2. A literal `<!-- page: 2000000 -->` in the text sized the placeholder output; segments now come from `documents.pages` and out-of-range markers stay with the page they follow (`test_markers_past_the_page_count_do_not_create_segments`) — `6b32809`.
+3. Attached jobs used the attaching token's job slots (`test_attaching_to_another_tokens_job_uses_none_of_my_slots`) — `eb05210`.
+4. A multipart body without its closing boundary was converted and cached (`test_truncated_multipart_body_is_422_and_leaves_no_part`; also `test_oversized_upload_without_content_length_is_cut`) — `053997f`.
+5. `force_ocr` / `doc4ai_engine` answered from another engine's cache — `be8928d`.
+Deferred minors: blocking file I/O (multipart writes, sha256, base64 decode ≤ 50 MB) runs on the event loop; `task_position` uses `Store._q1`.
+
+**Acceptance (2026-10-10..12)**
+- Schema v5 on a copy of the live `data/aidoc.db` (v4, 68 documents, 57 jobs): v5, data intact, idempotent on a second open.
+- Live server (`0.0.0.0:3333`, restarted on the new code) with a temporary PAT 「compat acceptance (temp)」 (`doc4ai:read`, `doc4ai:convert`): `/health`, `/v1/capabilities`, an Open WebUI-shaped sync convert (8-page PDF: `\f` × 7, no markers left, cache hit in 0.1 s on repeat), a curl-shaped async run (started → success, `task_meta` 3/3 pages, result success), bad token `401` + `WWW-Authenticate`, PAT on `/api` `401`, `?api_key=` `400`, server token on `/v1` `401`, call-log rows `compat/docling` with clients `python-requests` / `curl`, Jobs origin `compat`, `/api/mcp/status.compat`. The PAT was **revoked** afterwards (verified `401`).
+- **Open WebUI 0.11.4** (pip in a scratch venv, no Docker; `CONTENT_EXTRACTION_ENGINE=docling`, `DOCLING_PARAMS={"doc4ai_lang": "cht"}`), driven through its REST API: `scanned_cht.pdf` (2 pages) → completed, vector metadata `page` 0–1; `hfad_garbled_mix.pdf` (9 pages, broken fonts) → completed in 77 s, `page` 0–8; `sample.docx` → completed, no page metadata. Doc4AI logged three `convert_file ok` from `python-requests` (`docling-serve-v1`), Jobs origin 「相容 API」. Chat answers with `(page N)` citations were not exercised (no LLM in the scratch instance). Scratch venv and data deleted.
+- RAGFlow: **not run live** (needs Docker and a publicly routable Doc4AI URL, spike S1); its four request shapes are replayed in `tests/compat/shapes/`.
+- Spec §1.4 (3), 300-page sync/async: covered by the 504 → poll → result tests with the fake engine; not run on a real 300-page file.
+- Slow: `tests/integration/test_compat_real.py` 2 passed (MinerU for the Traditional Chinese scan, `\f` = pages − 1; broken-font pages reported `repaired`).

@@ -78,9 +78,22 @@ Open WebUI 送 `md_page_break_placeholder=\f`，回來的 `md_content` 以 `\f` 
 Open WebUI 以 `verify=AIOHTTP_CLIENT_SESSION_SSL` 送請求；Doc4AI 走自簽憑證時要在 Open WebUI 設
 `AIOHTTP_CLIENT_SESSION_SSL=false`。Doc4AI 目前是明文 HTTP（MCP 頁的安全提示），請只在 tailnet / 區網內使用。
 
+## 實測（2026-10-10）
+
+Open WebUI **0.11.4**（`pip install open-webui==0.11.4`，暫用 venv，`CONTENT_EXTRACTION_ENGINE=docling`、
+`DOCLING_SERVER_URL` 指到 Doc4AI、`DOCLING_PARAMS={"doc4ai_lang": "cht"}`）以 REST API 上傳三個檔：
+
+| 檔案 | 結果 | 向量庫裡的 `metadata.page` |
+|---|---|---|
+| 繁中掃描 PDF（2 頁） | completed | 0、1（引用顯示 page 1、2） |
+| Head First Android 壞字型 9 頁（`hfad_garbled_mix.pdf`） | completed，76 秒 | 0–8 |
+| `sample.docx` | completed | 無（沒有頁的文件，整份一段） |
+
+Doc4AI 這邊：呼叫紀錄三筆 `compat/docling convert_file ok`，client `python-requests`，協定 `docling-serve-v1`；
+Jobs 的來源是「相容 API」；Open WebUI 存檔時加的 `<uuid>_` 前綴不會進 Doc4AI 的檔名。所以 0.11.4 確實依 `\f`
+切頁並寫入 `metadata.page`。
+
 ## 未驗證
 
-- 哪一個 Open WebUI release 開始依 `\f` 切頁並寫入 `metadata.page`（`main` 已經如此；v0.11.4 原始碼如此）。
-- 實際的 Open WebUI 容器對 Doc4AI 跑一輪上傳 + 問答（本 repo 的自動測試重放的是它送出的請求形狀：
-  `tests/compat/shapes/openwebui_0_11_4.json`）。驗收結果記在
-  `docs/superpowers/plans/2026-10-05-docling-compat-api.md` 最後一節。
+- 用 LLM 問答時，引用視窗顯示 `(page N)` 並連到 PDF 的那一頁（實測環境沒有接 LLM；`metadata.page` 已確認正確）。
+- 0.11.4 以前哪一個 release 開始切頁。

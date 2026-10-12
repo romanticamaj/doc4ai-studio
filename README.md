@@ -164,7 +164,7 @@ DOCLING_SERVER_URL=http://<host>:<port>
 DOCLING_API_KEY=<YOUR_TOKEN>
 ```
 
-Recipes, with what is and is not verified: [Open WebUI](docs/integrations/open-webui.md) (works by configuration), [RAGFlow](docs/integrations/ragflow.md) (works, but RAGFlow 1.0 only connects to a publicly routable URL), [Kotaemon](docs/integrations/kotaemon.md) (a drop-in reader file), [Dify](docs/integrations/dify.md) (needs a Dify plugin, not written yet) and [curl / any docling-serve client](docs/integrations/curl.md). Not supported: server-side URL fetching (`sources[].kind = "http"`), docling chunking endpoints, `json_content` (always `null`).
+Recipes, with what is and is not verified: [Open WebUI](docs/integrations/open-webui.md) (works by configuration; tested with Open WebUI 0.11.4), [RAGFlow](docs/integrations/ragflow.md) (works, but RAGFlow 1.0 only connects to a publicly routable URL), [Kotaemon](docs/integrations/kotaemon.md) (a drop-in reader file), [Dify](docs/integrations/dify.md) (needs a Dify plugin, not written yet) and [curl / any docling-serve client](docs/integrations/curl.md). Not supported: server-side URL fetching (`sources[].kind = "http"`), docling chunking endpoints, `json_content` (always `null`).
 
 ## When to use something else
 
