@@ -10,7 +10,7 @@ def _opts(tmp_root):
 def test_schema_v5_and_compat_task_roundtrip(tmp_root):
     from aidoc.store import Store
     s = Store(tmp_root / "data" / "aidoc.db")
-    assert s._q1("SELECT value FROM meta WHERE key='schema_version'")["value"] == "5"
+    assert s._q1("SELECT value FROM meta WHERE key='schema_version'")["value"] == "6"
     job = s.create_job(_opts(tmp_root), "compat")
     s.create_compat_task(job, token_id="tok1", options={"to_formats": ["md"], "placeholder": "\f"}, protocol="docling-serve-v1")
     row = s.get_compat_task(job)
@@ -35,7 +35,7 @@ def test_v4_database_upgrades_in_place(tmp_root):
     con.close()
     for _ in range(2):
         s = Store(db)
-        assert s._q1("SELECT value FROM meta WHERE key='schema_version'")["value"] == "5"
+        assert s._q1("SELECT value FROM meta WHERE key='schema_version'")["value"] == "6"
         assert s.get_job(job) is not None and s.get_compat_task(job) is None
         s.close()
 

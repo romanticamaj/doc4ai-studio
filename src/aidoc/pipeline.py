@@ -47,10 +47,15 @@ SEGMENT_FILES = ("normalized.md", "assets.json", "edges.json")
 RETRY_POLICY = RetryPolicy()
 
 
-def options_key(opts: ConvertOptions) -> str:
-    """The options that change what an engine produces; done segments made with other values are redone."""
-    return json.dumps({"lang": opts.lang, "mineru_tier": opts.mineru_tier, "docling_ocr": opts.docling_ocr},
-                      sort_keys=True)
+def options_key(opts: ConvertOptions, config: AidocConfig | None = None) -> str:
+    """The options that change what an engine produces; done segments made with other values are redone.
+    With a VLM configured, its backend and model are part of it (index A23); `vlm_remote` is not."""
+    d = {"lang": opts.lang, "mineru_tier": opts.mineru_tier, "docling_ocr": opts.docling_ocr}
+    v = getattr(config, "vlm", None)
+    if v is not None and v.backend != "none":       # backend "none": the key is unchanged (zero impact)
+        d["vlm_backend"] = v.backend
+        d["vlm_model"] = v.model if v.backend == "openai" else v.local_preset
+    return json.dumps(d, sort_keys=True)
 
 
 def stage_paths(task_id: str) -> tuple[Path, Path]:
@@ -64,6 +69,32 @@ class _Candidate:
     norm: NormalizedResult
     quality: QualityResult
     page_count: int | None
+    vlm: dict | None = None                   # sidecar `vlm` block (VLM spec §8.1)
+
+
+def merge_vlm_blocks(acc: dict | None, block: dict | None) -> dict | None:
+    """Sum the runner `vlm` blocks of several segments / repair runs (page lists already absolute)."""
+    if not block:
+        return acc
+    if acc is None:
+        out = {k: v for k, v in block.items() if k != "usage"}
+        out["usage"] = dict(block.get("usage") or {})
+        return out
+    acc["pages_sent"] = int(acc.get("pages_sent") or 0) + int(block.get("pages_sent") or 0)
+    u, b = acc.setdefault("usage", {}), block.get("usage") or {}
+    for key in ("requests", "prompt_tokens", "completion_tokens"):
+        if b.get(key) is not None:
+            u[key] = int(u.get(key) or 0) + int(b[key])
+    for key in ("truncated_pages", "refused_pages"):
+        acc[key] = sorted(set(acc.get(key) or []) | set(block.get(key) or []))
+    return acc
+
+
+def _offset_vlm(block: dict | None, offset: int) -> dict | None:
+    """A runner vlm block with its page lists moved from segment-relative to absolute pages."""
+    if not block:
+        return None
+    return {**block, **{k: [p + offset for p in block.get(k) or []] for k in ("truncated_pages", "refused_pages")}}
 
 
 @dataclass
@@ -82,6 +113,52 @@ class PipelineContext:
     work_src: Path | None = None
     attempt: int = 0
     engines: dict | None = None               # all engines (per-page repair may use another one)
+    vlm_primary: dict | None = None           # VLM usage of the current VLM engine attempt (segments merged)
+    vlm_repair: dict | None = None            # VLM usage of the current attempt's per-page repair
+
+    # ---- VLM gate, budget and usage (VLM spec §4.6, §8.2)
+    def _vlm_engine(self):
+        eng = (self.engines or {}).get("vlm")
+        return eng if eng is not None and self.config.vlm.backend != "none" else None
+
+    def vlm_budget_ok(self, n_pages: int) -> bool:
+        eng = self._vlm_engine()
+        if eng is None or not eng.is_remote():
+            return True
+        budget = self.config.vlm.remote_daily_page_budget
+        if budget <= 0:
+            return True
+        used = self.store.vlm_usage_today("openai", eng.endpoint_host())["pages"]
+        return used + max(1, int(n_pages)) <= budget
+
+    def vlm_gate(self, probe: ProbeResult) -> str | None:
+        """Why the VLM may not convert this document (routing): None, "disabled_remote", "page_cap" or "budget"."""
+        eng = self._vlm_engine()
+        if eng is None or not eng.is_remote():
+            return None
+        if not eng.remote_allowed(self.opts):
+            return "disabled_remote"
+        pages = probe.pages or 1
+        cap = self.config.vlm.remote_max_pages_per_doc
+        if cap > 0 and pages > cap:
+            return "page_cap"
+        if not self.vlm_budget_ok(pages):
+            return "budget"
+        return None
+
+    def record_vlm_usage(self, block: dict) -> None:
+        """One VLM runner result (a segment or a repair run) into the vlm_usage table (VLM spec §8.2)."""
+        if not block:
+            return
+        u = block.get("usage") or {}
+        backend = block.get("backend") or "openai"
+        host = "local" if backend == "local" else (block.get("endpoint_host") or "")
+        try:
+            self.store.add_vlm_usage(time.strftime("%Y-%m-%d"), backend, host, int(block.get("pages_sent") or 0),
+                                     int(u.get("requests") or 0), int(u.get("prompt_tokens") or 0),
+                                     int(u.get("completion_tokens") or 0))
+        except sqlite3.Error as e:                   # accounting never fails a conversion
+            self.log(f"vlm usage not recorded: {e}")
 
     def set(self, **fields) -> dict:
         self.store.update_task(self.task_id, **fields)
@@ -172,6 +249,7 @@ def save_segment_part(seg_dir: Path, part: SegmentPart) -> None:
         "page_count": part.page_count, "page_map_method": part.page_map_method,
         "failed_pages": {str(k): v for k, v in part.failed_pages.items()},
         "images_missing": {str(k): v for k, v in part.images_missing.items()},
+        "vlm": part.vlm,
         "first_table": part.first_table.to_json() if part.first_table else None,
         "last_table": part.last_table.to_json() if part.last_table else None})
 
@@ -195,7 +273,8 @@ def load_segment_part(seg_dir: Path, seg_row: dict) -> SegmentPart | None:
                        page_count=edges.get("page_count"), engine=edges.get("engine"),
                        opts_key=edges.get("opts_key"), page_map_method=edges.get("page_map_method"),
                        failed_pages={int(k): v for k, v in (edges.get("failed_pages") or {}).items()},
-                       images_missing={int(k): int(v) for k, v in (edges.get("images_missing") or {}).items()})
+                       images_missing={int(k): int(v) for k, v in (edges.get("images_missing") or {}).items()},
+                       vlm=edges.get("vlm") if isinstance(edges.get("vlm"), dict) else None)
 
 
 def _discard_segments(ctx: PipelineContext) -> None:
@@ -253,6 +332,7 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
                 + (f"; unrepaired: {outcome.unrepaired[:20]}" if outcome.unrepaired else ""))
         repaired = [{**e, "repaired_by": outcome.repaired[e["page"]]} for e in flagged if e["page"] in outcome.repaired]
         outcome_repaired = outcome.repaired
+        ctx.vlm_repair = outcome.vlm
     elif flagged:
         ctx.log(f"{len(flagged)} of {effective} pages have a broken text layer or garbage: not repaired page by page")
     q = assess(merged.markdown, probe, probe.pages, pdf=ctx.work_src, page_map_method=method,
@@ -285,7 +365,7 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
             sd = segment_dir(ctx.work_dir, seg["idx"])
             if seg["status"] == SegmentStatus.done.value:
                 part = load_segment_part(sd, seg)
-                if part is not None and part.engine == engine.name and part.opts_key == options_key(opts):
+                if part is not None and part.engine == engine.name and part.opts_key == options_key(opts, ctx.config):
                     parts.append(part)
                     continue
             if ctx.cancelled():
@@ -307,6 +387,8 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
                 seg_src, pages = ctx.work_src, None        # a single segment is the whole document
             seg_pages = (pe - ps + 1) if ps is not None else None
             timeout = compute_timeout(seg_pages, probe.size, opts, ctx.config.limits)
+            if hasattr(engine, "timeout_factor") and not opts.timeout_s:   # remote VLM: 10-40 s a page (VLM §4.4)
+                timeout = engine.timeout_factor(seg_pages or probe.pages or 1, timeout)
 
             def on_progress(frac: float, line: str) -> None:
                 if line:
@@ -318,6 +400,8 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
                 session.kill()                     # Ctrl+C: the runner (own process group) must not outlive us
                 raise
             offset = (ps - 1) if (pages is not None and ps) else 0
+            if raw.extra.get("vlm"):
+                ctx.record_vlm_usage(raw.extra["vlm"])
             norm = normalize(raw, offset, seg["idx"])
             if multi and quick_check and ps is not None:
                 q = assess(_relative_markers(norm.markdown, offset), _segment_probe(probe, ps, pe), seg_pages,
@@ -328,9 +412,10 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
             part = SegmentPart(idx=seg["idx"], page_start=ps, page_end=pe, markdown=norm.markdown, assets=norm.assets,
                                has_page_markers=raw.has_page_markers, first_table=raw.first_table,
                                last_table=raw.last_table, page_count=raw.page_count, engine=engine.name,
-                               opts_key=options_key(opts), page_map_method=raw.page_map_method,
+                               opts_key=options_key(opts, ctx.config), page_map_method=raw.page_map_method,
                                failed_pages={p + offset: m for p, m in raw.failed_pages.items()},
-                               images_missing={p + offset: k for p, k in raw.images_missing.items()})
+                               images_missing={p + offset: k for p, k in raw.images_missing.items()},
+                               vlm=_offset_vlm(raw.extra.get("vlm"), offset))
             save_segment_part(sd, part)
             store.update_segment(seg["id"], status=SegmentStatus.done, output_path=str(sd))
             ctx.segment_updated(seg["id"])
@@ -346,6 +431,10 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
         merged = NormalizedResult(markdown=parts[0].markdown, assets=parts[0].assets)
     page_count = probe.pages if probe.pages is not None else parts[0].page_count
     failed = {p: m for part in parts for p, m in part.failed_pages.items()}
+    ctx.vlm_primary = None
+    for part in parts:
+        ctx.vlm_primary = merge_vlm_blocks(ctx.vlm_primary, part.vlm)
+    ctx.vlm_repair = None
     merged, q = check_document(ctx, engine.name, merged, parts[0].page_map_method, last_resort=last, failed=failed)
     missing_imgs = {p: k for part in parts for p, k in part.images_missing.items()}
     if missing_imgs:                                   # pictures the engine could not produce: never dropped silently
@@ -376,7 +465,8 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
     sidecar = build_sidecar(source=task["source_path"], sha256=task["sha256"],
                             pages=probe.pages if probe.pages is not None else cand.page_count,
                             engine=cand.engine, tried=tried, segments=n_segments, probe=probe.to_json(),
-                            quality=cand.quality.to_json(), lang=opts.lang, elapsed_s=time.time() - ctx.started)
+                            quality=cand.quality.to_json(), lang=opts.lang, elapsed_s=time.time() - ctx.started,
+                            vlm=cand.vlm)
     writer = OutputWriter(opts.output_dir, ctx.task_id, stem)
     try:
         writer.write(cand.norm.markdown, cand.norm.assets, sidecar)
@@ -482,12 +572,12 @@ def _prepare_segments(ctx: PipelineContext, decision_engines: list[str]) -> list
         store.create_segments(ctx.task_id, ranges)
         return list(decision_engines)
     done_engines = set()
-    key = options_key(ctx.opts)
+    key = options_key(ctx.opts, ctx.config)
     for r in rows:
         if r["status"] == SegmentStatus.done.value:
             part = load_segment_part(segment_dir(ctx.work_dir, r["idx"]), r)
             if part is not None and part.opts_key != key:
-                ctx.log("options changed since the done segments were made (lang/OCR/tier); converting again")
+                ctx.log("options changed since the done segments were made (lang/OCR/tier/VLM model); converting again")
                 _discard_segments(ctx)
                 return list(decision_engines)
             done_engines.add(part.engine if part is not None else None)
@@ -551,7 +641,13 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
                 return TaskStatus.skipped
 
     # 2. route
-    decision = route(probe, opts, {n: e.available() for n, e in engines.items()})
+    decision = route(probe, opts, {n: e.available() for n, e in engines.items()}, vlm_gate=ctx.vlm_gate)
+    vlm = engines.get("vlm")
+    if vlm is not None and not opts.engine and ctx.config.vlm.backend != "none":
+        if not ctx.config.vlm.use_as_fallback and "vlm" in decision.engines:
+            decision.engines.remove("vlm")              # [vlm] use_as_fallback = false
+        elif ctx.config.vlm.use_as_fallback and decision.engines and not vlm.available() and vlm.supports(probe):
+            decision.missing.append("vlm")              # configured but not ready (spec §5)
     if not decision.engines:
         if decision.reason == "no_engine_available":
             missing = " ".join(decision.missing) or "all"
@@ -571,6 +667,12 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
         engine = engines[name]
         eo = engine.engine_opts(opts, probe)
         last = i == len(order) - 1
+        if name == "vlm" and engine.is_remote():
+            if not engine.remote_allowed(opts):          # --no-vlm-remote with a forced vlm
+                ctx.log("vlm(disabled_remote): this run does not use the remote VLM")
+                continue
+            ctx.log(f"vlm(openai): sending {probe.pages or 1} page image(s) to {engine.endpoint_host()} "
+                    f"model={engine.model_name()}")
         transient_used = 0
         result = None
         while result is None:                              # retries of this engine (spec §8.2)
@@ -613,7 +715,13 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
             continue
         norm, q, page_count = result
         store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=q.score, reasons=q.reasons))
-        cand = _Candidate(name, norm, q, page_count)
+        if name == "vlm" and ctx.vlm_primary:
+            vlm_block = {**ctx.vlm_primary, "role": "primary"}
+        elif ctx.vlm_repair:
+            vlm_block = {**ctx.vlm_repair, "role": "repair"}
+        else:
+            vlm_block = None
+        cand = _Candidate(name, norm, q, page_count, vlm=vlm_block)
         if q.level in ("ok", "warn"):                  # warn: usable, known problem pages; no fallback (A19)
             return _write_output(ctx, task, cand, output_dir)
         ctx.log(f"{name} quality low ({q.score}): {', '.join(q.reasons)}")

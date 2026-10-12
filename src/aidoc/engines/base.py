@@ -43,7 +43,8 @@ def raw_from_result(res: dict, raw_dir: Path) -> RawResult:
                      page_map_method=res.get("page_map_method"),
                      failed_pages={int(k): str(v) for k, v in (res.get("failed_pages") or {}).items()},
                      engine_errors=[str(e) for e in (res.get("errors") or [])],
-                     images_missing={int(k): int(v) for k, v in (res.get("images_missing") or {}).items()})
+                     images_missing={int(k): int(v) for k, v in (res.get("images_missing") or {}).items()},
+                     extra={k: res[k] for k in ("vlm",) if isinstance(res.get(k), dict)})
 
 
 def memory_limit_mb(engine: str, limits) -> int:

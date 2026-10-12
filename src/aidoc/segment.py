@@ -63,6 +63,7 @@ class SegmentPart:
     page_count: int | None = None
     engine: str | None = None          # engine that produced this part (resume only reuses the same engine)
     opts_key: str | None = None        # output-affecting options it was made with (resume needs the same)
+    vlm: dict | None = None            # the VLM runner's usage block (absolute pages), VLM spec §8.1
     page_map_method: str | None = None  # how the runner produced the page markers (index A20)
     failed_pages: dict[int, str] = field(default_factory=dict)  # absolute page -> engine error (partial success)
     images_missing: dict[int, int] = field(default_factory=dict)  # absolute page -> pictures the engine lost

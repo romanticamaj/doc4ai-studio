@@ -33,11 +33,12 @@ class InputRef(BaseModel):
 
 class JobIn(BaseModel):
     inputs: list[InputRef] = Field(min_length=1)
-    engine: Literal["markitdown", "docling", "mineru"] | None = None
+    engine: Literal["markitdown", "docling", "mineru", "vlm"] | None = None
     lang: Literal["cht", "en"] | None = None
     force: bool = False
     retry_low: bool = False
     allow_online_audio: bool = False
+    vlm_remote: bool | None = None         # False: this job never uses the remote VLM (VLM spec §8.3)
     origin: Literal["web", "cli"] = "web"
     output_dir: str | None = None          # CLI forwarding (-o); local paths rule applies
     timeout_s: int | None = Field(default=None, ge=1)     # CLI --timeout
@@ -57,7 +58,8 @@ def build_options(cfg, body: JobIn) -> ConvertOptions:
     return ConvertOptions(output_dir=out, engine=body.engine, lang=body.lang or cfg.general.lang, force=body.force,
                           retry_low=body.retry_low, timeout_s=body.timeout_s,
                           allow_online_audio=bool(body.allow_online_audio or cfg.general.enable_audio),
-                          mineru_tier=cfg.engines.mineru_tier, docling_ocr=cfg.engines.docling_ocr)
+                          mineru_tier=cfg.engines.mineru_tier, docling_ocr=cfg.engines.docling_ocr,
+                          vlm_remote=body.vlm_remote)
 
 
 @router.post("/jobs", status_code=201)
