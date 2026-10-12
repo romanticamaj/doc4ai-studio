@@ -21,3 +21,7 @@ web/e2e/.data/
 .playwright-mcp/
 .claude/
 .playwright-mcp/
+
+# VLM engine runtime downloads (spec 2026-10-05 VLM; llama.cpp build, manifest, download cache)
+envs/vlm/*
+!envs/vlm/.gitkeep

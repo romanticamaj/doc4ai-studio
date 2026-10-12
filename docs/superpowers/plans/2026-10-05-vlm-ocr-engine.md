@@ -6,7 +6,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-05-vlm-ocr-engine-design.md` (Traditional Chinese; §3 holds the source verification and the spike decision rule; §4–§11 the design). Related: `2026-10-01-per-page-quality-and-page-map.md` (repair model), index `2026-09-24-index.md`.
 
-**Architecture:** `engines/vlm.py` (`VlmEngine(RunnerEngine)`) runs `engines/runner/vlm_runner.py` on the host interpreter (stdlib + PyMuPDF, like the fake runner). The runner renders pages to PNG, sends one Chat Completions request per page to `base_url` (remote) or to a `llama-server` it spawned on loopback (local), cleans the Markdown, emits `<!-- page: N -->` per page (`page_map_method = "vlm_per_page"`), reports refusals/truncations as `failed_pages`, and returns `vlm` usage in `result.json`. `router.py` appends `vlm` to every PDF/image order; `repair.py` appends it to the repair order; `pipeline.py` writes usage to `vlm_usage` (schema v5) and enforces the daily budget / per-document cap; `vlm_runtime.py` installs the pinned llama.cpp build and GGUF. Tests use `tests/fakes/vlm_server.py` (a scripted OpenAI-compatible server) and `tests/fakes/fake_llama_server.py`.
+**Architecture:** `engines/vlm.py` (`VlmEngine(RunnerEngine)`) runs `engines/runner/vlm_runner.py` on the host interpreter (stdlib + PyMuPDF, like the fake runner). The runner renders pages to PNG, sends one Chat Completions request per page to `base_url` (remote) or to a `llama-server` it spawned on loopback (local), cleans the Markdown, emits `<!-- page: N -->` per page (`page_map_method = "vlm_per_page"`), reports refusals/truncations as `failed_pages`, and returns `vlm` usage in `result.json`. `router.py` appends `vlm` to every PDF/image order; `repair.py` appends it to the repair order; `pipeline.py` writes usage to `vlm_usage` (schema v6 — v5 went to the compat API's `compat_tasks`) and enforces the daily budget / per-document cap; `vlm_runtime.py` installs the pinned llama.cpp build and GGUF. Tests use `tests/fakes/vlm_server.py` (a scripted OpenAI-compatible server) and `tests/fakes/fake_llama_server.py`.
 
 **Tech Stack:** Python 3.10 host (PyMuPDF, FastAPI, stdlib `http.server`/`urllib`), llama.cpp prebuilt (Windows `cuda-13` build, tag ≥ b8110) + `PaddlePaddle/PaddleOCR-VL-1.6-GGUF`, React/TypeScript web, Vitest, Playwright.
 
@@ -50,7 +50,7 @@ Index §0 plus:
   - A23 | Segment reuse across VLM models. | `options_key()` includes `vlm_backend` and `vlm_model`; `vlm_remote` is not part of it.
 - **§1 layout**: `src/aidoc/engines/vlm.py`, `src/aidoc/engines/runner/vlm_runner.py`, `src/aidoc/engines/runner/_vlm_prompt.py`, `src/aidoc/engines/runner/selfcheck_vlm.py`, `src/aidoc/vlm_runtime.py`, `envs/vlm/manifest.json` (+ `.ready`), `tests/fakes/vlm_server.py`, `tests/fakes/fake_llama_server.py`, `docs/superpowers/spikes/2026-10-vlm-ocr.md`.
 - **§3 models** (additive): `ENGINE_NAMES = ("markitdown", "docling", "mineru", "vlm")`; `ConvertOptions.vlm_remote: bool | None = None`; `RawResult.extra: dict = field(default_factory=dict)` (runner `result.json` extras such as `vlm`); `QualityResult.pages[*].metrics` may carry `vlm_overlap`.
-- **§4 Store**: schema v5 adds `vlm_usage(day, backend, endpoint_host, pages, requests, prompt_tokens, completion_tokens, PRIMARY KEY (day, backend, endpoint_host))`; `Store.add_vlm_usage(...)`, `Store.vlm_usage_today(backend, host)`, `Store.vlm_usage_days(n)`, `Store.prune_vlm_usage(keep_days=180)`.
+- **§4 Store**: schema v6 (renumbered: v5 is the compat API's `compat_tasks`) adds `vlm_usage(day, backend, endpoint_host, pages, requests, prompt_tokens, completion_tokens, PRIMARY KEY (day, backend, endpoint_host))`; `Store.add_vlm_usage(...)`, `Store.vlm_usage_today(backend, host)`, `Store.vlm_usage_days(n)`, `Store.prune_vlm_usage(keep_days=180)`.
 - **§5 runner protocol**: `engine_opts` for `vlm` (spec §4.2 two shapes); `result.json` may carry `vlm: {backend, model, endpoint_host, pages_sent, usage, truncated_pages, refused_pages, dpi, prompt_version}`; `page_map_method` enum gains `vlm_per_page`; runner env may carry `AIDOC_VLM_API_KEY_INLINE` (host-injected, never in request.json).
 - **§6 fake scenario**: `engine` may be `vlm`; new behaviours `refuse`, `length` (fake runner side) mirror the fake endpoint's; `FakeEngine("vlm").supports()` = pdf/image.
 - **§7 config**: `[vlm]` section exactly as spec §8.3.
@@ -656,13 +656,13 @@ def test_vlm_repairs_reject_refused_truncated_and_blank():
 
 ---
 
-### Task 7: Pipeline — gate, usage accounting, budget, sidecar `vlm` block, `options_key`, schema v5
+### Task 7: Pipeline — gate, usage accounting, budget, sidecar `vlm` block, `options_key`, schema v6
 
 **Files:**
-- Modify: `src/aidoc/store.py` (schema v5 + `vlm_usage` methods), `src/aidoc/pipeline.py`, `src/aidoc/output.py` (`build_sidecar(..., vlm=None)`), `src/aidoc/engines/base.py` (`raw_from_result` fills `RawResult.extra["vlm"]`), `src/aidoc/server/maintenance.py` (`prune_vlm_usage`), `src/aidoc/cli.py` (`--no-vlm-remote`), `tests/unit/test_store.py`, `tests/unit/test_pipeline_vlm.py` (new)
+- Modify: `src/aidoc/store.py` (schema v6 + `vlm_usage` methods), `src/aidoc/pipeline.py`, `src/aidoc/output.py` (`build_sidecar(..., vlm=None)`), `src/aidoc/engines/base.py` (`raw_from_result` fills `RawResult.extra["vlm"]`), `src/aidoc/server/maintenance.py` (`prune_vlm_usage`), `src/aidoc/cli.py` (`--no-vlm-remote`), `tests/unit/test_store.py`, `tests/unit/test_pipeline_vlm.py` (new)
 
 **Interfaces:**
-- Store: migration v4 → v5 creates `vlm_usage`; `add_vlm_usage(day, backend, host, pages, requests, prompt_tokens, completion_tokens)` (UPSERT add); `vlm_usage_today(backend, host) -> dict` (zeros when none; `day` = local date `time.strftime("%Y-%m-%d")`); `vlm_usage_days(n) -> list[dict]`; `prune_vlm_usage(keep_days=180) -> int`.
+- Store: migration v5 → v6 creates `vlm_usage`; `add_vlm_usage(day, backend, host, pages, requests, prompt_tokens, completion_tokens)` (UPSERT add); `vlm_usage_today(backend, host) -> dict` (zeros when none; `day` = local date `time.strftime("%Y-%m-%d")`); `vlm_usage_days(n) -> list[dict]`; `prune_vlm_usage(keep_days=180) -> int`.
 - `pipeline.options_key(opts, config=None)` adds `vlm_backend` and `vlm_model` (from config: `backend` + preset or model; `"none"` when off). Callers pass `ctx.config`.
 - `PipelineContext.vlm_gate(probe) -> str | None`: `"disabled_remote"` when the engine is remote and `not engine.remote_allowed(opts)`; `"page_cap"` when remote and `probe.pages > remote_max_pages_per_doc > 0`; `"budget"` when remote and budget > 0 and `used_today + probe.pages > budget`; else None. `PipelineContext.vlm_budget_ok(n_pages) -> bool` for repair (same budget rule; local backend always True).
 - `_run_task`: `route(..., vlm_gate=ctx.vlm_gate)`; before `run_engine_attempt` with a remote VLM: `ctx.log(f"vlm(openai): sending {pages} page image(s) to {host} model={model}")`. `run_engine_attempt` applies `engine.timeout_factor()` when present. After every VLM raw result (segment or repair): `store.add_vlm_usage(...)` from `raw.extra["vlm"]`.
@@ -676,7 +676,7 @@ def test_vlm_repairs_reject_refused_truncated_and_blank():
 def test_vlm_usage_upsert_and_today(tmp_path):
     from aidoc.store import Store
     s = Store(tmp_path / "a.db")
-    assert s.schema_version() >= 5
+    assert s.schema_version() >= 6
     s.add_vlm_usage("2026-10-05", "openai", "h:1", pages=3, requests=3, prompt_tokens=10, completion_tokens=5)
     s.add_vlm_usage("2026-10-05", "openai", "h:1", pages=2, requests=2, prompt_tokens=1, completion_tokens=1)
     s.add_vlm_usage("2026-10-04", "openai", "h:1", pages=9, requests=9, prompt_tokens=0, completion_tokens=0)
@@ -786,7 +786,7 @@ def test_repair_by_vlm_writes_role_repair_block(env):
 
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement** (schema bump in `store.py` with the migration pattern used for v2–v4; `maintenance.py` calls `prune_vlm_usage` in its periodic sweep). The repair test relies on the fake runner's `garbled_sticky` honouring `fake_engine` and the fake vlm producing clean text for `pages.pdf` — verify `fake_runner._repairing()` treats a vlm request as a repair when `src` is `pages.pdf`.
 - [ ] **Step 4: Run** `uv run pytest tests/unit -q` → pass; `uv run pytest tests/reliability -q` → pass (no vlm configured there).
-- [ ] **Step 5: Commit** `feat(pipeline): vlm gate (remote switch, page cap, daily budget), usage table v5, sidecar vlm block, options_key`.
+- [ ] **Step 5: Commit** `feat(pipeline): vlm gate (remote switch, page cap, daily budget), usage table v6, sidecar vlm block, options_key`.
 
 ### Task 8: Local runtime install + self-check — **execute exactly one of 8a / 8b / 8c per the Task 1 decision**
 
@@ -1219,7 +1219,7 @@ def test_remote_endpoint_recall(tmp_path): ...         # recall >= 0.90 on scann
 | §6 repair order + VLM acceptance | | 6, 7, 12 |
 | §7 quality interactions, `vlm_low_overlap` | | 9 |
 | §8.1 sidecar `vlm` block | | 7 |
-| §8.2 `vlm_usage` schema v5 | | 7 |
+| §8.2 `vlm_usage` schema v6 | | 7 |
 | §8.3 `[vlm]` config + validation + `options_key` | | 0, 7, 10 |
 | §9 setup + self-check | | 8a/8b/8c, 10 |
 | §10.1 API | | 10 |

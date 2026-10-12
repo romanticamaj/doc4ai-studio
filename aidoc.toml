@@ -56,3 +56,28 @@ max_concurrent_jobs_per_token = 8  # sync requests over it wait for a slot; asyn
 poll_max_wait_s = 60               # cap of /v1/status/poll ?wait=
 task_retention_days = 30           # async task records; /v1/result answers 404 after this
 json_content = "null"              # "null" | "doc4ai"; json_content is always null for now (spike S1)
+
+[vlm]
+backend = "none"                   # "none" | "local" | "openai"; VLM OCR = last fallback and last repair engine
+use_as_fallback = true
+use_for_repair = true
+dpi = 150                          # remote backend render dpi; the local backend uses local_dpi
+max_image_px = 2000                # remote: long side limit of a page image
+request_timeout_s = 120
+max_output_tokens = 4096
+remote_enabled = false             # consent: page images are sent to base_url (required for backend "openai")
+base_url = ""                      # e.g. http://127.0.0.1:1234/v1 (LM Studio), http://127.0.0.1:11434/v1 (Ollama)
+model = ""
+api_key_env = "AIDOC_VLM_API_KEY"  # the key is read from this environment variable
+api_key = ""                       # prefer the environment variable; masked over the API
+allow_no_key = false               # true for endpoints that need no key
+max_concurrent = 2
+remote_max_pages_per_doc = 200
+remote_daily_page_budget = 500     # 0 = unlimited
+local_preset = "paddleocr-vl-1.6"  # "paddleocr-vl-1.6" | "qwen2.5-vl-3b" | "custom"
+local_dpi = 200
+local_max_image_px = 1400
+local_ctx_size = 8192
+local_gguf = ""                    # local_preset = "custom": absolute paths
+local_mmproj = ""
+local_prompt_style = ""            # "" = by preset; "paddle_tasks" | "generic"

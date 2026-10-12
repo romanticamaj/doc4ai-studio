@@ -27,7 +27,7 @@ def test_defaults():
 
 def test_enums_and_constants():
     assert TaskStatus.done in TERMINAL_TASK and TaskStatus.converting not in TERMINAL_TASK
-    assert SEGMENT_PAGES == 40 and ENGINE_NAMES == ("markitdown", "docling", "mineru")
+    assert SEGMENT_PAGES == 40 and ENGINE_NAMES == ("markitdown", "docling", "mineru", "vlm")
 
 
 def test_attempt_and_edge_roundtrip():
@@ -79,3 +79,18 @@ def test_pages_unrepaired_counts_missing_pages_beyond_the_listed_200():
                                 "missing_truncated": True},
                       pages=[{"page": p, "reasons": ["page_map_missing"]} for p in range(31, 231)])
     assert q.to_json()["pages_unrepaired"] == 1162
+
+
+def test_engine_names_gain_vlm_last():
+    assert ENGINE_NAMES == ("markitdown", "docling", "mineru", "vlm")
+
+
+def test_convert_options_vlm_remote_round_trip():
+    o = ConvertOptions(output_dir=Path("out"), vlm_remote=False)
+    assert ConvertOptions.from_json(o.to_json()).vlm_remote is False
+    assert ConvertOptions(output_dir=Path("out")).vlm_remote is None
+
+
+def test_raw_result_extra_default():
+    from aidoc.models import RawResult
+    assert RawResult(markdown="", image_paths=[], raw_dir=Path("."), has_page_markers=True).extra == {}

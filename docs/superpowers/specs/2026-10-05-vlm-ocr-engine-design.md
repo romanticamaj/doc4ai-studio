@@ -295,7 +295,7 @@ user:   [image]  "Page {k} of {n}. Return the Markdown of this page."
 - `role`：`primary`（VLM 是主引擎）或 `repair`（只用於修復；此時 `engine` 仍是主引擎，`vlm` 區塊照樣出現，`pages_sent` = 修復送出的頁數）。兩者都用到時 `role: "primary"`（主引擎為 VLM 時沒有修復）。
 - `tried[]` 的 `engine: "vlm"` 照常。
 
-### 8.2 資料庫：`vlm_usage`（schema v5）
+### 8.2 資料庫：`vlm_usage`（schema v6；原寫 v5，但 v5 已由 docling-serve 相容 API 的 `compat_tasks` 使用）
 
 ```sql
 CREATE TABLE vlm_usage (
@@ -462,4 +462,4 @@ local_prompt_style = ""           # "" = 依 preset；"paddle_tasks" | "generic"
 - 主 spec §4 判斷規則表依 §5 更新；§8.2 失敗分類加 §4.7 的列。
 - 主 spec §5 sidecar 加 `vlm` 區塊；§6 Settings 頁「三個工具」改「四個引擎」；§9 安裝加 `aidoc setup vlm`；§11 非目標刪「LLM 輔助修正輸出」以外不動（VLM OCR 不是 LLM 後處理）。
 - 逐頁 spec §4 決策 4 修復順序加 V；§8.2 步驟 5 加 VLM 專屬驗收。
-- index：§0 加 `vlm` 規則（主程式不裝 paddle／torch；`vlm_runner.py` 在主程式解譯器執行、stdlib + pymupdf；本機 runtime 是 `data/tools/llamacpp/` 的預編譯二進位，`envs/vlm/` 只有 `manifest.json` 與 `.ready`）；§1 layout 加 `engines/vlm.py`、`runner/vlm_runner.py`、`runner/_vlm_prompt.py`、`runner/selfcheck_vlm.py`、`vlm_runtime.py`、`tests/fakes/vlm_server.py`、`tests/fakes/fake_llama_server.py`；§3 `ENGINE_NAMES` 加 `"vlm"`、`RawResult.extra`、`ConvertOptions.vlm_remote`；§4 schema v5 `vlm_usage`；§5 runner 協定加 `vlm` 的 `engine_opts` 鍵與 `result.json.vlm`、`page_map_method` 枚舉加 `vlm_per_page`；§6 fake scenario 的 `engine` 可為 `vlm`；§7 `[vlm]`；§8 API 新列；§2 新增 A21（VLM 永遠最後，含排在 MarkItDown 之後）、A22（遠端後端的 privacy 規則：預設關、loopback 例外、每次 log）、A23（`options_key()` 含 VLM 後端與模型）。詳細文字由實作計畫 Task 0 寫入。
+- index：§0 加 `vlm` 規則（主程式不裝 paddle／torch；`vlm_runner.py` 在主程式解譯器執行、stdlib + pymupdf；本機 runtime 是 `data/tools/llamacpp/` 的預編譯二進位，`envs/vlm/` 只有 `manifest.json` 與 `.ready`）；§1 layout 加 `engines/vlm.py`、`runner/vlm_runner.py`、`runner/_vlm_prompt.py`、`runner/selfcheck_vlm.py`、`vlm_runtime.py`、`tests/fakes/vlm_server.py`、`tests/fakes/fake_llama_server.py`；§3 `ENGINE_NAMES` 加 `"vlm"`、`RawResult.extra`、`ConvertOptions.vlm_remote`；§4 schema v6 `vlm_usage`；§5 runner 協定加 `vlm` 的 `engine_opts` 鍵與 `result.json.vlm`、`page_map_method` 枚舉加 `vlm_per_page`；§6 fake scenario 的 `engine` 可為 `vlm`；§7 `[vlm]`；§8 API 新列；§2 新增 A21（VLM 永遠最後，含排在 MarkItDown 之後）、A22（遠端後端的 privacy 規則：預設關、loopback 例外、每次 log）、A23（`options_key()` 含 VLM 後端與模型）。詳細文字由實作計畫 Task 0 寫入。
