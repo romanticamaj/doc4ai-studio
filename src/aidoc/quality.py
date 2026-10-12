@@ -31,7 +31,10 @@ FLAGGED_MAX_RATIO = 0.20
 PAGE_GARBAGE_MAX = 0.05
 PAGE_GARBAGE_MIN_CHARS = 50
 SHIFT_HITS_MIN = 3
-PAGE_CHECK_VERSION = 1
+# 2: page_dropped joins the per-page reasons (spec 2026-10-05 verify §2.3): existing documents are re-graded once
+PAGE_CHECK_VERSION = 2
+DROPPED_LAYER_MIN = 120        # squashed text-layer chars a page needs before an empty section means "dropped"
+DROPPED_SECTION_MAX = 20       # non-space chars (markup stripped) below which a section counts as empty
 VLM_OVERLAP_MIN = 0.2          # VLM spec §7: advisory only (collect numbers; never changes level or score)
 VLM_OVERLAP_MIN_LAYER = 120    # squashed text-layer chars a page needs before the overlap means anything
 SHIFT = 29                     # TrueType standard Mac glyph order: glyph id = char code - 29 (glyph 3 = space)
@@ -179,6 +182,25 @@ def flag_pages(md: str, broken_font_pages: Iterable[int]) -> list[dict]:
     return out
 
 
+def dropped_pages(md: str, layers: list[str], blank_pages: Iterable[int] = ()) -> list[dict]:
+    """Pages the engine silently lost (spec 2026-10-05 verify §2.3): the PDF page's squashed text layer has at least
+    DROPPED_LAYER_MIN characters but the page's section has fewer than DROPPED_SECTION_MAX non-space characters
+    (markup stripped). Blank pages and pages without a marker (page_map_missing) are not considered. A page that is
+    one big picture whose text layer the engine rightly skipped is flagged too: its text is still missing from the
+    Markdown, so OCR repair is the right answer."""
+    _, secs = pagemap.split_pages(md)
+    blank = set(blank_pages)
+    out = []
+    for p, layer in enumerate(layers, 1):
+        if p in blank or p not in secs or len(layer) < DROPPED_LAYER_MIN:
+            continue
+        chars = sum(1 for c in strip_markup(secs[p]) if not c.isspace())
+        if chars < DROPPED_SECTION_MAX:
+            out.append({"page": p, "reasons": ["page_dropped"],
+                        "metrics": {"layer_chars": len(layer), "section_chars": chars}})
+    return out
+
+
 def vlm_overlap(section: str, layer: str) -> float | None:
     """Character 3-gram Jaccard between a VLM page section and the page's (squashed) PDF text layer — a coarse
     hallucination signal (VLM spec §7). None when the layer is too short to say anything."""
@@ -234,8 +256,8 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     pm["invalid_markers"] = pagemap.invalid_markers(markdown, pages)
     if pm["invalid_markers"] and not skip_page_map_reasons:
         reasons.append("page_map_invalid")
-    if pdf is not None and layers is None and vlm_pages:
-        layers = pagemap.pdf_text_layers(pdf)          # once, for the spot check and the VLM overlap
+    if pdf is not None and layers is None and (vlm_pages or not quick) and Path(pdf).is_file():
+        layers = pagemap.pdf_text_layers(pdf)          # once: spot check, dropped pages, VLM overlap
     if pdf is not None and not skip_page_map_reasons:
         # quick (segment) check: every page of the segment — a 10-page sample let one legitimately merged
         # cross-page paragraph read as 1/9 misaligned on a real book (2026-10-01 acceptance)
@@ -259,6 +281,11 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
             by_page[p] = {**by_page[p], "reasons": by_page[p]["reasons"] + ["page_conversion_failed"], "error": msg}
         else:
             by_page[p] = {"page": p, "reasons": ["page_conversion_failed"], "error": msg}
+    # pages the engine lost without saying so (empty section, text in the PDF layer); not in the quick segment check
+    if not quick and layers is not None:
+        for e in dropped_pages(markdown, layers, probe.blank_pages):
+            if e["page"] not in repaired_pages and e["page"] not in by_page and e["page"] <= pages:
+                by_page[e["page"]] = e
     flagged = [by_page[p] for p in sorted(by_page)]
     missing = [{"page": p, "reasons": ["page_map_missing"]} for p in pm["missing"]]
     entries = sorted(flagged + repaired + missing, key=lambda e: e["page"])

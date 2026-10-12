@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import dataclasses
-import os
 import json
+import os
 import shutil
 import sqlite3
 import threading
@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aidoc import fsops, paths
+from aidoc import fsops, pagemap, paths
 from aidoc.config import AidocConfig
 from aidoc.engines.base import EngineCancelled, EngineError
 from aidoc.engines.host import compute_timeout
@@ -34,7 +34,7 @@ from aidoc.normalize import normalize
 from aidoc.output import OutputWriter, build_sidecar, lookup_cached, planned_output_dir
 from aidoc.pagemap import MARKER
 from aidoc.probe import probe_file
-from aidoc.quality import FLAGGED_MAX_RATIO, assess, flag_pages
+from aidoc.quality import FLAGGED_MAX_RATIO, assess, dropped_pages, flag_pages
 from aidoc.repair import repair_pages
 from aidoc.retry import RetryPolicy
 from aidoc.router import route
@@ -346,6 +346,13 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
             by_page[p] = {**by_page[p], "reasons": by_page[p]["reasons"] + ["page_conversion_failed"], "error": msg}
         else:
             by_page[p] = {"page": p, "reasons": ["page_conversion_failed"], "error": msg}
+    # pages the engine lost without reporting them (spec 2026-10-05 verify §2.3): repaired like failed pages
+    layers = pagemap.pdf_text_layers(ctx.work_src) if ctx.work_src is not None else None
+    if layers is not None and len(layers) == probe.pages:
+        for e in dropped_pages(merged.markdown, layers, probe.blank_pages):
+            by_page.setdefault(e["page"], e)
+    else:
+        layers = None
     flagged = [by_page[p] for p in sorted(by_page)]
     effective = max(1, probe.pages - len(probe.blank_pages))
     repaired: list[dict] = []
@@ -373,7 +380,7 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     q = assess(merged.markdown, probe, probe.pages, pdf=ctx.work_src, page_map_method=method,
                flagged_before=len(flagged), repaired=repaired, last_resort=last_resort,
                failed_pages={p: m for p, m in failed.items() if p not in outcome_repaired},
-               vlm_pages=vlm_pages)
+               vlm_pages=vlm_pages, layers=layers)
     if q.page_map and q.page_map.get("alignment"):
         al = q.page_map["alignment"]
         ctx.log(f"page map {q.page_map['found']}/{q.page_map['expected']} ({q.page_map.get('method')}); "
