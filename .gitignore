@@ -25,3 +25,11 @@ web/e2e/.data/
 # VLM engine runtime downloads (spec 2026-10-05 VLM; llama.cpp build, manifest, download cache)
 envs/vlm/*
 !envs/vlm/.gitkeep
+
+# benchmark (spec 2026-10-05 verify §3): pinned downloads, generated full-size corpus, run outputs
+bench/corpus/.cache/
+bench/corpus/syn-*/
+bench/corpus/b/
+bench/corpus/external/
+bench/corpus/fetch.status.json
+bench/results/
