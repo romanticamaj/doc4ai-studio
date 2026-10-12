@@ -1,7 +1,7 @@
 # VLM OCR 引擎（最後一道 fallback 與逐頁修復引擎）— 設計文件
 
 - 日期：2026-10-05
-- 狀態：待審核（v1：含查證結果與 spike 定義；spike 數字待實測）
+- 狀態：已實作（2026-10-12；spike S1 落在規則 4：只交付 openai 後端，見 §15）
 - 依據：`docs/superpowers/research/2026-10-02-similar-projects.md` §8.1 建議 1、§7 差距表「轉換品質（掃描/複雜版面）」列、§5 B 表 B7（PaddleOCR-VL）／B5／B5''（Marker／Chandra 授權）、A7（doc7 純 VLM 路線）。
 - 相關：主 spec `2026-09-24-ai-friendly-doc-design.md`（§3 架構與 Engine 介面、§4 路由、§8.2 失敗分類、§9 安裝）、逐頁品質 `2026-10-01-per-page-quality-and-page-map.md`（§4 決策 4 修復引擎、§5 逐頁模型、§8.2 修復流程；以下稱「逐頁 spec」）、契約 `plans/2026-09-24-index.md`（§3 models、§5 runner 協定、§6 fake scenario、§7 設定）、MCP spec `2026-10-01-mcp-server-design.md`、`aidoc verify` 與 benchmark `2026-10-05-verify-and-benchmark-design.md`（benchmark 把本引擎列為受測設定之一）。
 - 實作計畫：`docs/superpowers/plans/2026-10-05-vlm-ocr-engine.md`
@@ -463,3 +463,19 @@ local_prompt_style = ""           # "" = 依 preset；"paddle_tasks" | "generic"
 - 主 spec §5 sidecar 加 `vlm` 區塊；§6 Settings 頁「三個工具」改「四個引擎」；§9 安裝加 `aidoc setup vlm`；§11 非目標刪「LLM 輔助修正輸出」以外不動（VLM OCR 不是 LLM 後處理）。
 - 逐頁 spec §4 決策 4 修復順序加 V；§8.2 步驟 5 加 VLM 專屬驗收。
 - index：§0 加 `vlm` 規則（主程式不裝 paddle／torch；`vlm_runner.py` 在主程式解譯器執行、stdlib + pymupdf；本機 runtime 是 `data/tools/llamacpp/` 的預編譯二進位，`envs/vlm/` 只有 `manifest.json` 與 `.ready`）；§1 layout 加 `engines/vlm.py`、`runner/vlm_runner.py`、`runner/_vlm_prompt.py`、`runner/selfcheck_vlm.py`、`vlm_runtime.py`、`tests/fakes/vlm_server.py`、`tests/fakes/fake_llama_server.py`；§3 `ENGINE_NAMES` 加 `"vlm"`、`RawResult.extra`、`ConvertOptions.vlm_remote`；§4 schema v6 `vlm_usage`；§5 runner 協定加 `vlm` 的 `engine_opts` 鍵與 `result.json.vlm`、`page_map_method` 枚舉加 `vlm_per_page`；§6 fake scenario 的 `engine` 可為 `vlm`；§7 `[vlm]`；§8 API 新列；§2 新增 A21（VLM 永遠最後，含排在 MarkItDown 之後）、A22（遠端後端的 privacy 規則：預設關、loopback 例外、每次 log）、A23（`options_key()` 含 VLM 後端與模型）。詳細文字由實作計畫 Task 0 寫入。
+
+## 15. 驗收紀錄（2026-10-12）
+
+- **Spike S1 決策：規則 4（只交付 `openai` 後端，本機後端延後）。** PaddleOCR-VL-1.6（llama.cpp b11559 CUDA 13.4、BF16 GGUF）在 sm_120 上可跑：平均 1.15 s/頁（最大 4.7 s）、峰值顯存比基線多 2.4 GB、Head First 封面句命中、真實頁 recall 0.95–1.00；但 `scanned_cht.pdf` recall **0.75**（同一段落重複四次，模型只輸出三次；各種解析度、裁切、官方 chat template 皆同），規則 1 不過；Qwen2.5-VL-3B 0.55–0.73（規則 2 不過）；transformers 路徑同樣 0.75 且 19–45 s/頁（規則 3 不過）。門檻未調整。數字與釘死的 URL/sha256 見 `docs/superpowers/spikes/2026-10-vlm-ocr.md`。故 Task 4b、8a、8b 未實作；`backend = "local"` 時 `available()` 為假、`aidoc setup vlm` 拒絕並指向 spike、`/api/system` 回 `local_supported: false`、Settings 停用該選項（本節即 §3.4 規則 4 要求的 spec 註記）。
+
+| # | 項目 | 結果 |
+|---|---|---|
+| 1 | 零影響 | `backend = "none"`：`uv run pytest -m "not slow"` 1032 passed / 1 skipped（既有的 symlink 權限 skip）；`test_vlm_absent_changes_nothing` 通過；Settings 第四張卡「尚未選擇後端」 |
+| 2 | 路由 | 五條規則以 `vlm` 收尾、`page_cap`／`budget`／`disabled_remote` 進 `missing`；`--engine vlm` 可用且同樣受閘門約束 |
+| 3 | 修復 | 三種主引擎順序如 §6；`repaired_by` `vlm:openai:<model>`；拒答（含 `content_filter`）／截斷／`<!-- blank -->` 不被接受 |
+| 4 | 隱私 | 遠端未啟用時假端點 0 請求（`test_remote_disabled_sends_nothing`）；金鑰不在 request.json／log／sidecar／SSE／DB（測試 grep）；換端點主機即撤回同意；sidecar 記 `endpoint_host`、`pages_sent`（含被捨棄的嘗試） |
+| 5 | 預算 | 每日預算與單檔上限的可靠性測試通過；用量表 `vlm_usage`（schema v6，v5 已由相容 API 使用） |
+| 6 | 本機後端 | **未交付**（規則 4）；spike 量到的數字見上 |
+| 7 | 遠端後端 | 假端點全部行為有測試；真實本機端點 Ollama 0.34.2（loopback）：gemma3:4b 0.7–4.0 s/頁、484 in / 63–721 out tokens/頁；gemma4:12b 10–71 s/頁（思考模型，長頁常循環到截斷）；qwen3.5:9b 5–38 s/頁；細表見 spike 文件 |
+| 8 | UI | 同意框在 base_url／model 填好前停用；loopback 資訊色、非 loopback 紅色警示；文件頁提示「已用 VLM OCR 修復（model）」；Vitest 195 passed |
+| 9 | 回歸 | `pnpm --dir web test` 195 passed、`pnpm --dir web build` 綠、`pnpm --dir web e2e` 11 passed；`AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow` **63 passed、0 skipped**（VLM 慢測試以 `AIDOC_VLM_REAL_BASE_URL=http://127.0.0.1:11434/v1`、`AIDOC_VLM_REAL_MODEL=gemma4:12b` 執行：三個合成掃描 recall 1.000、formula 有 LaTeX、text.pdf 頁 2 有表格、Head First 封面由 `vlm:openai:gemma4:12b` 修復並含 "Wouldn't it be dreamy"） |
