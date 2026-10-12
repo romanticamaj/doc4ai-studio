@@ -30,6 +30,8 @@ COMPONENT = Literal["document_backend", "model", "doc_assembler", "user_input", 
 CATEGORY = Literal["policy", "capacity", "source_unavailable", "target_unavailable", "timeout", "internal",
                    "backend_failure", "inference_failure", "unknown"]
 PHASE = Literal["admission", "source_enumeration", "execution", "orchestration"]
+_ANY_IMAGE_MD = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_ANY_IMAGE_HTML = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _EMBED_TOO_BIG = "embedded images exceed embed_images_max_mb; remaining images are placeholders"
 
 
@@ -149,6 +151,9 @@ def asset_file(assets_dir: Path | None, name: str) -> Path | None:
 
 def _images(md: str, opts: CompatOptions, *, doc_id: str, asset_base: str | None, assets_dir: Path | None,
             cfg) -> tuple[str, list[str]]:
+    if opts.image_mode == "placeholder":                # docling-serve: every picture, whatever its source (item 7)
+        md = _ANY_IMAGE_MD.sub(IMAGE_PLACEHOLDER, md)
+        return _ANY_IMAGE_HTML.sub(IMAGE_PLACEHOLDER, md), []
     refs = docs.asset_refs(md)
     if not refs:
         return md, []

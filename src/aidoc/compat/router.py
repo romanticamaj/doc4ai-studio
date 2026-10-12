@@ -32,6 +32,19 @@ OCR_LANGS = ["zh-Hant", "en"]
 FROM_FORMATS = ["pdf", "docx", "pptx", "xlsx", "doc", "ppt", "xls", "html", "md", "csv", "image", "epub", "xml_jats", "json_docling"]
 
 
+@router.get("/ready", include_in_schema=False)
+def ready():
+    """docling-serve's readiness probe (ReadinessResponse); public like /health."""
+    return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/version", include_in_schema=False)
+def version():
+    """docling-serve answers its component versions here; we answer ours (no host details)."""
+    from aidoc import __version__
+    return JSONResponse({"doc4ai": __version__, "api": "docling-serve-v1 compatible"}, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/v1/capabilities", dependencies=[Depends(require_enabled)])
 def capabilities(request: Request):
     """Unauthenticated like docling-serve's; static apart from engine readiness booleans (plan A4)."""
@@ -96,6 +109,14 @@ async def _read_json(request: Request, call, max_mb: int) -> dict:
     return data
 
 
+def _source_options(ctx, body: dict):
+    """The JSON `options`, plus top-level request keys we accept but do not act on (item 7: `callbacks`)."""
+    opts = parse_options(body.get("options") or {}, ctx.config, multipart=False)
+    if body.get("callbacks"):
+        opts.ignored_options = sorted({*opts.ignored_options, "callbacks"})
+    return opts
+
+
 def _source_upload(ctx, call, body: dict, *, alpha: bool) -> jobs.Upload:
     """The one `sources[kind=file]` (v1) or `file_sources[]` (v1alpha) entry, decoded to a part file."""
     target = body.get("target")
@@ -152,7 +173,7 @@ async def _convert_source(request: Request, principal: Principal, *, alpha: bool
     call.tool_name = "convert_source"
     _rate_limit(ctx, principal, call)
     body = await _read_json(request, call, ctx.config.compat.max_source_mb)
-    opts = parse_options(body.get("options") or {}, ctx.config, multipart=False)
+    opts = _source_options(ctx, body)
     upload = _source_upload(ctx, call, body, alpha=alpha)
     return await jobs.run_sync(ctx, request, call, upload, opts)
 
@@ -190,7 +211,7 @@ async def convert_source_async(request: Request, principal: Annotated[Principal,
     call.tool_name = "convert_source_async"
     _rate_limit(ctx, principal, call)
     body = await _read_json(request, call, ctx.config.compat.max_source_mb)
-    opts = parse_options(body.get("options") or {}, ctx.config, multipart=False)
+    opts = _source_options(ctx, body)
     upload = _source_upload(ctx, call, body, alpha=False)
     return await jobs.submit_async(ctx, request, call, upload, opts)
 
@@ -251,8 +272,10 @@ def install(app) -> None:
     if os.environ.get("AIDOC_TEST_ROUTES") == "1":
         app.add_api_route("/v1/_whoami", _whoami, methods=["GET"], include_in_schema=False)
 
-    async def not_found(request: Request, path: str):
+    async def not_found(request: Request, path: str = ""):
         raise CompatError(404, "Not Found")
-    for prefix in ("/v1", "/v1alpha"):
+    for prefix in ("/v1", "/v1alpha"):                   # bare /v1 too: never the SPA (item 7)
+        app.add_api_route(prefix, not_found, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"],
+                          include_in_schema=False)
         app.add_api_route(prefix + "/{path:path}", not_found, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"],
                           include_in_schema=False)

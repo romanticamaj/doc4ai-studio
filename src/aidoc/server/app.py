@@ -45,7 +45,7 @@ class EnvelopeMiddleware:
         path = scope.get("path", "")
         # MCP protocol responses (and Phase 2 /.well-known/) must reach clients byte for byte (MCP spec §4.1)
         # docling-serve compatible routes (/v1, /v1alpha, /health) answer docling-shaped JSON, never an envelope
-        if (scope["type"] != "http" or path in ("/mcp", "/health")
+        if (scope["type"] != "http" or path in ("/mcp", "/health", "/ready", "/version", "/v1", "/v1alpha")
                 or path.startswith(("/mcp/", "/.well-known/", "/v1/", "/v1alpha/"))):
             return await self.app(scope, receive, send)
         start: dict | None = None
@@ -127,7 +127,7 @@ def start_reassessment(ctx: ServerContext, log=None) -> threading.Thread:
 
 
 def _is_compat_path(path: str) -> bool:
-    return path.startswith(("/v1/", "/v1alpha/"))
+    return path in ("/v1", "/v1alpha") or path.startswith(("/v1/", "/v1alpha/"))
 
 
 def create_app(ctx: ServerContext) -> FastAPI:
