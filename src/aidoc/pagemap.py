@@ -1,11 +1,14 @@
 """Page sections, page-map coverage, alignment spot check and page splicing (spec 2026-10-01 §6, §7, §8.2).
 
 Page boundaries come from the engines' structure (runners); this module never searches markdown text to *find*
-page boundaries — it only reads the `<!-- page: N -->` markers and checks them against the PDF text layer.
+page boundaries of our own outputs — it only reads the `<!-- page: N -->` markers and checks them against the PDF
+text layer. The one exception is `infer_pages()` (spec 2026-10-05 verify §2.2): third-party Markdown without any
+usable page markers, anchored by the same unique text-layer probes as the spot check.
 """
 from __future__ import annotations
 
 import bisect
+import itertools
 import random
 import re
 import unicodedata
@@ -66,6 +69,24 @@ def invalid_markers(md: str, expected: int) -> int:
     return bad
 
 
+def squash_with_map(s: str) -> tuple[str, list[int]]:
+    """`squash(s)` plus, for every squashed character, its offset in `s` (so a squashed position maps back).
+    Character-wise NFKC; soft hyphens and line-break hyphens are not alphanumeric, so dropping them is implicit."""
+    out: list[str] = []
+    pos: list[int] = []
+    for i, c in enumerate(s):
+        if c.isascii():
+            if c.isalnum():
+                out.append(c.lower())
+                pos.append(i)
+            continue
+        for ch in unicodedata.normalize("NFKC", c).lower():
+            if ch.isalnum():
+                out.append(ch)
+                pos.append(i)
+    return "".join(out), pos
+
+
 def squash(s: str) -> str:
     """NFKC, drop soft hyphens and line-break hyphenation, lower-case, keep only alphanumerics (any script)."""
     s = unicodedata.normalize("NFKC", s).replace("\u00ad", "").replace("-\n", "")
@@ -84,20 +105,26 @@ def _even_sample(items: list[int], k: int) -> list[int]:
     return [items[(i * len(items)) // k] for i in range(k)]
 
 
-def _probes(text: str, page_no: int, whole: str, win: int, k: int) -> list[str]:
+def _probe_spans(text: str, page_no: int, whole: str, win: int, k: int) -> list[tuple[int, str]]:
+    """[(offset in the page's squashed layer, probe)]: seeded by the page number, 20 %-80 % of the page, unique in
+    the whole PDF text layer (spec 2026-10-01 §7; shared by spot_check and infer_pages)."""
     lo, hi = int(len(text) * 0.2), int(len(text) * 0.8) - win
     if hi <= lo:
         return []
     rng = random.Random(page_no)
-    out: list[str] = []
+    out: list[tuple[int, str]] = []
     for _ in range(_CANDIDATE_STARTS):
         start = rng.randint(lo, hi)
         probe = text[start:start + win]
-        if len(probe) == win and probe not in out and whole.count(probe) == 1:
-            out.append(probe)
+        if len(probe) == win and all(probe != q for _, q in out) and whole.count(probe) == 1:
+            out.append((start, probe))
             if len(out) >= k:
                 break
     return out
+
+
+def _probes(text: str, page_no: int, whole: str, win: int, k: int) -> list[str]:
+    return [probe for _, probe in _probe_spans(text, page_no, whole, win, k)]
 
 
 def spot_check(md: str, pdf: Path, *, sample: int = 30, exclude: Iterable[int] = (), win: int = 24, k: int = 3,
@@ -174,4 +201,204 @@ def splice_pages(md: str, replacements: dict[int, str]) -> str:
             seen.add(page)
         last = b
     out.append(md[last:])
+    return "".join(out)
+
+
+# ---- page boundaries of Markdown without markers (spec 2026-10-05 verify §2.2)
+
+INFER_WIN = 24
+INFER_PROBES = 3
+_SNAP_RADIUS = 200
+_NO_TEXT = re.compile(r"<!--.*?-->|!\[[^\]]*\]\([^)]*\)", re.DOTALL)
+
+
+def _monotone_keep(items: list[tuple[int, int]]) -> set[int]:
+    """Pages of the longest subsequence of (page, position) — sorted by page — whose positions strictly increase.
+    Ties go to the subsequence whose pages sit closest to their own rank (a page swapped away is dropped, the pages
+    between the swapped ones are kept). O(n^2) over anchored pages."""
+    n = len(items)
+    if not n:
+        return set()
+    by_pos = sorted(range(n), key=lambda i: items[i][1])
+    disp = [0] * n
+    for rank, i in enumerate(by_pos):
+        disp[i] = abs(rank - i)
+    best: list[tuple[int, int]] = [(1, -disp[i]) for i in range(n)]
+    prev = [-1] * n
+    for i in range(n):
+        pi = items[i][1]
+        for j in range(i):
+            if items[j][1] < pi:
+                cand = (best[j][0] + 1, best[j][1] - disp[i])
+                if cand > best[i]:
+                    best[i], prev[i] = cand, j
+    i = max(range(n), key=lambda x: best[x])
+    keep: set[int] = set()
+    while i != -1:
+        keep.add(items[i][0])
+        i = prev[i]
+    return keep
+
+
+def _snap(md: str, at: int, lo: int, hi: int) -> int:
+    """The paragraph start (after a blank line) nearest to `at` within ±_SNAP_RADIUS and [lo, hi]; else the nearest
+    line start; else `at` itself."""
+    at = min(max(at, lo), hi)
+    a, b = max(lo, at - _SNAP_RADIUS), min(hi, at + _SNAP_RADIUS)
+    for sep in ("\n\n", "\n"):
+        best = None
+        i = md.find(sep, max(0, a - len(sep)))
+        while i != -1 and i <= b:
+            j = i + len(sep)
+            while j < len(md) and md[j] == "\n":
+                j += 1
+            if a <= j <= b and (best is None or abs(j - at) < abs(best - at)):
+                best = j
+            i = md.find(sep, j)
+        if best is not None:
+            return best
+    return at
+
+
+def _edge_boundary(t: str, layer_a: str, layer_b: str, lo_t: int, hi_t: int, win: int) -> tuple[int, int] | None:
+    """(end of a's last located text, start of b's first located text) in `t`, both inside [lo_t, hi_t]: the last
+    window of page a's layer and the first window of page b's layer that occur exactly once there and nowhere else in
+    the two layers. Leading/trailing windows that are not found (running headers, page numbers the engine dropped)
+    are skipped. None when either edge cannot be located."""
+    if hi_t <= lo_t:
+        return None
+    step = max(1, win // 2)
+
+    def locate(s: str, other: str, offsets) -> int | None:
+        for o in offsets:
+            c = s[o:o + win]
+            if len(c) < win or s.count(c) != 1 or c in other:
+                continue
+            j = t.find(c, lo_t, hi_t + win)
+            if j != -1 and t.find(c, j + 1, hi_t + win) == -1:
+                return j
+        return None
+
+    span_b = max(0, int(len(layer_b) * 0.5))
+    start_b = locate(layer_b, layer_a, range(0, span_b + 1, step))
+    if start_b is None:
+        return None
+    lo_a = max(0, int(len(layer_a) * 0.5))
+    end_a = locate(layer_a, layer_b, range(len(layer_a) - win, lo_a - 1, -step))
+    if end_a is None or end_a + win > start_b:
+        return None
+    return end_a + win, start_b
+
+
+def infer_pages(md: str, layers: list[str], *, win: int = INFER_WIN, k: int = INFER_PROBES,
+                min_chars: int = 120, exclude: Iterable[int] = ()) -> dict:
+    """Page sections of Markdown without usable page markers (spec 2026-10-05 verify §2.2, index A26).
+
+    A page is *decidable* when `_probe_spans` finds a probe (unique in the whole text layer), *anchored* when one of
+    its probes occurs exactly once in the squashed Markdown and the page survives the monotone filter. `sections`
+    are original-offset half-open ranges covering the whole Markdown; each boundary is the page's estimated start
+    (probe position minus the probe's offset in the layer, median), kept between the neighbours' probes and snapped
+    to a paragraph start. Pages without an anchor get an empty range at the next boundary; the decidable ones among
+    them are `dropped_candidates` (their text is missing or out of order). `exclude`: pages whose text layer is not
+    their text (broken fonts, as in `spot_check`) — never decidable."""
+    n = len(layers)
+    excl = set(exclude)
+    whole = "\0".join(layers)
+    # image links and HTML comments carry no page text (asset paths would squash to letters): blank them out,
+    # keeping every offset
+    t, pos = squash_with_map(_NO_TEXT.sub(lambda m: " " * len(m.group(0)), md))
+    decidable: list[int] = []
+    starts: dict[int, int] = {}                 # page -> estimated start in t
+    first_hit: dict[int, int] = {}
+    last_hit_end: dict[int, int] = {}
+    for p in range(1, n + 1):
+        layer = layers[p - 1]
+        if len(layer) < min_chars or p in excl:
+            continue
+        spans = _probe_spans(layer, p, whole, win, k)
+        if not spans:
+            continue
+        decidable.append(p)
+        est, hits = [], []
+        for off, probe in spans:
+            i = t.find(probe)
+            if i == -1 or t.find(probe, i + 1) != -1:
+                continue
+            est.append(i - off)
+            hits.append(i)
+        if est:
+            est.sort()
+            starts[p] = est[len(est) // 2]
+            first_hit[p] = min(hits)
+            last_hit_end[p] = max(hits) + win
+    with_hits = sorted(starts)
+    keep = _monotone_keep([(p, first_hit[p]) for p in with_hits])
+    out_of_order = [p for p in with_hits if p not in keep]
+    anchored = sorted(keep)
+    undecidable = sorted((set(range(1, n + 1)) - set(decidable)) | set(out_of_order))
+    dropped = sorted(p for p in decidable if p not in keep)
+    res = {"method": "inferred", "expected": n, "found": None, "coverage": None, "anchored": len(anchored),
+           "decidable": len(decidable),
+           "confidence": round(len(anchored) / len(decidable), 4) if decidable else 0.0,
+           "sections": {}, "undecidable": undecidable, "dropped_candidates": dropped, "out_of_order": out_of_order}
+    if not anchored:
+        return res
+
+    def orig(i: int) -> int:                    # squashed offset -> original offset of that character
+        if i <= 0:
+            return 0
+        return pos[i] if i < len(pos) else len(md)
+
+    bounds: dict[int, int] = {anchored[0]: 0}
+    edges = 0
+    for a, b in itertools.pairwise(anchored):
+        lo_t, hi_t = last_hit_end[a], first_hit[b]      # page b starts after a's last probe, before b's first one
+        lo = orig(lo_t - 1) + 1
+        edge = _edge_boundary(t, layers[a - 1], layers[b - 1], lo_t, hi_t, win)
+        if edge is not None:
+            end_a, start_b = edge
+            # the paragraph that holds b's first located text, unless a's last located text is in it too
+            # (a paragraph that runs across the page break): then the nearest line start
+            hi = orig(start_b)
+            par = md.rfind("\n\n", 0, hi + 1)
+            lo_edge = max(lo, orig(end_a - 1) + 1)
+            if par != -1 and par + 2 >= lo_edge:
+                j = par + 2
+                while j < hi and md[j] == "\n":
+                    j += 1
+                bounds[b] = j
+            else:
+                bounds[b] = _snap(md, hi, lo_edge, hi)
+            edges += 1
+            continue
+        # no located page-edge text: midpoint of b's start estimate (early by b's dropped running header) and a's
+        # end estimate (start + layer length; late by a's dropped footer)
+        at_t = (starts[a] + len(layers[a - 1]) + starts[b]) // 2
+        at_t = min(max(at_t, lo_t), hi_t)
+        bounds[b] = _snap(md, orig(at_t), lo, orig(hi_t))
+    res["edge_located"] = edges
+    sections: dict[int, tuple[int, int]] = {}
+    seq = sorted(bounds.items())
+    for idx, (p, s0) in enumerate(seq):
+        sections[p] = (s0, seq[idx + 1][1] if idx + 1 < len(seq) else len(md))
+    for p in range(1, n + 1):
+        if p not in sections:
+            at = next((bounds[q] for q in anchored if q > p), len(md))
+            sections[p] = (at, at)
+    res["sections"] = dict(sorted(sections.items()))
+    return res
+
+
+def apply_inferred(md: str, sections: dict[int, tuple[int, int]]) -> str:
+    """`md` with `<!-- page: N -->` before each inferred section (an empty section keeps its marker), so
+    `split_pages` and the per-page checks work unchanged."""
+    if not sections:
+        return md
+    order = sorted(sections.items(), key=lambda kv: (kv[1][0], kv[0]))
+    out = [md[:order[0][1][0]]]
+    for p, (a, b) in order:
+        body = md[a:b]
+        out.append(f"<!-- page: {p} -->\n\n{body}")
+        if not body.endswith("\n"):
+            out.append("\n\n")
     return "".join(out)
