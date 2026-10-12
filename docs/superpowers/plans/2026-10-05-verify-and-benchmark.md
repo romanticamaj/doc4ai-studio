@@ -956,4 +956,146 @@ def test_dropped_pages_fixtures_are_judged(tmp_path):
 
 ## Implementation notes / deviations
 
-_(filled in by the implementer: every departure from the spec or this plan with its pinning test; Tier B entries that were missing or dropped and why; generation and run timings; calibration ρ / P / R; whether the `vlm` column was present.)_
+Implemented 2026-10-12 on top of the VLM engine (`1c167bd`). Each item names the test that pins it.
+
+**Schema.** `verify` writes no database, so the plan needs no schema change; the store stays at v6 (no v7). Pinned:
+`tests/api/test_verify.py::test_doc_id_form_uses_library_document` (the row is unchanged after a verify).
+
+**Systemic fix found by verify (beyond the plan).** On the real books `verify` reported `page_dropped` pages that our
+own conversions had marked `ok`: 13 in the orthopaedic book (MinerU left out full-page tables and a chapter opening),
+51 in Head First Android (Docling turned text pages into pictures), and on the benchmark sample
+`syn-broken-tounicode-c` Docling returned empty sections for 9 of 30 pages with quality `ok`. A silent loss is exactly
+what the per-page model exists to catch, so `page_dropped` moved from `verify.py` into `quality.assess` /
+`quality.dropped_pages` and `pipeline.check_document`: it is flagged like a failed page, repaired per page, counted in
+the 20 % `pages_flagged` rule, and `warn` when unrepaired. `PAGE_CHECK_VERSION` 1 → 2 so the server re-grades existing
+documents once. Pinned: `tests/unit/test_pipeline.py::test_silently_dropped_page_is_detected_and_repaired`,
+`::test_unrepairable_dropped_page_is_warn_never_silent`, `::test_reported_failed_page_is_not_also_dropped`,
+`tests/unit/test_quality.py::test_assess_flags_a_silently_dropped_page_as_warn`. Consequences:
+- a single dropped page is page-level `warn` (review focus 3 holds), but more than 20 % dropped pages make the document
+  `low` like any other flagged page: `tests/unit/test_verify.py::test_many_dropped_pages_make_the_document_low_like_any_flagged_page`.
+  The small negative (`syn-dropped-pages`, 1 of 3 pages) is therefore `low`; the full one (5 of 29) is `warn`
+  (`bench/calibrate.py::expected`, `tests/bench/test_calibrate.py::test_dropped_pages_fixtures_are_judged`);
+- the plan's `test_dropped_pages_are_page_level_warn_not_low` (2 of 7 pages) became two tests (1 page → warn, 2 → low);
+- `test_pipeline_segments.py::test_last_engine_quick_check_does_not_fail_fast` now allows the per-page repair call the
+  "low" fake segment triggers (its page 1 is a 5-character section with a text layer);
+- the web document view names `page_dropped` and `page_conversion_failed` pages (the latter had no label before):
+  `web/src/features/document/__tests__/pageWarnings.test.ts`.
+
+**Task 1 (markers).** pdfmux does not document a Markdown page-marker format (README and repository checked
+2026-10-12); `<!-- page N -->` is implemented as the plan states and is unverified against pdfmux output.
+`tests/unit/test_markers.py`.
+
+**Task 2 (infer_pages).** Additions to the spec §2.2 algorithm, all in `tests/unit/test_infer_pages.py`: image links and
+HTML comments are blanked before squashing (asset paths would squash to letters); broken-font pages are excluded like
+in the spot check (`exclude=`); the monotone filter breaks ties by rank displacement, so a swapped page is dropped and
+the pages between the swapped ones are kept; a boundary is placed at the paragraph holding the first located window
+of the next page's layer (and after the last located window of the previous page), else at the midpoint of the start /
+end estimates (cancels dropped running headers / footers), snapped to a paragraph start; `dropped_candidates` include
+out-of-order pages. Measured on the real books with the markers stripped (MinerU output of the orthopaedic book,
+1,192 pages): confidence 0.976 (1155 / 1184 decidable), boundaries within one paragraph of the true marker on 59 % of
+anchored pages (28 % exact), the rest further off where the PDF text-layer order differs from MinerU's reading order
+(side boxes, figure captions); Head First Android (Docling): confidence 0.78, 66 % within one paragraph. The spec's
+"≤ 1 paragraph" holds on the fixtures, not on every real page — README "Verify" states the limitation.
+
+**Task 3 (verify).** `quality.assess(..., skip_page_map_reasons=)` as planned; `probe.page_features()` uses
+`get_cdrawings()` with shared `_is_math` / `_grid_from_drawings` helpers (identical results to `_analyse_page` on all
+234 fixture and manual pages checked) and one PDF pass reads layers and features: 1,192 pages in 13.5 s with markers,
+21.5 s wall through the CLI when the page map is inferred. Test changes against the plan: `text.pdf` has ruled table
+lines, so the document rule `missing_table` makes it `low` (spec §2.3); the advisory test asserts the advisory and that
+the level is the document rule's (`test_table_advisory_on_text_pdf_page_2_when_table_missing`). PyMuPDF's raw layer of
+`broken_tounicode.pdf` page 1 is only 4.2 % garbage (below `PAGE_GARBAGE_MAX`), so the "third-party output" in
+`test_broken_text_layer_page_is_flagged_without_repair_info` carries U+FFFD between characters as Docling's pdfium
+backend emits. `input` gains `markers_applied` / `markers_reason`; an inferred `page_map` gains `undecidable` and
+`out_of_order`. HTML rendering is `verify_report.render_html()` (no `VerifyReport.to_html`, keeping `models.py` free of
+rendering code).
+
+**Task 4 (CLI).** No PDF and no `--pages` → exit 3 as spec §2.5 says (`verify_markdown` raises `NeedsPagesError`, a
+`ValueError`, so the plan's unit test holds): `test_exit_codes`. The subprocess test uses `paged_furniture.pdf`
+(`text.pdf` is `low` → exit 1). The directory form finds the work copy through a read-only SQLite connection
+(`mode=ro`), never through `Store`.
+
+**Task 6 (API).** The body is spooled with a cap of 2 × `upload_max_bytes` + 1 MiB before multipart parsing, then each
+file is held to `upload_max_bytes` (413 `too_large`); a Library document whose output is gone → 409 `output_missing`;
+the report echoes the upload names, never server temp paths. `tests/api/test_verify.py`.
+
+**Task 7 (MCP).** `VerifyOut.page_map` is a new `VerifyPageMap` (method, coverage, alignment, anchored, decidable,
+confidence): `PageMapBrief`'s exact shape is pinned by the `get_document_info` tests. Unreadable PDF →
+`unsupported_file`. `tests/mcp/test_tool_verify.py`.
+
+**Task 8 (recorded outputs).** The recorder compares an existing recording with a fresh one (engine drift fails the
+slow test; `AIDOC_RECORD=1` re-records). Docling 2.130 drops the blank page 4 (6 placeholders, 7 sections for 8 pages
+→ inferred). `tests/integration/test_record_third_party.py`, `tests/unit/test_verify_formats.py`.
+
+**Task 9 (corpus).** No Augraphy / img2pdf: scans are degraded with Pillow + numpy, seeded (noise, ±1.5° skew, JPEG
+q55, ink bleed, fold), and written with PyMuPDF — reproducible without Augraphy version drift. Fonts: Noto Sans CJK TC
+only (no Serif); the used glyphs are subset with fontTools and converted to TrueType, because a subset CID-keyed CFF
+renders blank in MuPDF. Gutenberg texts are not committed: `SOURCES.json` pins `files/<id>/<id>-0.txt` by sha256
+(the `cache/epub` copies of the Chinese books are mojibake); English books are #1342 and #11 (#84 was unavailable).
+Full-size `gt.json` files are not committed (deterministic regeneration in about 100 s; the small corpus GT is
+committed and compared byte for byte by `tests/bench/test_make_synthetic.py`). The small corpus is 2.37 MB (the plan
+said ≤ 2 MB; the two scans are 1.3 MB). The `bench` dependency group (rapidfuzz, matplotlib) is installed by default
+(`[tool.uv] default-groups`) so restarting the server with `uv run` never strips it. Book sizes per spec; tables /
+formulas / two-column items are 10 pages each.
+
+**Task 10 (Tier B).** Nine documents (2 Executive Yuan + 2 Legislative Yuan gazettes, 3 arXiv CC BY 4.0, 2 NIST),
+licences checked 2026-10-12; ppg.ly.gov.tw needs a browser User-Agent. Not sourced: the Internet Archive public-domain
+Traditional Chinese scans and the OmniDocBench / olmOCR-Bench sanity entries. Government pages were scanned for ID
+numbers, e-mail addresses and phone numbers: only ministry office numbers, no personal data, no `drop_pages`.
+
+**Task 11 (metrics).** TEDS is in-repo (Zhang–Shasha); no third-party TEDS package. `plain()` strips HTML tags as well
+(MinerU / Docling emit tables as HTML; found in the real-engine smoke run): `test_plain_strips_html_tables_like_gfm`.
+
+**Task 12 (runner).** Conversions run as `<venv python> -m aidoc.cli convert` (not `uv run`), each config with its own
+`aidoc.toml` (`AIDOC_CONFIG`), data dir and output root. `seconds_excl_startup` = wall time minus the warm-up wall time
+of the 3-page sample on the engine used (an approximation). GPU memory is the whole GPU (`nvidia-smi`); the report
+shows the increase over the pre-conversion baseline. The `vlm` config accepts a loopback endpoint only and was run on
+the small corpus. Raw configs (`raw-docling`, `raw-markitdown`, `raw-mineru`) exist but were not part of the published
+run.
+
+**Task 13 (report).** The non-claims text follows spec §5 except where the implementation differs: item 2 (no
+Augraphy, no Tier B real scans), item 4 (states that single-engine and auto-norepair columns run without repair),
+item 7 (local VLM, no cost).
+
+**Task 14 (calibration).** A page counts as bad when its NED < 0.5 or it is a defect page the output did not recover
+(NED < 0.90); a repaired broken page is not a miss (`test_recovered_defect_pages_are_not_misses`).
+
+**Repair acceptance (benchmark finding).** On the orthopaedic book a `page_dropped` page (912) was marked
+`repaired_by` with a few characters of OCR text while `verify` still saw it as dropped. `repair_pages(min_chars=)`:
+a dropped page needs `DROPPED_SECTION_MAX` characters to count as repaired.
+`tests/unit/test_repair.py::test_a_dropped_page_needs_a_real_section_to_count_as_repaired`,
+`::test_check_document_asks_dropped_pages_for_a_real_section`. A digital PDF whose Markdown shares no text with it is
+reported as "no Markdown text matches the text layer", not as a scan
+(`tests/unit/test_verify.py::test_unverifiable_says_why_when_the_pdf_has_text`). The bench `raw-mineru` script needed a
+`__main__` guard (MinerU's process pool re-imports it on Windows). Tier C samples take their page count from the PDF
+(`tests/bench/test_run_fake.py::test_tier_c_sample_without_gt_takes_its_page_count_from_the_pdf`); report rows of the
+small corpus get their own table (`tests/bench/test_report.py::test_small_corpus_rows_get_their_own_table`).
+The synthetic broken font's glyph ids are shifted by 31 (not the 29 of Head First's font): those pages are caught by
+U+FFFD, not by `shift_hits`.
+
+**Task 16 (GPU run, gate, publication).** Runs (not committed; `bench/results/` is gitignored):
+`bench/results/2026-10-12-ulove-arrangement/` — Tier A + B × auto, auto-norepair, docling, mineru, markitdown on the
+code before the page_dropped fix (20:07–21:59, 1 h 52 min, 187 conversions, 0 failures); and
+`…-pagedrop/` — `auto` on A + B after the fix, Tier C `auto` (orthopaedic book 781 s, Head First 3268 s), `vlm` on the
+small corpus (local Ollama `gemma4:12b`: nearly every page `truncated` at `max_output_tokens` 4096, about 66 s per page —
+not a usable column). Calibration gate (Task 14) **failed**: ρ 0.48, page recall 0.16 (precision 1.00) on the base run;
+ρ 0.67, recall 0.25 after the fix. Diagnostic variants (low documents flag every page, spec-only defect pages,
+text-layer samples only) all stay below the gate, so the failure is not a matter of definition. As Step 3 says, nothing
+was published: no `docs/benchmarks/`, no README table (README "Benchmark" says why). The numbers, the reasons for the
+misses and the routing findings the run exposed are in the spec acceptance record (§10). Follow-ups: page-level
+presentation of whole-document `low`, an OCR-confidence signal for scans, page attribution of cross-page paragraphs;
+routing (Traditional Chinese scans → Docling + RapidOCR scored 0.96 vs MinerU 0.68; formulas → MinerU); the
+ruling-line heuristic that read stacked figure boxes as a table; the VLM output limit.
+
+**Regression (2026-10-13).** `uv run pytest -m "not slow"`: see the final report; the one skip is the pre-existing
+`test_tool_convert_path.py` symlink test (no symlink privilege on this host). `pnpm --dir web test`: one timing-sensitive
+ConvertPage test failed once while the Python suite ran in parallel and passed on rerun.
+
+**Slow suite change.** `tests/integration/test_e2e_fixtures.py` expected `twocol.pdf` to end on Docling. Docling returns an
+empty section for its page 2 (the page repeats page 1's text); with `page_dropped` that is 1 of 2 pages flagged, over
+20 %, so the conversion now falls back to MinerU. The test asserts that (Docling tried first, `pages_flagged`, MinerU
+final).
+
+**VLM budget test.** `tests/reliability/test_vlm.py::test_page_cap_and_daily_budget`: the fake "low" output of each
+40-page segment is a 5-character page, now `page_dropped`; the other engines' repairs return 5 characters again (not a
+real section), so the VLM repairs pages 1 and 41 and uses 2 of the 5 budget pages. The test asserts that and counts the
+later repairs on top of it.

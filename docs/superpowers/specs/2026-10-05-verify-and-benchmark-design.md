@@ -1,7 +1,7 @@
 # `aidoc verify` 與公開 benchmark — 設計文件
 
 - 日期：2026-10-05
-- 狀態：待審核（v1）
+- 狀態：已實作（2026-10-12）；benchmark 因 `verify` 校準閘門未通過而未發表（§10）
 - 依據：`docs/superpowers/research/2026-10-02-similar-projects.md` §8.2 建議 1（`aidoc verify`，學 pdfmux）與 §8.3「加一張實測表」；§7 差距表「品質稽核」「Benchmark／可信度」兩列。
 - 相關：主 spec `2026-09-24-ai-friendly-doc-design.md`（§4 品質檢查、§5 sidecar、§10 測試）、逐頁品質 `2026-10-01-per-page-quality-and-page-map.md`（§5 逐頁模型、§7 對齊抽查、§8 偵測訊號；以下稱「逐頁 spec」）、MCP `2026-10-01-mcp-server-design.md`（§5 tools 共同規則）、契約 `plans/2026-09-24-index.md`、VLM 引擎 `2026-10-05-vlm-ocr-engine-design.md`（benchmark 的一個受測設定）。
 - 實作計畫：`docs/superpowers/plans/2026-10-05-verify-and-benchmark.md`
@@ -357,3 +357,53 @@ GPU 機器（RTX 5070 Ti）的時間預估：Tier A（不含 1200 頁書）≈ 1
 - MCP spec §5.2 tool 一覽加 `verify_document`（read）、`verify_markdown`（convert）。
 - index：§1 layout 加 `src/aidoc/{verify,verify_report,markers}.py`、`bench/`（`corpus/`、`run.py`、`metrics.py`、`report.py`、`results/`）、`docs/benchmarks/`、`tests/fixtures/{docling_recorded,markitdown_recorded}/`；§3 加 `VerifyReport`；§8 API 加 `POST /verify` 三形狀與錯誤碼；§2 新增 A24（`verify` 純函式、不碰 store、不寫檔）、A25（benchmark 不屬於套件、不進 wheel、GPU 部分不在 CI 跑）。
 - README：「Tests」節後加「Verify」與「Benchmark」兩節；License 節加 benchmark 語料授權說明（OFL 字型、Gutenberg、OGDL、CC BY、美國政府著作）。
+
+## 10. 驗收紀錄（2026-10-12／13，RTX 5070 Ti、驅動 591.86；docling 2.130.0、mineru 4.0.7、markitdown 0.1.8）
+
+實作偏差逐條見計畫 `docs/superpowers/plans/2026-10-05-verify-and-benchmark.md` 的「Implementation notes / deviations」。
+
+| # | 結果 | 數字 |
+|---|---|---|
+| 1 | 通過（重用的檢查完全一致），另有新發現 | 兩本真書既有輸出：`verify` 的 `reasons` 皆為空、沒有 `broken_text_layer`／`garbage`／頁碼理由，與 sidecar 一致；但 `page_dropped` 標出骨科書 13 頁、Head First 51 頁（sidecar 都是 `ok`）。逐頁看過：MinerU 漏了整頁表格與章首頁，Docling 把整頁文字輸出成圖片。這是轉換流程本身漏掉的靜默缺頁，已把 `page_dropped` 收進轉換的逐頁品質模型並逐頁修復（`PAGE_CHECK_VERSION` 2，Library 重新評級一次）。修正後重轉：骨科書 13 頁中修好 10 頁、3 頁仍標 `warn`（781 s）；Head First 改由 MinerU 轉（Docling 被標的頁超過 20 %），15 頁中修好 13 頁（3268 s） |
+| 2 | 通過 | 骨科書 1192 頁 MinerU 輸出去掉標記（MinerU 原生 `markdown.md` 即逐頁 render 的串接）：`confidence` 0.976（1155／1184），CLI 牆鐘 21.5 s。真正的 MinerU 原生輸出（`raw-mineru`）：ortho_p300-340 `confidence` 1.00、ortho_p1-80 0.99 |
+| 3 | 通過 | 完整語料 `syn-dropped-pages`：control ok／exit 0；dropped（5／29 頁）warn、5 頁全被 `page_dropped` 標出、`--fail-on warn` exit 1；shifted low（`page_map_invalid`＋`misaligned`）exit 1；swapped low（`page_map_invalid`）exit 1。小樣本刪 1／3 頁 → 超過 20 % → low（與任何被標頁相同的文件規則） |
+| 4 | 通過 | 掃描 PDF＋無標記 → exit 3、`verifiable: false`；有文字層但 Markdown 完全對不上時，摘要改說「對不上文字層」而不是「掃描檔」 |
+| 5 | 通過 | JSON 鍵與 sidecar 相容（`doc_flags()` 直接吃）；HTML 無 `<script>`、無外部 URL；人讀摘要 ≤ 12 行 |
+| 6 | 通過 | `POST /api/verify` 三種 body、`verify_document`／`verify_markdown` 測試全綠；1192 頁級報告裁切到預算內 |
+| 7 | 通過（兩處偏差） | Tier A 全量重生 100 s；小樣本 GT 逐位元組一致；MANIFEST 9 筆皆有授權 URL 與 sha256；repo 無字型檔。偏差：小樣本 2.37 MB（目標 2 MB）、Tier B 沒有網路公有領域繁中掃描書 |
+| 8 | 已跑、**未發表** | 見下方；README 沒有放結果表 |
+| 9 | **未通過** | Spearman ρ 0.48、頁級 recall 0.16（precision 1.00），門檻 0.6／0.9 → 依 §3.1 原則 5 不發表 |
+| 10 | 通過 | 見計畫偏差節的回歸紀錄 |
+
+### 10.1 為什麼校準沒過（這正是閘門要擋的）
+
+基準跑（修正前，A＋B × 5 個設定，142 列 Tier A L1）：ρ = 0.48、recall = 0.16、precision = 1.00（`verify` 標出的頁全是真的壞頁，但大多數壞頁沒標出）。漏掉的壞頁（共 582 頁）來源：
+
+- 掃描樣本 346 頁：MarkItDown 對掃描檔輸出空白（文件層已判 `low`，但頁層沒有逐頁標記），以及 OCR 認錯字的頁（NED < 0.5）——掃描檔沒有文字層，`verify` 依設計看不到 OCR 內容錯誤（§2.7）。
+- MinerU 的 1200 頁書 143 頁：跨頁長段落被整段歸到其中一頁，半頁內容落在鄰頁（NED < 0.5，但探針抽查仍判對齊）。
+- 其餘：Docling 對英文合成書的頁歸屬錯位（文件層 `page_map_misaligned` → low，但頁層只標出空頁）。
+
+診斷變體（只供參考，閘門仍以計畫定義為準）：把 `low` 文件的每一頁都算成已標出 → recall 0.55；只用 spec §3.4 的 GT 缺陷頁 → recall 0.57；去掉掃描樣本 → ρ 0.50、recall 0.32。沒有一種達標，所以不是定義問題。修正後（`auto`＋小樣本 `vlm`，40 列）：ρ 0.67、recall 0.25。
+
+後續（未做）：頁層的「整份 low → 每頁標記」呈現、掃描檔的 OCR 信心訊號、跨頁段落的頁歸屬檢查。
+
+### 10.2 基準跑的重點數字（不發表，僅供內部判斷；`bench/results/2026-10-12-ulove-arrangement/`，不進版控）
+
+Tier A 平均 NED（括號內為最差樣本）：
+
+| 類別 | auto | docling | mineru | markitdown |
+|---|---|---|---|---|
+| 繁中數位 ×5 | 1.00 | 1.00 | 0.83 (0.75) | 0.98 |
+| 英文數位 ×3 | 0.94 (0.90) | 0.51 (0.44) | 0.94 | 0.98 |
+| 繁中掃描 ×5 | 0.68 (0.39) | 0.96 (0.93) | 0.68 (0.39) | 0.00 |
+| 壞字型 10 % ×2 | 0.98 | 0.65 | 0.86 | 0.98 |
+| 壞字型只在頁尾 ×1 | 0.49 → 修正後 0.94 | 0.49 | 0.94 | 0.98 |
+| 表格 ×4（TEDS） | 0.74 | 0.74 | 0.89 | 0.26 |
+| 公式 ×2（公式 NED） | 0.00 | 0.00 | 0.84 | 0.00 |
+| 1200 頁書 | 1.00（80.8 s） | — | 0.77（282.6 s） | — |
+
+這張表指出的路由問題（後續）：繁中掃描 `auto` 走 MinerU（0.68）而 Docling＋RapidOCR 是 0.96；公式文件 `auto` 走 Docling（公式 NED 0）而 MinerU 是 0.84；表格 MinerU 較好。雙欄合成樣本的繪製方框被 probe 當成表格格線（`missing_table` 誤判，三個引擎都試過）。
+
+修正後（`2026-10-12-ulove-arrangement-pagedrop/`）：`auto` 與基準相比只有三處改變，全是 `page_dropped` 修復：壞字型頁尾樣本 0.49 → 0.94（改走 MinerU）、arXiv RL-ARC 修好 5 頁、兩份 NIST 各修好 1 頁；其他樣本 NED 不變。
+
+VLM 欄（本機 Ollama `gemma4:12b`，`max_output_tokens` 4096，只跑小樣本）：幾乎每頁都 `truncated`，NED 多為 0、每頁約 66 s——這個模型在這個輸出上限下不可用，數字不代表 VLM 引擎本身。
