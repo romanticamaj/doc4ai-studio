@@ -84,6 +84,10 @@ def test_tables_and_formulas_have_ground_truth(corpus):
 def test_every_gt_has_a_license_line():
     for gt_path in (BENCH / "corpus").rglob("gt.json"):
         gt = json.loads(gt_path.read_text(encoding="utf-8"))
+        if gt["tier"] == "B":                                      # fetched documents: the manifest licence
+            from bench.corpus.fetch import LICENSES
+            assert gt["license"] in LICENSES and gt["license_url"].startswith("https://"), gt_path
+            continue
         assert gt["license"] and "Public domain" in gt["license"] and "OFL" in gt["license"], gt_path
 
 

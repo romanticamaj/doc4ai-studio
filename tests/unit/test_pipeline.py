@@ -284,3 +284,19 @@ def test_missing_images_are_counted_in_the_sidecar(env):
     assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
     q = _sidecar(env, "text")["quality"]
     assert q["metrics"]["images_missing"] == {"2": 1}
+
+
+def test_benchmark_no_repair_env_keeps_broken_pages(env, fixtures, monkeypatch):
+    """AIDOC_BENCH_NO_REPAIR=1 (bench single-engine / auto-norepair configs, spec 2026-10-05 verify §3.5): the
+    flagged page is not repaired, the log says so, and the result is honest about it (warn, 1 unrepaired)."""
+    _b10(fixtures, env["root"])
+    write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "garbled"}], garbled_pages=[1])
+    monkeypatch.setenv("AIDOC_BENCH_NO_REPAIR", "1")
+    tid = env["make_path"](env["root"] / "b10.pdf")
+    lines = []
+    st = run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"],
+                  emit=lambda k, p: lines.append(p.get("line", "")) if k == "task.log" else None)
+    assert st == TaskStatus.done
+    q = _sidecar(env, "b10")["quality"]
+    assert q["level"] == "warn" and q["pages_unrepaired"] == 1 and not any(p.get("repaired_by") for p in q["pages"])
+    assert any("repair disabled (benchmark)" in ln for ln in lines)
