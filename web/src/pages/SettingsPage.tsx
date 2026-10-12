@@ -18,6 +18,7 @@ import { ApiError, getToken, setToken } from "@/api/client";
 import type { EngineName, Settings } from "@/api/types";
 import { useEventStream } from "@/events/EventStreamProvider";
 import { EngineCard } from "@/features/settings/EngineCard";
+import { VlmSettingsCard } from "@/features/settings/VlmSettingsCard";
 import { NumberField } from "@/features/settings/NumberField";
 import { ListField } from "@/features/settings/ListField";
 import { diffSettings } from "@/features/settings/diffSettings";
@@ -25,7 +26,7 @@ import { describeError } from "@/lib/errors";
 import { formatBytes, gb } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const ENGINES: EngineName[] = ["markitdown", "docling", "mineru"];
+const ENGINES: EngineName[] = ["markitdown", "docling", "mineru", "vlm"];
 const MB = 1024 * 1024;
 
 export default function SettingsPage() {
@@ -49,7 +50,7 @@ export default function SettingsPage() {
           {sys.isError && !unauthorized ? (
             <ErrorState title="無法讀取系統狀態" error={sys.error} onRetry={() => sys.refetch()} />
           ) : (
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {ENGINES.map((e) =>
                 sys.isPending ? <Skeleton key={e} className="h-44 rounded-[10px]" /> : <EngineCard key={e} name={e} info={sys.data?.engines[e]} />,
               )}
@@ -143,6 +144,15 @@ export default function SettingsPage() {
             <SettingsForm original={settings.data} />
           ) : (
             <Skeleton className="h-72 rounded-[10px]" />
+          )}
+        </section>
+
+        <section aria-labelledby="vlm-h" id="vlm">
+          <SectionTitle id="vlm-h" title="VLM OCR" description="視覺語言模型 OCR：只在其他引擎都失手時才用。遠端端點需要明確同意，金鑰建議放環境變數。" />
+          {settings.data?.vlm ? (
+            <VlmSettingsCard vlm={settings.data.vlm} info={sys.data?.engines.vlm} />
+          ) : (
+            !settings.isError && <Skeleton className="h-48 rounded-[10px]" />
           )}
         </section>
 

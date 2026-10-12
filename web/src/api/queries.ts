@@ -14,6 +14,7 @@ import type {
   SettingsPatch,
   SystemInfo,
   Task,
+  VlmUsage,
 } from "./types";
 
 export type DocFilters = { q?: string; engine?: string; status?: string; flag?: string };
@@ -26,6 +27,7 @@ export const qk = {
   markdown: (id: string) => ["documents", "markdown", id] as const,
   system: () => ["system"] as const,
   settings: () => ["settings"] as const,
+  vlmUsage: (days: number) => ["system", "vlm-usage", days] as const,
 };
 
 function qs(params: Record<string, string | undefined>): string {
@@ -164,6 +166,22 @@ export function useSetupEngine() {
   return useMutation({
     mutationFn: (engine: EngineName | "all") =>
       api.post<{ setup_id: string; engine: string }>(`/api/system/setup/${engine}`),
+  });
+}
+
+/** VLM connection test (POST /api/system/vlm/check): progress arrives as setup.log / setup.done with engine "vlm". */
+export function useVlmCheck() {
+  return useMutation({
+    mutationFn: () => api.post<{ setup_id: string; engine: string }>("/api/system/vlm/check"),
+  });
+}
+
+export function useVlmUsage(days = 30, enabled = true) {
+  return useQuery({
+    queryKey: qk.vlmUsage(days),
+    queryFn: ({ signal }) => api.get<VlmUsage>(`/api/system/vlm/usage?days=${days}`, signal),
+    enabled,
+    refetchInterval: 60_000,
   });
 }
 

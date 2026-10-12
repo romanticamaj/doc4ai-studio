@@ -14,7 +14,7 @@ export type TaskStatus =
 export type SegmentStatus = "queued" | "converting" | "done" | "failed";
 export type DocStatus = "ok" | "warn" | "low" | "orphaned";
 export type DocFlag = "page_map_incomplete" | "page_quality" | "unassessed";
-export type EngineName = "markitdown" | "docling" | "mineru";
+export type EngineName = "markitdown" | "docling" | "mineru" | "vlm";
 export type Lang = "cht" | "en";
 export type ErrorKind = "transient" | "engine" | "input";
 
@@ -192,6 +192,61 @@ export interface EngineInfo {
   version?: string;
   torch?: string;
   device?: string;
+  // engines.vlm only (VLM spec §10.1)
+  backend?: VlmBackend;
+  remote?: boolean;
+  remote_enabled?: boolean;
+  local_endpoint?: boolean | null;
+  endpoint_host?: string | null;
+  model?: string | null;
+  key_set?: boolean | null;
+  budget?: { used_today: number; requests_today: number; limit: number } | null;
+  roles?: { fallback: boolean; repair: boolean };
+  local_supported?: boolean;
+}
+
+export type VlmBackend = "none" | "local" | "openai";
+
+export interface VlmSettings {
+  backend: VlmBackend;
+  use_as_fallback: boolean;
+  use_for_repair: boolean;
+  dpi: number;
+  max_image_px: number;
+  request_timeout_s: number;
+  max_output_tokens: number;
+  remote_enabled: boolean;
+  base_url: string;
+  model: string;
+  api_key_env: string;
+  /** "***" when a key is stored in aidoc.toml; never the key itself */
+  api_key: string;
+  allow_no_key: boolean;
+  max_concurrent: number;
+  remote_max_pages_per_doc: number;
+  remote_daily_page_budget: number;
+  local_preset: "paddleocr-vl-1.6" | "qwen2.5-vl-3b" | "custom";
+  local_dpi: number;
+  local_max_image_px: number;
+  local_ctx_size: number;
+  local_gguf: string;
+  local_mmproj: string;
+  local_prompt_style: "" | "paddle_tasks" | "generic";
+}
+
+export interface VlmUsageRow {
+  day: string;
+  backend: string;
+  endpoint_host: string;
+  pages: number;
+  requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface VlmUsage {
+  days: VlmUsageRow[];
+  today: { day: string; pages: number; requests: number; prompt_tokens: number; completion_tokens: number };
 }
 
 export interface QueueInfo {
@@ -240,6 +295,8 @@ export interface Settings {
     call_log_max_rows: number;
   };
   preview?: { enabled: boolean; soffice_path: string; timeout_s: number; max_mb: number };
+  /** absent on servers older than the VLM engine */
+  vlm?: VlmSettings;
 }
 
 export type SettingsPatch = { [S in keyof Settings]?: Partial<Settings[S]> };
@@ -272,6 +329,8 @@ export interface JobCreateBody {
   force?: boolean;
   retry_low?: boolean;
   allow_online_audio?: boolean;
+  /** false: this job never sends pages to the remote VLM (--no-vlm-remote) */
+  vlm_remote?: boolean;
 }
 
 /** Every error body: {error: "<code>", ...extra, workspace}. */
