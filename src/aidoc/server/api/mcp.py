@@ -18,6 +18,9 @@ from aidoc.server.auth import ApiError
 router = APIRouter()
 EXPIRING_SOON_S = 14 * 86400
 UNKNOWN_TOOL = "(unknown)"
+# the docling-serve compatible API's endpoints as they appear in mcp_calls.tool_name (method "compat/docling")
+COMPAT_TOOLS = frozenset({"convert_file", "convert_source", "convert_file_async", "convert_source_async", "status_poll",
+                          "result", "asset", "capabilities"})
 DAY = 86400
 
 
@@ -281,7 +284,8 @@ def stats(store, since: float, bucket_s: float, buckets: int) -> dict:
     for r in rows:
         err = r["status"] != "ok"
         if r.get("tool_name"):
-            name = r["tool_name"] if r["tool_name"] in TOOL_SCOPES else UNKNOWN_TOOL     # junk names share one row
+            known = COMPAT_TOOLS if r.get("method") == "compat/docling" else TOOL_SCOPES      # compat: its endpoints
+            name = r["tool_name"] if r["tool_name"] in known else UNKNOWN_TOOL     # junk names share one row
             t = per_tool.setdefault(name, {"calls": 0, "errors": 0, "durations": [], "tokens": []})
             t["calls"] += 1
             t["errors"] += int(err)
