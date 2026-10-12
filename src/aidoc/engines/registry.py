@@ -1,4 +1,4 @@
-"""Engine registry. AIDOC_FAKE_ENGINES=1 swaps in the fake engine for all three names (index A9)."""
+"""Engine registry. AIDOC_FAKE_ENGINES=1 swaps in the fake engine for every name (index A9)."""
 from __future__ import annotations
 
 import os
@@ -8,10 +8,11 @@ from aidoc.engines.base import RunnerEngine
 from aidoc.engines.docling import DoclingEngine
 from aidoc.engines.markitdown import MarkitdownEngine
 from aidoc.engines.mineru import MineruEngine
+from aidoc.engines.vlm import VlmEngine
 from aidoc.models import ENGINE_NAMES
 
 _CLASSES: dict[str, type[RunnerEngine]] = {"markitdown": MarkitdownEngine, "docling": DoclingEngine,
-                                           "mineru": MineruEngine}
+                                           "mineru": MineruEngine, "vlm": VlmEngine}
 
 
 def get_engines(config: AidocConfig) -> dict[str, RunnerEngine]:

@@ -8,6 +8,9 @@ from aidoc import paths
 from aidoc.engines.base import RunnerEngine
 from aidoc.models import ConvertOptions, ProbeResult
 
+_VLM_DELEGATED = frozenset({"is_remote", "remote_allowed", "timeout_factor", "endpoint_host", "local_endpoint",
+                            "model_name", "local_supported", "key_available"})
+
 
 class FakeEngine(RunnerEngine):
     def __init__(self, name: str, config=None):
@@ -21,7 +24,17 @@ class FakeEngine(RunnerEngine):
         return paths.runner_script("fake")
 
     def available(self) -> bool:
-        return True
+        # the fake vlm follows the configuration like the real one (backend "none" = not there: zero impact)
+        return self._real().available() if self.name == "vlm" else True
+
+    def label(self) -> str:
+        return self._real().label()
+
+    def __getattr__(self, attr):
+        # VLM-specific helpers (is_remote, remote_allowed, timeout_factor, endpoint_host, ...) come from the real one
+        if self.__dict__.get("name") == "vlm" and attr in _VLM_DELEGATED:
+            return getattr(self._real(), attr)
+        raise AttributeError(attr)
 
     def _real(self) -> RunnerEngine:
         from aidoc.engines.registry import _CLASSES

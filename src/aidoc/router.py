@@ -1,6 +1,8 @@
 """Engine routing (spec §4, §13.2, §13.3)."""
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from aidoc.models import ConvertOptions, ProbeResult, RouteDecision
 from aidoc.probe import MARKITDOWN_EXTS
 
@@ -13,7 +15,7 @@ def engine_supports(engine: str, probe: ProbeResult) -> bool:
         return probe.ext in MARKITDOWN_EXTS or probe.ext == ".pdf"
     if engine == "docling":
         return probe.kind in ("pdf", "image") or probe.ext in DOCLING_EXTS
-    if engine == "mineru":
+    if engine in ("mineru", "vlm"):
         return probe.kind in ("pdf", "image")
     return False
 
@@ -36,7 +38,11 @@ def _rule(probe: ProbeResult, opts: ConvertOptions) -> tuple[list[str], str]:
     return ["docling", "mineru", "markitdown"], "pdf_default"
 
 
-def route(probe: ProbeResult, opts: ConvertOptions, available: dict[str, bool]) -> RouteDecision:
+def route(probe: ProbeResult, opts: ConvertOptions, available: dict[str, bool], *,
+          vlm_gate: Callable[[ProbeResult], str | None] | None = None) -> RouteDecision:
+    """`vlm` (spec 2026-10-05 VLM §5, index A21) is the last engine of every pdf/image route when available;
+    `vlm_gate(probe)` may veto it with a reason ("page_cap", "budget", "disabled_remote") that goes to `missing`
+    as `vlm(<reason>)`. An unavailable vlm is not listed in `missing` (backend "none" changes nothing)."""
     if probe.kind == "audio" and not opts.allow_online_audio:
         return RouteDecision(engines=[], reason="audio_disabled")
     if opts.engine:
@@ -50,6 +56,12 @@ def route(probe: ProbeResult, opts: ConvertOptions, available: dict[str, bool]) 
         return RouteDecision(engines=[], reason=reason)
     ok = [e for e in engines if available.get(e, False)]
     missing = [e for e in engines if not available.get(e, False)]
+    if available.get("vlm") and engine_supports("vlm", probe):
+        veto = vlm_gate(probe) if vlm_gate is not None else None
+        if veto:
+            missing.append(f"vlm({veto})")
+        else:
+            ok.append("vlm")
     if not ok:
         return RouteDecision(engines=[], reason="no_engine_available", missing=missing)
     return RouteDecision(engines=ok, reason=reason, missing=missing)
