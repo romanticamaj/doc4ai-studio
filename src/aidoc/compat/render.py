@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from aidoc.compat.options import CompatOptions
 from aidoc.mcp import docs
 from aidoc.mcp.errors import ToolFailure
-from aidoc.pagemap import split_pages
+from aidoc.pagemap import _chunks
 from aidoc.quality import strip_markup
 
 MIB = 1024 * 1024
@@ -112,6 +112,19 @@ def failure_info(message: str, task_row: dict | None = None) -> PublicFailureInf
 
 # ---- Markdown
 
+def _asset_path(assets_dir: Path | None, name: str) -> Path | None:
+    """`assets_dir/name` when `name` is a plain relative path that stays inside assets_dir, else None."""
+    from aidoc.server.app import safe_relative
+    rel = safe_relative(name)
+    if rel is None:
+        return None
+    if assets_dir is None:
+        return Path(rel)
+    base = Path(assets_dir).resolve()
+    target = (base / rel).resolve()
+    return target if target.is_relative_to(base) else None
+
+
 def _images(md: str, opts: CompatOptions, *, doc_id: str, asset_base: str | None, assets_dir: Path | None,
             cfg) -> tuple[str, list[str]]:
     refs = docs.asset_refs(md)
@@ -126,10 +139,16 @@ def _images(md: str, opts: CompatOptions, *, doc_id: str, asset_base: str | None
         if a < last:                                    # overlapping constructs (an <img> inside alt text): skip
             continue
         out.append(md[last:a])
+        path = _asset_path(assets_dir, name)
+        if path is None and opts.image_mode != "placeholder":
+            # the name comes from document text: never follow ../, absolute, drive or UNC names (review finding 1)
+            warnings.append(f"image {name[:80]!r} is not a file of this document's assets; left as a placeholder")
+            out.append(IMAGE_PLACEHOLDER)
+            last = b
+            continue
         if opts.image_mode == "referenced" and asset_base:
             out.append(md[a:ua] + f"{asset_base}/v1/doc4ai/documents/{doc_id}/assets/{name}" + md[ub:b])
-        elif opts.image_mode == "embedded" and assets_dir is not None and not over:
-            path = Path(assets_dir) / name
+        elif opts.image_mode == "embedded" and path is not None and not over:
             try:
                 data = path.read_bytes()
             except OSError:
@@ -157,15 +176,18 @@ def assemble_markdown(md: str, pages: int | None, opts: CompatOptions, *, doc_id
     md, warnings = _images(md, opts, doc_id=doc_id, asset_base=asset_base, assets_dir=assets_dir, cfg=cfg)
     if not opts.placeholder:
         return md, warnings
-    pre, sections = split_pages(md)
-    if not pages or not sections:                       # page-less (docx ...): the whole text, no placeholder
+    pre, chunks = _chunks(md)
+    if not pages or not chunks:                         # page-less (docx ...): the whole text, no placeholder
         return md, warnings
-    n = max(pages, max(sections))                       # a marker past documents.pages still gets its segment
-    units = []
-    for p in range(1, n + 1):
-        text = sections.get(p, "")                      # a page without a marker: an empty segment keeps the count
-        text = text.removeprefix("\n")
-        units.append(f"<!-- page: {p} -->\n{text}" if opts.keep_page_markers else text)
+    # documents.pages is N (spec §4.4); a marker outside 1..N (literal text in the document) is not a page: its text
+    # stays with the page it follows (review finding 2: never size the output from the text)
+    texts = [""] * pages
+    current = 1
+    for page, a, b in chunks:
+        current = page if 1 <= page <= pages else current
+        body = md[a:b].removeprefix("\n") if not texts[current - 1] else md[a:b]
+        texts[current - 1] += body
+    units = [f"<!-- page: {p} -->\n{t}" if opts.keep_page_markers else t for p, t in enumerate(texts, start=1)]
     if pre.strip():
         units[0] = pre + units[0]                       # the text before the first marker belongs to page 1
     return opts.placeholder.join(units), warnings

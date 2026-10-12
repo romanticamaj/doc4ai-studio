@@ -146,3 +146,35 @@ def test_output_missing_is_a_failure_response(make_doc, ctx):
     shutil.rmtree(Path(doc["output_dir"]))
     r = build_response(ctx, _req(), doc, None, opts(), cached=True, attached=False, started=0.0)
     assert r.status == "failure" and r.errors[0].error_message.startswith("output_missing")
+
+
+def test_embedded_mode_never_reads_outside_the_assets_dir(tmp_path):
+    """Review finding 1: image names come from document text; traversal / absolute / UNC names must not be read."""
+    out = tmp_path / "out" / "doc"
+    assets = out / "assets"
+    assets.mkdir(parents=True)
+    (tmp_path / "secret.token").write_text("TOPSECRET", encoding="utf-8")
+    (out / "inside.png").write_bytes(TINY_PNG)                     # in the output dir but outside assets/
+
+    class C:
+        pass
+    cfg = C()
+    cfg.compat = C()
+    cfg.compat.embed_images_max_mb = 20
+    names = ["../../secret.token", "../inside.png", f"{tmp_path.as_posix()}/secret.token", "//host/share/x.png",
+             "a/../../../secret.token"]
+    md = page_md(1, body="".join(f"![x](assets/{n})\n" for n in names))
+    text, warns = asm(md, 1, opts(image_mode="embedded"), doc_id="d", assets_dir=assets, cfg=cfg)
+    import base64
+    assert "data:" not in text and base64.b64encode(b"TOPSECRET").decode() not in text
+    assert text.count("<!-- image -->") == len(names) and len(warns) == len(names)
+
+
+def test_markers_past_the_page_count_do_not_create_segments():
+    """Review finding 2: a literal <!-- page: 2000000 --> in the text must not size the output."""
+    md = page_md(1) + "<!-- page: 2000000 -->\nstray text\n"
+    out, _ = asm(md, 1, opts(placeholder="\f"))
+    assert out.count("\f") == 0 and "stray text" in out
+    md = page_md(1) + page_md(2) + "<!-- page: 9 -->\nlate\n"
+    out, _ = asm(md, 3, opts(placeholder="\f"))
+    assert out.count("\f") == 2 and "late" in out.split("\f")[1]          # kept with the page it follows
