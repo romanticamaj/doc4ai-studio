@@ -32,7 +32,8 @@ PAGE_GARBAGE_MAX = 0.05
 PAGE_GARBAGE_MIN_CHARS = 50
 SHIFT_HITS_MIN = 3
 # 2: page_dropped joins the per-page reasons (spec 2026-10-05 verify §2.3): existing documents are re-graded once
-PAGE_CHECK_VERSION = 2
+# 3: page_partial / page_misaligned / page_oversized, history carried over, no stamp without a PDF
+PAGE_CHECK_VERSION = 3
 DROPPED_LAYER_MIN = 120        # squashed text-layer chars a page needs before an empty section means "dropped"
 DROPPED_SECTION_MAX = 20       # non-space chars (markup stripped) below which a section counts as empty
 PARTIAL_COVERAGE_MIN = 0.5     # a section holding less of its page's content layer is page_partial; a repair of a
