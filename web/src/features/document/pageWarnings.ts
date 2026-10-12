@@ -23,6 +23,14 @@ function textFor(page: number, reason: string, repaired: boolean, vlm: string | 
         : { text: `第 ${page} 頁：亂碼比例過高`, tone: "warn" };
     case "page_map_missing":
       return { text: `第 ${page} 頁：缺少頁碼標記`, tone: "warn" };
+    case "page_dropped":
+      return repaired
+        ? { text: `第 ${page} 頁：引擎漏掉了整頁文字，${how}`, tone: "info" }
+        : { text: `第 ${page} 頁：引擎漏掉了整頁文字（PDF 這頁有文字，轉出來是空的）`, tone: "warn" };
+    case "page_conversion_failed":
+      return repaired
+        ? { text: `第 ${page} 頁：引擎轉換這頁失敗，${how}`, tone: "info" }
+        : { text: `第 ${page} 頁：引擎轉換這頁失敗，內容可能缺漏`, tone: "warn" };
     default:
       return null;
   }

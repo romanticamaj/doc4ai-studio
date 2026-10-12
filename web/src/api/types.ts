@@ -69,7 +69,8 @@ export interface PageMap {
   alignment?: PageAlignment | null;
 }
 
-/** A flagged page (spec 2026-10-01 §5.1): reasons page_map_missing | broken_text_layer | garbage. */
+/** A flagged page (spec 2026-10-01 §5.1): reasons page_map_missing | broken_text_layer | garbage |
+ *  page_conversion_failed | page_dropped (spec 2026-10-05 verify §2.3). */
 export interface PageFlag {
   page: number;
   reasons: string[];

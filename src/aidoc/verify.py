@@ -33,8 +33,8 @@ __all__ = [
 ]
 
 VERIFY_VERSION = 1
-DROPPED_LAYER_MIN = 120        # squashed text-layer chars a page needs before an empty section means "dropped"
-DROPPED_SECTION_MAX = 20       # non-space chars (markup stripped) below which a section counts as empty
+DROPPED_LAYER_MIN = quality.DROPPED_LAYER_MIN      # page_dropped thresholds live in quality (shared with conversions)
+DROPPED_SECTION_MAX = quality.DROPPED_SECTION_MAX
 INFER_MIN_CONFIDENCE = 0.5     # inferred page map below this -> verifiable = false
 TEXT_LAYER_MIN = 20            # squashed chars for a page to count as having a text layer
 IMAGE_MISSING = "<!-- image missing -->"
@@ -69,10 +69,6 @@ def _pdf_pass(pdf: Path) -> tuple[list[str], list[dict]]:
             layers.append(pagemap.squash(text))
             feats.append(page_features(doc, i, text))
     return layers, feats
-
-
-def _section_chars(section: str) -> int:
-    return sum(1 for c in quality.strip_markup(section) if not c.isspace())
 
 
 def _merge(entries: dict[int, dict], page: int, *, reason: str | None = None, advisory: str | None = None,
@@ -193,7 +189,7 @@ def verify_markdown(md: str, pdf: Path | None, *, pages: int | None = None, fmt:
     metrics["images_missing"] = md.count(IMAGE_MISSING)
     timing["assess"] = round(time.perf_counter() - t, 3)
 
-    # ---- verify's own page checks (PDF needed): page_dropped + advisories
+    # ---- advisories (PDF needed); page_dropped itself comes from quality.assess, like for our own conversions
     if page_level:
         _, secs = pagemap.split_pages(md_marked)
         missing = set((pm or {}).get("missing") or [])
@@ -202,13 +198,9 @@ def verify_markdown(md: str, pdf: Path | None, *, pages: int | None = None, fmt:
             for p in range(1, n + 1):
                 if p in missing or p in blank or p not in secs:
                     continue
-                sec = secs[p]
-                layer_chars = len(layers[p - 1])
-                sec_chars = _section_chars(sec)
-                if layer_chars >= DROPPED_LAYER_MIN and sec_chars < DROPPED_SECTION_MAX:
-                    _merge(entries, p, reason="page_dropped",
-                           metrics={"layer_chars": layer_chars, "section_chars": sec_chars})
+                if "page_dropped" in (entries.get(p) or {}).get("reasons", []):
                     continue
+                sec = secs[p]
                 f = feats[p - 1]
                 if f["ruled_grid"] and not quality.has_table(sec):
                     _merge(entries, p, advisory="table_missing_on_page")

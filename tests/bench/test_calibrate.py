@@ -29,8 +29,11 @@ def test_recovered_defect_pages_are_not_misses():
 def test_dropped_pages_fixtures_are_judged():
     res = C.judge_defect_markdowns(SMALL)             # {name: {"level", "exit_code", "flagged"}}
     gt = json.loads((SMALL / "syn-dropped-pages" / "gt.json").read_text(encoding="utf-8"))
-    assert res["dropped"]["level"] == "warn" and set(res["dropped"]["flagged"]) >= set(gt["defects"]["dropped_pages"])
-    assert res["dropped"]["exit_code"] == 0 and res["dropped"]["exit_code_fail_on_warn"] == 1
+    # 1 of 3 pages dropped (> 20 %): low like any flagged-page majority; the full corpus drops 5 of 29: warn
+    assert res["dropped"]["level"] == "low" and set(res["dropped"]["flagged"]) >= set(gt["defects"]["dropped_pages"])
+    assert res["dropped"]["exit_code"] == 1 and res["dropped"]["exit_code_fail_on_warn"] == 1
+    assert C.expected(res["_gt"])["dropped"] == ("low", 1)
+    assert C.expected({"pages": 30, "blank_pages": [15], "dropped_pages": [1, 2, 3, 4, 5]})["dropped"] == ("warn", 0)
     assert res["shifted"]["level"] == "low" and res["swapped"]["level"] == "low" and res["control"]["level"] == "ok"
     assert res["shifted"]["exit_code"] == 1 and res["swapped"]["exit_code"] == 1 and res["control"]["exit_code"] == 0
     assert C.defects_ok(res)

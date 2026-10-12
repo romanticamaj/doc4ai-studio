@@ -24,22 +24,34 @@ def test_clean_document_is_ok_and_json_matches_sidecar_keys():
     assert j["pdf"]["pages"] == 8 and j["pdf"]["blank_pages"] == [4] and j["pdf"]["text_layer_pages"] == 7
     assert j["page_map"]["alignment"]["decidable"] >= 5
     assert {"probe", "layers", "assess", "total"} <= set(j["timing_s"])
+    from aidoc.quality import PAGE_CHECK_VERSION
     from aidoc.reassess import doc_flags  # Library can consume summary + page_map unchanged
-    assert doc_flags({"quality": {**j["summary"], "page_map": j["page_map"], "page_check": 1},
+    assert doc_flags({"quality": {**j["summary"], "page_map": j["page_map"], "page_check": PAGE_CHECK_VERSION},
                       "source_path": "x.pdf"}) == []
     json.dumps(j)
 
 
-def test_dropped_pages_are_page_level_warn_not_low():
+def test_dropped_page_is_page_level_warn_not_low():
     md = _own_output(FIX / "paged_furniture.pdf")
     _, secs = split_pages(md)
-    md = md.replace(secs[3], "\n\n").replace(secs[6], "\n\n")        # pages 3 and 6 silently emptied, markers kept
+    md = md.replace(secs[3], "\n\n")                                  # page 3 silently emptied, marker kept
     r = verify_markdown(md, FIX / "paged_furniture.pdf")
     assert r.level == "warn" and r.summary["reasons"] == []
-    assert [p["page"] for p in r.pages if "page_dropped" in p["reasons"]] == [3, 6]
-    assert r.summary["pages_unrepaired"] == 2 and r.summary["pages_flagged"] == 2
+    assert [p["page"] for p in r.pages if "page_dropped" in p["reasons"]] == [3]
+    assert r.summary["pages_unrepaired"] == 1 and r.summary["pages_flagged"] == 1
     e = next(p for p in r.pages if p["page"] == 3)
     assert e["metrics"]["section_chars"] == 0 and e["metrics"]["layer_chars"] >= 120
+
+
+def test_many_dropped_pages_make_the_document_low_like_any_flagged_page():
+    """Like every flagged page (spec 2026-10-01 §5.2), dropped pages over 20 % of the content pages mean the output is
+    unusable: 2 of 7 here."""
+    md = _own_output(FIX / "paged_furniture.pdf")
+    _, secs = split_pages(md)
+    md = md.replace(secs[3], "\n\n").replace(secs[6], "\n\n")
+    r = verify_markdown(md, FIX / "paged_furniture.pdf")
+    assert r.level == "low" and r.summary["reasons"] == ["pages_flagged"]
+    assert [p["page"] for p in r.pages if "page_dropped" in p["reasons"]] == [3, 6]
 
 
 def test_blank_page_is_never_dropped():

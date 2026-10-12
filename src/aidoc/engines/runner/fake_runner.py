@@ -89,7 +89,8 @@ def _vlm_block(req, n, refused=(), truncated=()):
             "prompt_version": eo.get("prompt_version", 1)}
 
 
-def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, failing=False, vlm_flag=None):
+def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, failing=False, vlm_flag=None,
+              silent=False):
     out = Path(req["out_dir"])
     (out / "images").mkdir(parents=True, exist_ok=True)
     pages = req.get("pages")
@@ -109,6 +110,13 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
         for i in range(1, n + 1):
             if (repair_src and sticky) or (not repair_src and first - 1 + i in set(sc.get("failed_pages", []))):
                 failed[i] = "Page failed to parse."
+    # silent drop: scenario dropped_pages come out empty and are NOT reported (unlike failed_pages)
+    dropped = set()
+    if silent and (sticky or not (_repairing(req) or os.path.basename(req["src"]) == "pages.pdf")):
+        first = pages[0] if pages else 1
+        repair_src = os.path.basename(req["src"]) == "pages.pdf"
+        dropped = {i for i in range(1, n + 1) if (repair_src and sticky)
+                   or (not repair_src and first - 1 + i in set(sc.get("dropped_pages", [])))}
     is_vlm = (req.get("engine_opts") or {}).get("fake_engine") == "vlm"
     if vlm_flag:                                        # fake vlm refuse / length: every page (spec §4.4)
         failed = {i: vlm_flag for i in range(1, n + 1)}
@@ -117,7 +125,7 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
     for i in range(1, n + 1):
         if with_pages:
             parts.append(f"<!-- page: {i + shift} -->")
-        if i in failed and vlm_flag != "truncated":     # the engine lost this page: an empty section
+        if (i in failed and vlm_flag != "truncated") or i in dropped:   # the engine lost this page: empty section
             continue
         excerpt = ""
         if texts is not None and len(texts) == n:
@@ -173,6 +181,10 @@ def handle(req):
         return _write_ok(req, sc, vlm_flag="refused" if b == "refuse" else "truncated")
     if b == "partial":                                  # PARTIAL_SUCCESS: scenario failed_pages come out empty
         return _write_ok(req, sc, failing=True)
+    if b == "silent_drop":                              # scenario dropped_pages come out empty, unreported
+        return _write_ok(req, sc, silent=True)
+    if b == "silent_drop_sticky":                       # ... and the repair runs drop them too
+        return _write_ok(req, sc, silent=True, sticky=True)
     if b == "partial_sticky":                           # ... and the repair runs fail those pages too
         return _write_ok(req, sc, failing=True, sticky=True)
     if b == "slow_ok":

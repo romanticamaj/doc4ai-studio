@@ -300,3 +300,36 @@ def test_benchmark_no_repair_env_keeps_broken_pages(env, fixtures, monkeypatch):
     q = _sidecar(env, "b10")["quality"]
     assert q["level"] == "warn" and q["pages_unrepaired"] == 1 and not any(p.get("repaired_by") for p in q["pages"])
     assert any("repair disabled (benchmark)" in ln for ln in lines)
+
+
+def test_silently_dropped_page_is_detected_and_repaired(env):
+    """An engine that returns an empty section for a page with text, without reporting it (Docling did this on the
+    footer-broken-font benchmark sample): the page is flagged page_dropped and repaired per page."""
+    write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "silent_drop"}], dropped_pages=[7])
+    tid = env["make"]("big.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    q = _sidecar(env, "big")["quality"]
+    assert q["level"] == "ok" and q["pages_flagged"] == 1
+    assert q["pages"][0]["page"] == 7 and q["pages"][0]["reasons"] == ["page_dropped"]
+    assert q["pages"][0]["repaired_by"].startswith("docling:")
+    md = (env["root"] / "out" / "big" / "big.md").read_text(encoding="utf-8")
+    assert "fake engine content" in md.split("<!-- page: 7 -->", 1)[1].split("<!-- page: 8 -->", 1)[0]
+
+
+def test_unrepairable_dropped_page_is_warn_never_silent(env):
+    write_scenario(env["sc"], default="silent_drop_sticky", dropped_pages=[7])
+    tid = env["make"]("big.pdf")
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.done
+    q = _sidecar(env, "big")["quality"]
+    assert q["level"] == "warn" and q["pages_unrepaired"] == 1
+    e = next(p for p in q["pages"] if p["page"] == 7)
+    assert e["reasons"] == ["page_dropped"] and not e.get("repaired_by")
+    assert e["metrics"]["section_chars"] == 0 and e["metrics"]["layer_chars"] >= 120
+
+
+def test_reported_failed_page_is_not_also_dropped(env):
+    write_scenario(env["sc"], default="partial_sticky", failed_pages=[3])
+    tid = env["make"]("big.pdf")
+    run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"])
+    q = _sidecar(env, "big")["quality"]
+    assert [p["reasons"] for p in q["pages"] if p["page"] == 3] == [["page_conversion_failed"]]

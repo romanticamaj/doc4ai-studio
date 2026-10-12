@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 
+from aidoc.quality import PAGE_CHECK_VERSION
 from aidoc.reassess import doc_flags, reassess_all
 from aidoc.store import Store
 
@@ -78,5 +79,6 @@ def test_reassess_never_overwrites_a_newer_conversion(tmp_root, fixtures, monkey
 
 
 def test_invalid_page_map_is_flagged_like_an_incomplete_one():
-    doc = {"source_path": "a.pdf", "quality": {"reasons": ["page_map_invalid"], "page_check": 1, "pages_unrepaired": 0}}
+    doc = {"source_path": "a.pdf", "quality": {"reasons": ["page_map_invalid"], "page_check": PAGE_CHECK_VERSION,
+                                               "pages_unrepaired": 0}}
     assert doc_flags(doc) == ["page_map_incomplete"]

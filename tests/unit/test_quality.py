@@ -1,5 +1,5 @@
 from aidoc.models import ProbeResult
-from aidoc.quality import assess, has_table
+from aidoc.quality import PAGE_CHECK_VERSION, assess, has_table
 
 
 def pdf(pages=2, **kw):
@@ -143,7 +143,7 @@ def test_too_many_flagged_pages_is_low_but_not_in_quick_check():
 
 def test_non_pdf_keeps_legacy_rules():
     q = assess(GOOD_EN, ProbeResult(kind="office", ext=".docx", size=1), None)
-    assert q.level == "ok" and q.page_map is None and q.page_check == 1
+    assert q.level == "ok" and q.page_map is None and q.page_check == PAGE_CHECK_VERSION
 
 
 def test_last_resort_judges_pages_flagged_on_pages_still_broken():
@@ -281,3 +281,42 @@ def test_advisory_only_entries_are_not_problem_pages_anywhere():
                                   "metrics": {"vlm_overlap": 0.05}},
                                  {"page": 2, "reasons": ["garbage"]}]}}
     assert [w.page for w in page_warnings(row)] == [2] and flagged_count(row) == 1
+
+
+def _own_md(pdf):
+    import pymupdf
+    with pymupdf.open(pdf) as d:
+        return "".join(f"<!-- page: {i} -->\n\n{p.get_text().strip()}\n\n" for i, p in enumerate(d, 1))
+
+
+def test_assess_flags_a_silently_dropped_page_as_warn(fixtures):
+    """A page whose PDF text layer has text but whose section is empty (spec 2026-10-05 verify §2.3 page_dropped,
+    now part of the conversion's own check): page-level warn, never a document low; blank pages never count."""
+    from aidoc.pagemap import split_pages
+    from aidoc.probe import probe_file
+    pdf = fixtures / "paged_furniture.pdf"
+    md = _own_md(pdf)
+    _, secs = split_pages(md)
+    md = md.replace(secs[3], "\n\n")
+    probe = probe_file(pdf)
+    q = assess(md, probe, probe.pages, pdf=pdf, page_map_method="fake")
+    assert q.level == "warn" and q.reasons == [] and q.pages_unrepaired == 1
+    e = q.pages[0]
+    assert e["page"] == 3 and e["reasons"] == ["page_dropped"] and e["metrics"]["section_chars"] == 0
+    assert all(p["page"] != 4 for p in q.pages)                       # page 4 is blank in the PDF
+    clean = assess(_own_md(pdf), probe, probe.pages, pdf=pdf, page_map_method="fake")
+    assert clean.level == "ok" and clean.pages == []
+    no_pdf = assess(md, probe, probe.pages, page_map_method="fake")    # no PDF -> nothing to compare with
+    assert all("page_dropped" not in p["reasons"] for p in no_pdf.pages)
+
+
+def test_dropped_pages_helper(fixtures):
+    from aidoc.pagemap import pdf_text_layers
+    from aidoc.quality import dropped_pages
+    pdf = fixtures / "paged_furniture.pdf"
+    md = _own_md(pdf).replace("Body text of page 5", "")
+    layers = pdf_text_layers(pdf)
+    assert dropped_pages(md, layers, blank_pages=[4]) == []
+    empty6 = "".join(f"<!-- page: {i} -->\n\n{'' if i == 6 else 'x' * 30}\n\n" for i in range(1, 9))
+    got = dropped_pages(empty6, layers, blank_pages=[4])
+    assert [e["page"] for e in got] == [6] and got[0]["metrics"]["layer_chars"] == len(layers[5])

@@ -112,7 +112,10 @@ def test_last_engine_quick_check_does_not_fail_fast(env):
     write_scenario(env["sc"], rules=[{"match": {"segment_idx": 0}, "behavior": "low"}])
     tid = env["make"](engine="mineru")
     assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.low
-    assert [x["pages"] for x in calls(env["root"])] == [[1, 40], [41, 45]]
+    got = [x["pages"] for x in calls(env["root"])]
+    # both segments run; what follows can only be per-page repair calls (page 1 of the "low" segment has a text
+    # layer but a 5-character section: page_dropped, spec 2026-10-05 verify §2.3)
+    assert got[:2] == [[1, 40], [41, 45]] and all(p is None for p in got[2:])
 
 
 def test_single_segment_pdf_is_not_split(env):

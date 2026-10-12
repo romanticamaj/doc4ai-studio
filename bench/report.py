@@ -197,7 +197,7 @@ def calibration(run: Path) -> str:
     c = json.loads(p.read_text(encoding="utf-8"))
     body = [[name, d.get("level") or DASH, str(d.get("exit_code")), str(d.get("exit_code_fail_on_warn")),
              ", ".join(map(str, d.get("flagged") or [])) or DASH, ", ".join(map(str, d.get("expected") or [])) or DASH]
-            for name, d in sorted((c.get("defects") or {}).items())]
+            for name, d in sorted((c.get("defects") or {}).items()) if not name.startswith("_")]
     t = _table(["負樣本", "verify 等級", "exit", "exit（--fail-on warn）", "標出的頁", "應標出的頁"], body)
     gate = "通過" if c.get("passed") else "**未通過（不發表）**"
     return (t + f"\n\nSpearman ρ（verify 分數 vs 正解平均 NED，n={c.get('n')}）= {_num(c.get('rho'))}；"

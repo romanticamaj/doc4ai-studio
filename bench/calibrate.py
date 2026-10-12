@@ -26,6 +26,17 @@ CALIBRATION_MIN_RECALL = 0.9
 EXPECTED = {"control": ("ok", 0), "dropped": ("warn", 0), "shifted": ("low", 1), "swapped": ("low", 1)}
 
 
+def expected(judged_gt: dict) -> dict:
+    """Dropped pages are page-level warn, but like any flagged page more than 20 % of the content pages make the
+    document low (spec 2026-10-01 §5.2): the small corpus drops 1 of 3 pages."""
+    from aidoc.quality import FLAGGED_MAX_RATIO
+    exp = dict(EXPECTED)
+    content = judged_gt["pages"] - len(judged_gt.get("blank_pages") or [])
+    if len(judged_gt["dropped_pages"]) > FLAGGED_MAX_RATIO * max(1, content):
+        exp["dropped"] = ("low", 1)
+    return exp
+
+
 def _bad_pages(row: dict) -> set[int]:
     defects = row.get("gt_defects_unrecovered")
     if defects is None:
@@ -77,7 +88,9 @@ def judge_defect_markdowns(corpus_dir: Path) -> dict:
     d = Path(corpus_dir) / "syn-dropped-pages"
     gt = json.loads((d / "gt.json").read_text(encoding="utf-8"))
     pdf = (d / gt["pdf"]).resolve()
-    out = {}
+    base = json.loads((d / gt["pdf"]).parent.joinpath("gt.json").read_text(encoding="utf-8"))
+    out: dict = {"_gt": {"pages": gt["pages"], "blank_pages": base.get("blank_pages") or [],
+                         "dropped_pages": gt["defects"]["dropped_pages"]}}
     for name in ("control", "dropped", "shifted", "swapped"):
         rep = verify_markdown((d / f"{name}.md").read_text(encoding="utf-8"), pdf, sample=0)
         flagged = sorted(e["page"] for e in rep.pages if e.get("reasons"))
@@ -90,11 +103,11 @@ def judge_defect_markdowns(corpus_dir: Path) -> dict:
 
 def defects_ok(judged: dict) -> bool:
     ok = True
-    for name, (level, code) in EXPECTED.items():
+    for name, (level, code) in expected(judged["_gt"]).items():
         j = judged.get(name) or {}
         ok &= j.get("level") == level and j.get("exit_code") == code
-    ok &= judged["dropped"]["exit_code_fail_on_warn"] == 1 and \
-        set(judged["dropped"]["expected"]) <= set(judged["dropped"]["flagged"])
+    d = judged["dropped"]
+    ok &= d["exit_code_fail_on_warn"] == 1 and set(d["expected"]) <= set(d["flagged"])
     return bool(ok)
 
 
