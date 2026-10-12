@@ -86,6 +86,7 @@ class TaskFailureResult(BaseModel):
 _KINDS: dict[str, tuple[str, str]] = {
     "unsupported_file": ("user_input", "policy"), "input": ("user_input", "policy"),
     "invalid_base64": ("user_input", "policy"), "file_too_large": ("user_input", "policy"),
+    "archive_too_large": ("user_input", "policy"),
     "engine": ("pipeline", "backend_failure"), "timeout": ("pipeline", "timeout"),
     "cancelled": ("pipeline", "internal"), "output_missing": ("pipeline", "internal"),
 }

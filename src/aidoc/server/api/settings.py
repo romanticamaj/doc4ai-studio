@@ -32,6 +32,13 @@ _MAX.update({("mcp", "max_upload_mb"): 2048, ("mcp", "response_token_budget"): 2
              ("mcp", "max_token_ttl_days"): 3650, ("mcp", "default_token_ttl_days"): 3650})
 
 
+# [limits] archive and engine memory caps (verifier round, item 1)
+_MIN.update({("limits", "archive_max_uncompressed_mb"): 1, ("limits", "archive_max_entries"): 1,
+             ("limits", "archive_max_entry_mb"): 1, ("limits", "archive_max_ratio"): 2})
+_MAX.update({("limits", "archive_max_uncompressed_mb"): 65536, ("limits", "archive_max_entries"): 1000000,
+             ("limits", "archive_max_entry_mb"): 65536, ("limits", "archive_max_ratio"): 100000,
+             ("limits", "engine_memory_mb"): 1048576, ("limits", "markitdown_memory_mb"): 1048576})
+
 # [compat] (compat spec §7, plan §4)
 _MIN.update({("compat", "sync_timeout_s"): 10, ("compat", "max_file_mb"): 1, ("compat", "max_source_mb"): 1,
              ("compat", "embed_images_max_mb"): 1, ("compat", "max_concurrent_jobs_per_token"): 1,

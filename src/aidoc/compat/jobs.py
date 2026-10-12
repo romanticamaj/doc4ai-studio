@@ -307,6 +307,12 @@ def precheck(ctx, call: CompatCall, upload: Upload, name: str):
         upload.part_path.unlink(missing_ok=True)
         call.fail(f.code)
         return failure_response(name, None, f"{f.code}: {f.message}", call.ts)
+    from aidoc.archive import check_archive
+    bomb = check_archive(upload.part_path, ctx.config.limits, name)     # answered at once; the pipeline checks it too
+    if bomb:
+        upload.part_path.unlink(missing_ok=True)
+        call.fail("archive_too_large")
+        return failure_response(name, None, bomb, call.ts)
     problem = _disk_problem(ctx, upload.size)
     if problem:
         upload.part_path.unlink(missing_ok=True)

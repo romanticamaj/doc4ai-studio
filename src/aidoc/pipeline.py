@@ -530,6 +530,10 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
     probe = ctx.probe = probe_file(work_src)
     if probe.error:
         return _fail(ctx, ErrorKind.input, probe.error)
+    from aidoc.archive import check_archive
+    bomb = check_archive(work_src, ctx.config.limits)       # decompression bombs never reach an engine
+    if bomb:
+        return _fail(ctx, ErrorKind.input, bomb)
     if (task.get("flags") or {}).get("reconvert"):
         output_dir = Path(task["output_dir"])
     else:
