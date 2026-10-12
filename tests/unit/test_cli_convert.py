@@ -50,3 +50,13 @@ def test_convert_unreadable_source_is_clean_input_failure(tmp_root, fixtures, mo
     out = json.loads(capsys.readouterr().out)
     assert out["status"] == "failed" and out["error_kind"] == "input"
     assert out["error_msg"].startswith("source_unreadable")
+
+
+def test_serve_help_warns_that_token_is_visible_in_process_listings(capsys):
+    import pytest
+
+    from aidoc.cli import main
+    with pytest.raises(SystemExit):
+        main(["serve", "--help"])
+    out = " ".join(capsys.readouterr().out.split())
+    assert "process listings" in out and "AIDOC_TOKEN" in out

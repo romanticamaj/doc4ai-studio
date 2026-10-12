@@ -47,8 +47,9 @@ def build_parser() -> argparse.ArgumentParser:
     sv = sub.add_parser("serve", help="run the server (Web UI + API) that owns the job queue")
     sv.add_argument("--host", help="bind address (default: aidoc.toml server.host, 127.0.0.1)")
     sv.add_argument("--port", type=int, help="port (default: aidoc.toml server.port, 8765)")
-    sv.add_argument("--token", help="API token (default: AIDOC_TOKEN, aidoc.toml server.token); "
-                                    "required when binding a non-loopback address")
+    sv.add_argument("--token", help="API token, required when binding a non-loopback address. Prefer the "
+                                    "AIDOC_TOKEN environment variable or aidoc.toml server.token: a --token value is "
+                                    "visible to other users in process listings")
     sv.add_argument("--no-recover", action="store_true", help="skip startup recovery")
     vf = sub.add_parser("verify", help="score any Markdown against its source PDF, page by page",
                         description="Checks structural losses only (dropped / shifted / missing pages, broken text "

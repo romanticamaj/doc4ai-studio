@@ -64,8 +64,21 @@ pnpm --dir web build
 uv run aidoc serve              # http://127.0.0.1:8765
 ```
 
-By default the server binds to `127.0.0.1`. To expose it on your network, a token is required:
-`uv run aidoc serve --host 0.0.0.0 --token <secret>`. While the server runs, `aidoc convert` and `aidoc batch` hand their work to its queue.
+By default the server binds to `127.0.0.1`. To expose it on your network, a token is required. Give it through the
+`AIDOC_TOKEN` environment variable (or `server.token` in `aidoc.toml`), not with `--token`: every local user can read
+a process's command line in the process list.
+
+```powershell
+$env:AIDOC_TOKEN = (Get-Content data\serve.token -Raw).Trim()   # a file only you can read
+uv run aidoc serve --host 0.0.0.0
+Remove-Item Env:AIDOC_TOKEN
+```
+
+```bash
+AIDOC_TOKEN="$(cat data/serve.token)" uv run aidoc serve --host 0.0.0.0
+```
+
+While the server runs, `aidoc convert` and `aidoc batch` hand their work to its queue.
 
 ## VLM OCR (optional, off by default)
 
