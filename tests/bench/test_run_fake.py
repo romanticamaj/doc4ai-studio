@@ -57,3 +57,9 @@ def test_gpu_sampler_tracks_peak_and_delta():
     with Sampler(interval=0.01, query=lambda: None) as s2:
         pass
     assert s2.peak is None and s2.delta is None
+
+
+def test_tier_c_sample_without_gt_takes_its_page_count_from_the_pdf():
+    from bench.run import Sample, _timeout
+    s = Sample("x", "C", Path(__file__).resolve().parents[1] / "fixtures" / "big.pdf", None, "C")
+    assert s.pages == 45 and _timeout(s) >= 45 * 30

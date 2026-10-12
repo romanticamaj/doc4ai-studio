@@ -54,7 +54,16 @@ class Sample:
 
     @property
     def pages(self) -> int | None:
-        return (self.gt or {}).get("pages")
+        """GT page count, else the PDF's (Tier C has no GT; the timeout and the per-page time need it)."""
+        n = (self.gt or {}).get("pages")
+        if n is None and self.pdf.is_file():
+            import pymupdf
+            try:
+                with pymupdf.open(self.pdf) as d:
+                    n = d.page_count
+            except Exception:  # noqa: BLE001  unreadable: the conversion reports it
+                n = None
+        return n
 
 
 def env_for_config(config: str, out: Path | None = None) -> dict[str, str]:
@@ -251,7 +260,7 @@ RAW_SCRIPTS = {"raw-docling": ("docling", _RAW_DOCLING), "raw-markitdown": ("mar
 
 
 def _timeout(s: Sample) -> int:
-    return max(900, (s.pages or 100) * 30)
+    return max(900, (s.pages or 100) * 30, 7200 if (s.pages or 0) > 400 else 0)
 
 
 def convert(s: Sample, config: str, out: Path, *, fake: bool, log=print) -> dict:
