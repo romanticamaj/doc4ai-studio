@@ -10,7 +10,10 @@ pytestmark = pytest.mark.slow
 CASES = [  # (fixture, expected engine, expected page markers>0)
     ("sample.docx", "markitdown", False), ("sample.pptx", "markitdown", True), ("sample.xlsx", "markitdown", False),
     ("text.pdf", "docling", True), ("scanned_cht.pdf", "mineru", True), ("scanned_mixed.pdf", "mineru", True),
-    ("formula.pdf", "mineru", True), ("page.png", "mineru", False), ("twocol.pdf", "docling", True),
+    ("formula.pdf", "mineru", True), ("page.png", "mineru", False),
+    # Docling (first in the route) returns an empty section for page 2 (same text as page 1): page_dropped on 1 of 2
+    # pages is over 20 %, so the conversion falls back to MinerU (spec 2026-10-05 verify §2.3)
+    ("twocol.pdf", "mineru", True),
 ]
 
 
@@ -23,6 +26,8 @@ def test_fixture_converts_ok(tmp_root, fixtures, name, engine, markers):
     stem = src.stem
     sc = json.loads((out / stem / f"{stem}.json").read_text(encoding="utf-8"))
     assert sc["engine"] == engine, sc["tried"]
+    if name == "twocol.pdf":
+        assert sc["tried"][0]["engine"] == "docling" and sc["tried"][0]["reasons"] == ["pages_flagged"]
     assert sc["quality"]["level"] == "ok", sc["quality"]
     md = (out / stem / f"{stem}.md").read_text(encoding="utf-8")
     assert ("<!-- page: " in md) == markers
