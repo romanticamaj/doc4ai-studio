@@ -60,3 +60,17 @@ def test_swapped_content_and_partial_negatives_are_caught():
     assert set(sc["flagged"]) >= set(gt["defects"]["swapped_content_pages"]) and sc["exit_code_fail_on_warn"] == 1
     assert set(pa["flagged"]) >= set(gt["defects"]["partial_pages"]) and pa["exit_code_fail_on_warn"] == 1
     assert C.extra_negatives_ok(res) is True and C.defects_ok(res)
+
+
+def test_verifiable_rows_only_diagnostic():
+    rows = [{"tier": "A", "gt_level": "L1", "kind": "text", "pages": 2, "metrics": {"ned": 0.9},
+             "verify": {"score": 0.9, "level": "ok", "flagged_pages": [], "verifiable": True},
+             "gt_defects": [], "low_pages": []},
+            {"tier": "A", "gt_level": "L1", "kind": "scan", "pages": 2, "metrics": {"ned": 0.1},
+             "verify": {"score": 1.0, "level": "ok", "flagged_pages": [], "verifiable": False},
+             "gt_defects": [], "low_pages": [1, 2]},
+            {"tier": "A", "gt_level": "L1", "kind": "text", "pages": 2, "metrics": {"ned": 0.5},
+             "verify": {"score": 0.5, "level": "warn", "flagged_pages": [2], "verifiable": True},
+             "gt_defects": [2], "low_pages": [2]}]
+    v = C.calibrate_rows(rows, verifiable_only=True)
+    assert v["n"] == 2 and v["recall"] == 1.0 and C.calibrate_rows(rows)["n"] == 3
