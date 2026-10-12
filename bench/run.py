@@ -402,6 +402,7 @@ def score(s: Sample, config: str, conv: dict) -> dict:
         rep = verify_markdown(md, s.pdf)
         v = {"score": rep.summary["score"], "level": rep.level, "pages_flagged": rep.summary["pages_flagged"],
              "flagged_pages": sorted(e["page"] for e in rep.pages if set(e.get("reasons") or []) & FLAG_REASONS),
+             "flagged_all": sorted(e["page"] for e in rep.pages if e.get("reasons")),
              "reasons": rep.summary["reasons"], "verifiable": rep.verifiable,
              "inferred": bool(rep.page_map and rep.page_map.get("method") == "inferred")}
     except ValueError as e:
@@ -458,7 +459,11 @@ def run(argv: list[str] | None = None) -> int:
     ap.add_argument("--vlm-base-url", default="http://127.0.0.1:11434/v1")
     ap.add_argument("--vlm-model", default="gemma4:12b")
     ap.add_argument("--no-report", action="store_true")
+    ap.add_argument("--rescore", action="store_true",
+                    help="recompute metrics and verify for the rows of --out from the outputs on disk (no conversion)")
     a = ap.parse_args(argv)
+    if a.rescore:
+        return rescore(Path(a.out).resolve())
     corpora = a.corpus.split(",")
     configs = a.configs.split(",")
     unknown = [c for c in configs if c not in CONFIG_ORDER and c not in RAW]
@@ -530,6 +535,40 @@ def run(argv: list[str] | None = None) -> int:
     if not a.no_report:
         from bench import report
         report.write_summary(out)
+    return 0
+
+
+def _sample_for(row: dict) -> Sample | None:
+    corpus = row.get("corpus") or row["tier"]
+    samples, _ = collect([corpus], log=lambda s: None)
+    return next((s for s in samples if s.name == row["sample"]), None)
+
+
+def rescore(out: Path) -> int:
+    """Re-score every row of `out/results.jsonl` from the Markdown and sidecar on disk (after a change to the
+    metrics or to verify); conversions are not repeated. Rows whose output is gone are left as they are."""
+    results = out / "results.jsonl"
+    rows = [json.loads(x) for x in results.read_text(encoding="utf-8").splitlines() if x.strip()]
+    cache: dict[str, Sample | None] = {}
+    done = 0
+    for row in rows:
+        key = f"{row.get('corpus')}/{row['sample']}"
+        if key not in cache:
+            cache[key] = _sample_for(row)
+        s = cache[key]
+        d = out / f"out-{row['config']}" / row["sample"]
+        md = d / f"{row['sample']}.md"
+        if s is None or not md.is_file() or row["status"] == "failed":
+            continue
+        side = d / f"{row['sample']}.json"
+        sidecar = json.loads(side.read_text(encoding="utf-8")) if side.is_file() else None
+        row.update(score(s, row["config"], {"md": md.read_text(encoding="utf-8"), "sidecar": sidecar}))
+        row["rescored"] = True
+        done += 1
+    tmp = results.with_suffix(".jsonl.tmp")
+    tmp.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+    tmp.replace(results)
+    print(f"rescored {done}/{len(rows)} rows")
     return 0
 
 

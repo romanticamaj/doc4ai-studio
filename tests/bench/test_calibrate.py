@@ -74,3 +74,12 @@ def test_verifiable_rows_only_diagnostic():
              "gt_defects": [2], "low_pages": [2]}]
     v = C.calibrate_rows(rows, verifiable_only=True)
     assert v["n"] == 2 and v["recall"] == 1.0 and C.calibrate_rows(rows)["n"] == 3
+
+
+def test_all_page_reasons_diagnostic_uses_every_flagged_page():
+    row = {"tier": "A", "gt_level": "L1", "kind": "text", "pages": 3, "metrics": {"ned": 0.6},
+           "verify": {"score": 0.6, "level": "warn", "flagged_pages": [], "flagged_all": [2], "verifiable": True},
+           "gt_defects": [], "low_pages": [2]}
+    other = {**row, "metrics": {"ned": 0.9}, "verify": {**row["verify"], "score": 0.9}}
+    assert C.calibrate_rows([row, other])["recall"] == 0.0
+    assert C.calibrate_rows([row, other], all_reasons=True)["recall"] == 1.0

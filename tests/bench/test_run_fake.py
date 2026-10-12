@@ -63,3 +63,21 @@ def test_tier_c_sample_without_gt_takes_its_page_count_from_the_pdf():
     from bench.run import Sample, _timeout
     s = Sample("x", "C", Path(__file__).resolve().parents[1] / "fixtures" / "big.pdf", None, "C")
     assert s.pages == 45 and _timeout(s) >= 45 * 30
+
+
+def test_rescore_recomputes_metrics_and_records_every_page_reason(tmp_path):
+    out = tmp_path / "run"
+    base = [sys.executable, str(BENCH / "run.py"), "--corpus", "A-small", "--configs", "docling", "--out", str(out),
+            "--fake", "--only", "syn-text-zh"]
+    assert subprocess.run(base, capture_output=True, check=False).returncode == 0
+    md = out / "out-docling" / "syn-text-zh" / "syn-text-zh.md"
+    from aidoc.pagemap import split_pages
+    _, secs = split_pages(md.read_text(encoding="utf-8"))
+    md.write_text(md.read_text(encoding="utf-8").replace(secs[2], "\n\n"), encoding="utf-8")   # page 2 lost
+    r = subprocess.run([sys.executable, str(BENCH / "run.py"), "--out", str(out), "--rescore"], capture_output=True,
+                       text=True, encoding="utf-8", errors="replace", check=False)
+    assert r.returncode == 0, r.stderr[-2000:]
+    row = json.loads((out / "results.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert 2 in row["verify"]["flagged_pages"] and 2 in row["verify"]["flagged_all"]
+    assert set(row["verify"]["flagged_all"]) >= set(row["verify"]["flagged_pages"])
+    assert row["rescored"] is True

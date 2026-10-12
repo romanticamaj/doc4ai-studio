@@ -49,7 +49,7 @@ def _all_pages(row: dict) -> set[int]:
 
 
 def calibrate_rows(rows: list[dict], *, low_flags_all: bool = False, defects_only: bool = False,
-                   text_layer_only: bool = False, verifiable_only: bool = False) -> dict:
+                   text_layer_only: bool = False, verifiable_only: bool = False, all_reasons: bool = False) -> dict:
     """The gate's numbers (defaults = the plan's definition). Diagnostic variants: `low_flags_all` counts every page
     of a document verify judged `low` as flagged; `defects_only` uses spec §3.4's GT defect pages (unrecovered) as the
     bad pages, without the NED < 0.5 pages; `text_layer_only` leaves out the scans (no text layer: verify cannot
@@ -64,6 +64,8 @@ def calibrate_rows(rows: list[dict], *, low_flags_all: bool = False, defects_onl
     tp = fp = fn = 0
     for r in rows:
         pred = set(r["verify"].get("flagged_pages") or [])
+        if all_reasons:                            # every page verify flags, page_partial / misaligned / oversized too
+            pred = set(r["verify"].get("flagged_all", r["verify"].get("flagged_pages")) or [])
         if low_flags_all and r["verify"].get("level") == "low":
             pred = _all_pages(r)
         bad = _bad_pages(r)
@@ -162,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         ("spec_defect_pages_only", {"defects_only": True}),
         ("text_layer_samples_only", {"text_layer_only": True}),
         ("verifiable_rows_only", {"verifiable_only": True}),
+        ("all_page_reasons", {"all_reasons": True}),
+        ("all_page_reasons_text_layer_samples", {"all_reasons": True, "text_layer_only": True}),
         ("all_three", {"low_flags_all": True, "defects_only": True, "text_layer_only": True}))}
     out.update(min_rho=CALIBRATION_MIN_RHO, min_recall=CALIBRATION_MIN_RECALL)
     out["passed"] = gate(out) and defects_ok(out["defects"])
