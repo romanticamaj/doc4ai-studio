@@ -69,3 +69,17 @@ def test_custom_regex_requires_one_group():
 def test_unknown_format_is_rejected():
     with pytest.raises(ValueError):
         to_aidoc("x", "pandoc", expected_pages=1)
+
+
+@pytest.mark.parametrize("bad", [r"\[\[p (\d+)?\]\]", r"\[\[p (\d*)\]\]", r"(?:\[\[p (\d+)\]\]|<p>)", r"((a+)+\d)",
+                                 r"[[p (\d+)" + "x" * 300])
+def test_custom_regex_is_bounded_and_its_group_always_captures(bad):
+    """Verifier minor: a regex longer than MARKER_REGEX_MAX, with an optional / possibly empty capture group or a
+    nested unbounded quantifier (catastrophic backtracking) is refused with ValueError (API 422, CLI exit 4)."""
+    with pytest.raises(ValueError):
+        to_aidoc("[[p 1]]\na", "custom", expected_pages=1, marker_regex=bad)
+
+
+def test_safe_custom_regex_still_works():
+    md, info = to_aidoc("[[p 1]]\na\n[[p 2]]\nb", "custom", expected_pages=2, marker_regex=r"\[\[p (\d{1,5})\]\]")
+    assert info["applied"] and md.count("<!-- page: ") == 2
