@@ -1,0 +1,51 @@
+{
+  "noto-sans-cjk-tc": {
+    "file": "NotoSansCJKtc-Regular.otf",
+    "urls": ["https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf"],
+    "sha256": "dce08bd4fd91aa8aa76ed8fea4b694c2dfb8550f67871e326843212ddbeb88b4",
+    "license": "SIL Open Font License 1.1",
+    "license_url": "https://github.com/notofonts/noto-cjk/blob/Sans2.004/LICENSE"
+  },
+  "pg24264": {
+    "file": "24264-0.txt", "title": "紅樓夢 (A Dream of Red Mansions)", "lang": "cht", "gutenberg_id": 24264,
+    "urls": ["https://www.gutenberg.org/files/24264/24264-0.txt"],
+    "sha256": "824b0baead58b4bb1c9f6cd365d8323e4799065f4864170db964b1dfa981f557",
+    "license": "Public domain (Project Gutenberg; PG header and licence stripped)",
+    "license_url": "https://www.gutenberg.org/policy/license.html"
+  },
+  "pg23950": {
+    "file": "23950-0.txt", "title": "三國演義 (Romance of the Three Kingdoms)", "lang": "cht", "gutenberg_id": 23950,
+    "urls": ["https://www.gutenberg.org/files/23950/23950-0.txt"],
+    "sha256": "c8ca016d417dbd9540ed854ed02c97cf3d7aca13dd88b7e08555ffd2c0e5e2c3",
+    "license": "Public domain (Project Gutenberg; PG header and licence stripped)",
+    "license_url": "https://www.gutenberg.org/policy/license.html"
+  },
+  "pg23962": {
+    "file": "23962-0.txt", "title": "西遊記 (Journey to the West)", "lang": "cht", "gutenberg_id": 23962,
+    "urls": ["https://www.gutenberg.org/files/23962/23962-0.txt"],
+    "sha256": "fc9a3956fd22b9a4356af8dd0dca27596fd0c9da87c35eae45c4f331c1b8f597",
+    "license": "Public domain (Project Gutenberg; PG header and licence stripped)",
+    "license_url": "https://www.gutenberg.org/policy/license.html"
+  },
+  "pg23863": {
+    "file": "23863-0.txt", "title": "水滸傳 (Shui Hu Zhuan)", "lang": "cht", "gutenberg_id": 23863,
+    "urls": ["https://www.gutenberg.org/files/23863/23863-0.txt"],
+    "sha256": "0359f6c063510047610b1e1e35ac94adc703591f7b10a451742056b1004465b9",
+    "license": "Public domain (Project Gutenberg; PG header and licence stripped)",
+    "license_url": "https://www.gutenberg.org/policy/license.html"
+  },
+  "pg1342": {
+    "file": "1342-0.txt", "title": "Pride and Prejudice", "lang": "en", "gutenberg_id": 1342,
+    "urls": ["https://www.gutenberg.org/files/1342/1342-0.txt"],
+    "sha256": "81300b79e8a8d65ac530a97578417d06137e3bbc90622a10a65e5036183d2500",
+    "license": "Public domain (Project Gutenberg; PG header and licence stripped)",
+    "license_url": "https://www.gutenberg.org/policy/license.html"
+  },
+  "pg11": {
+    "file": "11-0.txt", "title": "Alice's Adventures in Wonderland", "lang": "en", "gutenberg_id": 11,
+    "urls": ["https://www.gutenberg.org/files/11/11-0.txt"],
+    "sha256": "a3a27f8edbf7fcd9b8ba8435494440e24952deaa3e2f2d65192d4cb7ca403754",
+    "license": "Public domain (Project Gutenberg; PG header and licence stripped)",
+    "license_url": "https://www.gutenberg.org/policy/license.html"
+  }
+}
