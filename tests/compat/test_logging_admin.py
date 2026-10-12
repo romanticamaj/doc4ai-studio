@@ -49,3 +49,15 @@ def test_calls_can_be_filtered_by_method(compat_env):
     compat_env.ctx.extras["mcp"].recorder.record(status="ok", method="tools/call", tool_name="read_document")
     calls = compat_env.client.get("/api/mcp/calls", params={"method": "compat/docling"}).json()["calls"]
     assert [c["tool_name"] for c in calls] == ["capabilities"]
+
+
+def test_stats_name_the_compat_endpoints(compat_env):
+    """Verifier item 6: compat calls were counted as "(unknown)" in /api/mcp/stats."""
+    raw, _ = compat_env.issue()
+    compat_env.client.get("/v1/capabilities")
+    compat_env.client.get("/v1/result/nope", headers={"X-Api-Key": raw})
+    rec = compat_env.ctx.extras["mcp"].recorder
+    rec.record(status="ok", method="compat/docling", tool_name="no_such_endpoint")
+    tools = {t["tool"]: t for t in compat_env.client.get("/api/mcp/stats").json()["tools"]}
+    assert tools["capabilities"]["calls"] == 1 and tools["result"]["calls"] == 1 and tools["result"]["errors"] == 1
+    assert tools["(unknown)"]["calls"] == 1
