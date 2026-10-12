@@ -44,16 +44,31 @@ def _bad_pages(row: dict) -> set[int]:
     return set(row.get("low_pages") or []) | set(defects)
 
 
-def calibrate_rows(rows: list[dict]) -> dict:
+def _all_pages(row: dict) -> set[int]:
+    return set(range(1, int(row.get("pages") or 0) + 1))
+
+
+def calibrate_rows(rows: list[dict], *, low_flags_all: bool = False, defects_only: bool = False,
+                   text_layer_only: bool = False) -> dict:
+    """The gate's numbers (defaults = the plan's definition). Diagnostic variants: `low_flags_all` counts every page
+    of a document verify judged `low` as flagged; `defects_only` uses spec §3.4's GT defect pages (unrecovered) as the
+    bad pages, without the NED < 0.5 pages; `text_layer_only` leaves out the scans (no text layer: verify cannot
+    see OCR errors by design, spec §2.7)."""
     rows = [r for r in rows if r.get("tier") == "A" and r.get("gt_level") == "L1"
-            and (r.get("metrics") or {}).get("ned") is not None and (r.get("verify") or {}).get("score") is not None]
+            and (r.get("metrics") or {}).get("ned") is not None and (r.get("verify") or {}).get("score") is not None
+            and not (text_layer_only and r.get("kind") == "scan")]
     if len(rows) < 2:
         return {"n": len(rows), "rho": None, "precision": None, "recall": None}
     rho = spearman([r["verify"]["score"] for r in rows], [r["metrics"]["ned"] for r in rows])
     tp = fp = fn = 0
     for r in rows:
         pred = set(r["verify"].get("flagged_pages") or [])
+        if low_flags_all and r["verify"].get("level") == "low":
+            pred = _all_pages(r)
         bad = _bad_pages(r)
+        if defects_only:
+            d = r.get("gt_defects_unrecovered")
+            bad = set(d if d is not None else (r.get("gt_defects") or []))
         tp += len(pred & bad)
         fp += len(pred - bad)
         fn += len(bad - pred)
@@ -128,6 +143,11 @@ def main(argv: list[str] | None = None) -> int:
     for c in sorted({r["config"] for r in rows}):
         per_config[c] = calibrate_rows([r for r in rows if r["config"] == c])
     out["per_config"] = per_config
+    out["diagnostics"] = {name: calibrate_rows(rows, **kw) for name, kw in (
+        ("low_document_flags_every_page", {"low_flags_all": True}),
+        ("spec_defect_pages_only", {"defects_only": True}),
+        ("text_layer_samples_only", {"text_layer_only": True}),
+        ("all_three", {"low_flags_all": True, "defects_only": True, "text_layer_only": True}))}
     out.update(min_rho=CALIBRATION_MIN_RHO, min_recall=CALIBRATION_MIN_RECALL)
     out["passed"] = gate(out) and defects_ok(out["defects"])
     (run / "calibration.json").write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

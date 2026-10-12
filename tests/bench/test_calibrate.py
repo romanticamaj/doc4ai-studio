@@ -37,3 +37,17 @@ def test_dropped_pages_fixtures_are_judged():
     assert res["shifted"]["level"] == "low" and res["swapped"]["level"] == "low" and res["control"]["level"] == "ok"
     assert res["shifted"]["exit_code"] == 1 and res["swapped"]["exit_code"] == 1 and res["control"]["exit_code"] == 0
     assert C.defects_ok(res)
+
+
+def test_diagnostic_variants():
+    rows = [{"tier": "A", "gt_level": "L1", "kind": "scan", "pages": 3, "metrics": {"ned": 0.2},
+             "verify": {"score": 1.0, "level": "ok", "flagged_pages": []}, "gt_defects": [], "low_pages": [1, 2, 3]},
+            {"tier": "A", "gt_level": "L1", "kind": "text", "pages": 3, "metrics": {"ned": 0.5},
+             "verify": {"score": 0.5, "level": "low", "flagged_pages": [2]}, "gt_defects": [2], "low_pages": [1, 2]},
+            {"tier": "A", "gt_level": "L1", "kind": "text", "pages": 3, "metrics": {"ned": 0.99},
+             "verify": {"score": 0.99, "level": "ok", "flagged_pages": []}, "gt_defects": [], "low_pages": []}]
+    assert C.calibrate_rows(rows)["recall"] == 1 / 5
+    assert C.calibrate_rows(rows, low_flags_all=True)["recall"] == 2 / 5
+    assert C.calibrate_rows(rows, defects_only=True)["recall"] == 1.0
+    t = C.calibrate_rows(rows, text_layer_only=True)
+    assert t["n"] == 2 and t["recall"] == 1 / 2
