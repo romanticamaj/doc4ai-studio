@@ -19,6 +19,7 @@ _T = {
            "inferred": "Page boundaries inferred (no page markers)", "anchored": "anchored", "decidable": "decidable",
            "confidence": "confidence", "coverage": "Page-marker coverage", "unverifiable":
            "Unverifiable: a scanned PDF without page markers has no text layer to anchor on.",
+           "no_anchor": "Unverifiable: no page markers, and almost no Markdown text matches the PDF text layer.",
            "partial": "Partial: no PDF — only marker coverage and garbage were checked.",
            "generated": "Generated", "limits": "verify sees structural losses only (dropped, shifted or missing "
            "pages, broken text layers, garbage, missing tables); it cannot see OCR misreadings or hallucinations.",
@@ -28,6 +29,7 @@ _T = {
             "metrics": "關鍵指標", "thumb": "縮圖", "none": "無", "inferred": "頁界由推斷而來（沒有頁碼標記）",
             "anchored": "有錨點", "decidable": "可判定", "confidence": "信心", "coverage": "頁碼標記覆蓋率",
             "unverifiable": "無法驗證：掃描 PDF 且沒有頁碼標記，沒有文字層可以對齊。",
+            "no_anchor": "無法驗證：沒有頁碼標記，而且 Markdown 的文字幾乎對不上 PDF 文字層。",
             "partial": "部分驗證：沒有 PDF，只檢查了標記覆蓋率與亂碼。", "generated": "產生時間",
             "limits": "verify 只看結構性損失（漏頁、錯頁、缺頁、壞文字層、亂碼、漏表格），看不出 OCR 認錯字或幻覺。",
             "no_pages": "沒有被標記的頁。", "truncated": "列未顯示"},
@@ -101,7 +103,9 @@ def render_html(report: VerifyReport, thumbs: dict[int, bytes] | None, lang: str
              '<meta name="viewport" content="width=device-width, initial-scale=1">',
              f"<title>{_e(t['title'])}: {_e(name)}</title><style>{_CSS}</style></head><body><main>",
              f"<h1>{_e(t['title'])}</h1><div class=\"muted\">{sub}</div>"]
-    if report.verifiable is False:
+    if report.verifiable is False and pdf and pdf.get("text_layer_pages"):
+        parts.append(f'<p class="low">{_e(t["no_anchor"])}</p>')
+    elif report.verifiable is False:
         parts.append(f'<p class="low">{_e(t["unverifiable"])}</p>')
     elif report.verifiable == "partial":
         parts.append(f'<p class="warn">{_e(t["partial"])}</p>')

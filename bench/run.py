@@ -248,12 +248,19 @@ from markitdown import MarkItDown
 open(sys.argv[3], 'w', encoding='utf-8').write(MarkItDown().convert(sys.argv[2]).text_content)
 """
 _RAW_MINERU = """import sys, pathlib
-from mineru.parser import parse
-from mineru.parser.writer import FileBasedDataWriter
-out = pathlib.Path(sys.argv[3]).parent / 'mineru'
-out.mkdir(parents=True, exist_ok=True)
-parse(sys.argv[2], tier='basic', ocr_mode='auto').save(FileBasedDataWriter(str(out)))
-pathlib.Path(sys.argv[3]).write_text((out / 'markdown.md').read_text(encoding='utf-8'), encoding='utf-8')
+
+
+def main():  # MinerU uses a process pool: Windows spawns re-import this file, so it needs the main guard
+    from mineru.parser import parse
+    from mineru.parser.writer import FileBasedDataWriter
+    out = pathlib.Path(sys.argv[3]).parent / 'mineru'
+    out.mkdir(parents=True, exist_ok=True)
+    parse(sys.argv[2], tier='basic', ocr_mode='auto').save(FileBasedDataWriter(str(out)))
+    pathlib.Path(sys.argv[3]).write_text((out / 'markdown.md').read_text(encoding='utf-8'), encoding='utf-8')
+
+
+if __name__ == '__main__':
+    main()
 """
 RAW_SCRIPTS = {"raw-docling": ("docling", _RAW_DOCLING), "raw-markitdown": ("markitdown", _RAW_MARKITDOWN),
                "raw-mineru": ("mineru", _RAW_MINERU)}

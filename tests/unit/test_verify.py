@@ -149,3 +149,15 @@ def test_pure_no_files_written(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     verify_markdown(_own_output(FIX / "text.pdf"), FIX / "text.pdf")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_unverifiable_says_why_when_the_pdf_has_text():
+    """A digital PDF whose Markdown shares no text with it (e.g. an empty or wrong file) is unverifiable for another
+    reason than a scan: the summary must not call it a scanned PDF."""
+    from aidoc.verify import summary_text
+    r = verify_markdown("completely unrelated words " * 20, FIX / "paged_furniture.pdf")
+    assert r.verifiable is False
+    en = summary_text(r, "en")
+    assert "scanned" not in en and "matches" in en
+    scan = summary_text(verify_markdown("沒有頁碼", FIX / "scanned_cht.pdf"), "en")
+    assert "scanned" in scan

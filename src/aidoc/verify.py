@@ -243,12 +243,16 @@ def exit_code(report: VerifyReport, fail_on: str = "low", allow_unverifiable: bo
 _WORST_MAX = 12
 _TEXT = {
     "en": {"pages": "pages", "markers": "page markers", "none": "no page markers", "inferred": "inferred",
-           "confidence": "confidence", "unverifiable": "unverifiable: no text layer to anchor on (scanned PDF without "
+           "confidence": "confidence",
+           "no_anchor": "unverifiable: no page markers, and almost no Markdown text matches the PDF text layer (empty "
+           "file, or not this PDF?)",
+           "unverifiable": "unverifiable: no text layer to anchor on (scanned PDF without "
            "page markers)", "partial": "partial: no PDF — only marker coverage and garbage were checked",
            "hint": "run with --json report.json for the full list; --html report.html for a page table",
            "previous": "previous"},
     "cht": {"pages": "頁", "markers": "頁碼標記", "none": "無頁碼標記", "inferred": "推頁", "confidence": "信心",
             "unverifiable": "無法驗證：掃描 PDF 且沒有頁碼標記，沒有文字層可對齊",
+            "no_anchor": "無法驗證：沒有頁碼標記，而且 Markdown 的文字幾乎對不上 PDF 文字層（空檔或不是這份 PDF？）",
             "partial": "部分驗證：沒有 PDF，只檢查標記覆蓋率與亂碼",
             "hint": "加 --json report.json 取得完整清單；--html report.html 產生逐頁表格", "previous": "原紀錄"},
 }
@@ -279,7 +283,8 @@ def summary_text(report: VerifyReport, lang: str = "cht") -> str:
         head += f"{tx['none']})"
     lines = [head, f"level: {report.level}   score: {report.summary['score']}"]
     if report.verifiable is False:
-        lines.append(f"  {tx['unverifiable']}")
+        scanned = pdf is None or not pdf.get("text_layer_pages")
+        lines.append(f"  {tx['unverifiable'] if scanned else tx['no_anchor']}")
     elif report.verifiable == "partial":
         lines.append(f"  {tx['partial']}")
     if report.summary["reasons"]:
