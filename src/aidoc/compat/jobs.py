@@ -349,6 +349,17 @@ def attach_key(ctx, call: CompatCall, adm: Admission, opts: CompatOptions, name:
     return key
 
 
+def note_job(call: CompatCall, job_id: str | None, *, own: bool) -> None:
+    """mcp_calls.job_id counts against the token's job cap (Store.active_mcp_jobs): only the token's own job goes
+    there; a job it merely waits on (attached: another token's, a Library batch) is named in args (review finding 3)."""
+    if not job_id:
+        return
+    if own:
+        call.job_id = job_id
+    else:
+        call.args = {**(call.args or {}), "attached_job_id": job_id}
+
+
 async def run_sync(ctx, request, call: CompatCall, upload: Upload, opts: CompatOptions):
     """Spec §4.3: wait for a job slot, then for the conversion, up to compat.sync_timeout_s (or document_timeout)."""
     name = clean_name(upload.filename)
@@ -384,7 +395,7 @@ async def run_sync(ctx, request, call: CompatCall, upload: Upload, opts: CompatO
         if model.status == "failure":
             call.fail("output_missing")
         return respond(model, call, model.document.md_content)
-    call.job_id = adm.job_id
+    note_job(call, adm.job_id, own=adm.kind == "started")
     task = await wait_for_task(ctx, adm.task_id, max(0, int(deadline - time.monotonic() + 0.999)), report=None)
     if task["status"] not in _TERMINAL:
         call.fail("sync_timeout")
@@ -450,7 +461,7 @@ async def submit_async(ctx, request, call: CompatCall, upload: Upload, opts: Com
     if adm.kind == "cached":
         key = _synthetic(ctx, call, opts, name, _cached_doc_id=adm.doc["id"])
         return respond(_status_model(ctx, key, state="success"))
-    call.job_id = adm.job_id
+    note_job(call, adm.job_id, own=adm.kind == "started")
     key = adm.job_id if adm.kind == "started" else attach_key(ctx, call, adm, opts, name)
     return respond(_status_model(ctx, key, task=ctx.store.get_task(adm.task_id)))
 
@@ -502,7 +513,7 @@ async def poll(ctx, call: CompatCall, key: str, wait: float):
     deadline = time.monotonic() + max(0.0, min(wait, ctx.config.compat.poll_max_wait_s))
     while True:
         res = resolve(ctx, key, call.principal)
-        call.job_id = res.task["job_id"] if res.task else None
+        note_job(call, res.task["job_id"] if res.task else None, own=res.task is not None and res.task["job_id"] == key)
         if res.terminal or time.monotonic() >= deadline:
             return respond(status_of(ctx, res))
         await anyio.sleep(min(0.5, max(0.05, deadline - time.monotonic())))
@@ -511,7 +522,7 @@ async def poll(ctx, call: CompatCall, key: str, wait: float):
 def result(ctx, request, call: CompatCall, key: str):
     from aidoc.compat.render import TaskFailureResult, failure_info
     res = resolve(ctx, key, call.principal)
-    call.job_id = res.task["job_id"] if res.task else None
+    note_job(call, res.task["job_id"] if res.task else None, own=res.task is not None and res.task["job_id"] == key)
     if not res.terminal:
         raise CompatError(404, "task not finished")
     if res.failure or (res.task is not None and res.task["status"] in ("failed", "cancelled")):
