@@ -122,6 +122,12 @@ _REFUSAL_CUE = re.compile(
     r"圖片|圖像|影像|图片|图像|辨識|识别|辨认|轉錄|转录|轉換|转换|協助|协助|幫忙|帮忙|請求|请求|處理這|处理这|"
     r"\b(?:image|picture|photo|scan|page|document|transcrib\w*|OCR|assist\w*|help(?:ing)? with|request|"
     r"process (?:this|that)|read (?:this|that|the))\b", re.IGNORECASE)
+# fixed refusal phrases that need no task word ("I cannot comply.", 無法處理。, 我不能提供…)
+_REFUSAL_FIXED = re.compile(
+    r"\bas an ai\b|\b(?:cannot|can['\u2019]?t|can not|won['\u2019]?t|will not|unable to) "
+    r"(?:comply|do (?:that|this)|fulfil+|provide (?:that|this)|assist|help)\b|"
+    r"不能提供|無法提供|无法提供|不能處理|不能处理|無法處理|无法处理|無法完成|无法完成|不便提供|不能協助|不能协助|無法協助|无法协助|"
+    r"無法回答|无法回答|不能回答", re.IGNORECASE)
 REFUSAL_MAX_WIDTH = 200                 # display width: a CJK character counts as two
 
 
@@ -130,7 +136,8 @@ def _width(s: str) -> int:
 
 
 def is_refusal(s: str) -> bool:
-    return _width(s) < REFUSAL_MAX_WIDTH and bool(_REFUSAL_RE.match(s)) and bool(_REFUSAL_CUE.search(s))
+    return (_width(s) < REFUSAL_MAX_WIDTH and bool(_REFUSAL_RE.match(s))
+            and bool(_REFUSAL_CUE.search(s) or _REFUSAL_FIXED.search(s)))
 
 
 def clean_markdown(text: str) -> tuple[str, str | None]:
@@ -451,7 +458,9 @@ def _cache_dir(req: dict, eo: dict, host: str, n: int) -> Path:
         ident = [src.name, st.st_size, int(st.st_mtime)]
     except OSError:
         ident = [src.name]
-    key = json.dumps([ident, n, host, eo.get("model"), eo.get("preset"), eo.get("dpi"), eo.get("max_image_px"),
+    u = urlsplit(str(eo.get("base_url") or ""))
+    endpoint = f"{u.scheme.lower()}://{u.netloc.lower()}{u.path.rstrip('/')}" if u.netloc else host
+    key = json.dumps([ident, n, endpoint, eo.get("model"), eo.get("preset"), eo.get("dpi"), eo.get("max_image_px"),
                       eo.get("prompt_style"), eo.get("prompt_version"), eo.get("lang"), eo.get("table_pages")],
                      sort_keys=True, default=str)
     import hashlib
