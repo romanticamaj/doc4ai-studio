@@ -154,7 +154,7 @@ async def stream_upload(request, call: CompatCall, *, max_mb: int) -> Upload:
     parser = MultipartParser(params[b"boundary"], {
         "on_part_begin": on_part_begin, "on_header_field": on_header_field, "on_header_value": on_header_value,
         "on_header_end": on_header_end, "on_headers_finished": on_headers_finished, "on_part_data": on_part_data,
-        "on_part_end": on_part_end})
+        "on_part_end": on_part_end, "on_end": lambda: st.__setitem__("ended", True)})
     try:
         async for chunk in request.stream():
             parser.write(chunk)
@@ -166,6 +166,9 @@ async def stream_upload(request, call: CompatCall, *, max_mb: int) -> Upload:
             raise st["error"]
         if st["path"] is None:
             raise CompatError(422, "no file: send the document in the multipart field 'files'")
+        if st["file"] is not None or not st.get("ended"):
+            # no closing boundary: the upload was cut off; never convert (and cache) a truncated file (review 4)
+            raise CompatError(422, "incomplete multipart body: the closing boundary is missing")
     except BaseException as e:
         if st["file"] is not None:
             st["file"].close()
