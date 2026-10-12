@@ -36,6 +36,15 @@ dev = [
   "httpx>=0.27",
   "ruff>=0.6",
 ]
+# benchmark only (spec 2026-10-05 verify §3; index A25): bench/ is not part of the wheel and `aidoc` never imports these
+bench = [
+  "rapidfuzz>=3",
+  "matplotlib>=3.8",
+]
+
+[tool.uv]
+# installed by plain `uv run` too, so restarting the server never strips the benchmark tools
+default-groups = ["dev", "bench"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
