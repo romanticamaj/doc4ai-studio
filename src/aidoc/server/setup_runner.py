@@ -21,27 +21,39 @@ class SetupRunner:
     def running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start(self, engine: str) -> dict:
+    def start(self, engine: str, action: str = "setup") -> dict:
+        """action "setup" = aidoc setup <engine>; "check" = the VLM connection test (engine "vlm", no install)."""
         with self._lock:
             if self.running():
                 raise SetupBusy()
             info = {"setup_id": uuid.uuid4().hex, "engine": engine}
+            if action != "setup":
+                info["action"] = action
             self.current = info
-            self._thread = threading.Thread(target=self._run, args=(engine,), name=f"aidoc-setup-{engine}",
+            self._thread = threading.Thread(target=self._run, args=(engine, action), name=f"aidoc-setup-{engine}",
                                             daemon=True)
             self._thread.start()
         return info
 
-    def _run(self, engine: str) -> None:
+    def _run(self, engine: str, action: str = "setup") -> None:
         bus = self.ctx.bus
+        failures: list[str] = []
 
         def log(line: str) -> None:
-            bus.publish("setup.log", engine, {"engine": engine, "line": str(line)})
+            line = str(line)
+            if "failed" in line or "not supported" in line or "choose a backend" in line or "no API key" in line:
+                failures.append(line)
+            bus.publish("setup.log", engine, {"engine": engine, "line": line})
         try:
-            ok = bool(setup_engines.setup(engine, self.ctx.config, log))
+            if action == "check":
+                ok = bool(setup_engines.setup_vlm(self.ctx.config, log))
+            else:
+                ok = bool(setup_engines.setup(engine, self.ctx.config, log))
             done = {"engine": engine, "ok": ok}
+            if action != "setup":
+                done["action"] = action
             if not ok:
-                done["error"] = "setup failed; see setup.log lines"
+                done["error"] = failures[-1] if failures else "setup failed; see setup.log lines"
         except Exception as e:  # noqa: BLE001  report, never kill the server
             done = {"engine": engine, "ok": False, "error": f"{type(e).__name__}: {e}"}
         bus.publish("setup.done", engine, done)

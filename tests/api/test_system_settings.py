@@ -6,7 +6,7 @@ from aidoc import paths
 
 def test_system_shape(client, ctx, tmp_root):
     s = client.get("/api/system").json()
-    assert set(s["engines"]) == {"markitdown", "docling", "mineru"}
+    assert set(s["engines"]) == {"markitdown", "docling", "mineru", "vlm"}
     assert s["engines"]["docling"] == {"installed": False, "ready": False}
     assert s["queue"] == {"paused": False, "length": 0, "running_task_id": None}
     assert s["disk_free"] > 0 and s["output_dir"].endswith("out") and s["version"] == "0.1.0"
