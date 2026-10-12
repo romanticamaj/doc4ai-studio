@@ -67,6 +67,33 @@ uv run aidoc serve              # http://127.0.0.1:8765
 By default the server binds to `127.0.0.1`. To expose it on your network, a token is required:
 `uv run aidoc serve --host 0.0.0.0 --token <secret>`. While the server runs, `aidoc convert` and `aidoc batch` hand their work to its queue.
 
+## VLM OCR (optional, off by default)
+
+A fourth engine, `vlm`, sends page images to any **OpenAI-compatible vision endpoint** (Ollama or LM Studio on this
+computer, vLLM / SGLang you host yourself, or a cloud API). It is only used where everything else failed: it is the
+**last** engine of every PDF / image route (after MarkItDown) and the **last** per-page repair engine (after Docling
+and MinerU). With `[vlm] backend = "none"` (the default) nothing changes.
+
+```toml
+[vlm]
+backend = "openai"
+base_url = "http://127.0.0.1:11434/v1"   # Ollama on this computer
+model = "gemma4:12b"
+remote_enabled = true                    # consent: page images go to base_url
+allow_no_key = true                      # local servers need no key; otherwise set AIDOC_VLM_API_KEY
+```
+
+- **Privacy:** pages are sent only after `remote_enabled = true` (Settings → VLM OCR has the consent switch; an endpoint
+  that is not on this computer is shown in red). Every use is logged (`vlm(openai): sending N page image(s) to <host>`)
+  and recorded in the sidecar (`vlm.endpoint_host`, `vlm.pages_sent`). `aidoc convert --no-vlm-remote` turns it off for
+  one run. Keep the key in the `AIDOC_VLM_API_KEY` environment variable; a key in `aidoc.toml` is masked by the API.
+- **Limits:** a daily page budget (`remote_daily_page_budget`, default 500) and a per-document page cap
+  (`remote_max_pages_per_doc`, default 200; per-page repair is limited by the budget only).
+- `aidoc setup vlm` (or 「測試連線」 in Settings) sends one built-in test image and checks the answer.
+- The VLM engine **does not extract images** (no layout boxes): pictures become `<!-- image missing -->`.
+- The **local backend** (a llama.cpp server with PaddleOCR-VL-1.6 managed by aidoc) is **not available yet**: the
+  feasibility spike did not pass its acceptance rule on this hardware (`docs/superpowers/spikes/2026-10-vlm-ocr.md`).
+
 ## Output
 
 ```
@@ -187,6 +214,7 @@ Doc4AI Studio is useful when you have a mixed pile of documents (scanned and bor
 | [MarkItDown](https://github.com/microsoft/markitdown) 0.1.8 | Office files, HTML, EPUB, CSV | MIT |
 | [Docling](https://github.com/docling-project/docling) 2.x (+ RapidOCR / EasyOCR) | Born-digital PDFs (layout, tables, reading order); full-page OCR repair | MIT (OCR backends: Apache-2.0) |
 | [MinerU](https://github.com/opendatalab/MinerU) 4.0.x | Scanned PDFs, images, formulas, complex layouts (GPU) | MinerU Open Source License (Apache-2.0 based, with additional conditions) |
+| VLM OCR (optional) | Any OpenAI-compatible vision endpoint you configure: last fallback and last page repair | depends on the endpoint / model |
 | [PyMuPDF](https://github.com/pymupdf/PyMuPDF) | Probing, splitting and checking PDFs in the main program | AGPL-3.0 |
 | [LibreOffice](https://www.libreoffice.org/) (optional, external program) | Office → PDF preview in the web studio | MPL-2.0 |
 
@@ -197,6 +225,7 @@ The engines are separate projects installed into their own environments by `aido
 ```bash
 uv run pytest -m "not slow"     # fast suite, uses a fake engine (no GPU)
 uv run pytest -m slow           # real engines on the GPU (and LibreOffice, when installed)
+# VLM slow tests need an endpoint: AIDOC_VLM_REAL_BASE_URL=http://127.0.0.1:11434/v1 AIDOC_VLM_REAL_MODEL=gemma4:12b
 pnpm --dir web test             # Vitest
 pnpm --dir web e2e              # Playwright
 ```

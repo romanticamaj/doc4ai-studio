@@ -90,6 +90,7 @@ export default defineConfig({
       AIDOC_FAKE_ENGINES: "1",
       AIDOC_FAKE_SCENARIO: scenario,
       AIDOC_DATA: data,
+      AIDOC_ENVS: path.join(root, "envs"), // the VLM connection test writes envs/vlm/.ready: never the project's
       AIDOC_CONFIG: config,
       PYTHONUTF8: "1",
     },

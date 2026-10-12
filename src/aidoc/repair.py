@@ -6,6 +6,7 @@ spliced back between their page markers. Repair never fails the task: engine err
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,6 +46,10 @@ def repair_order(main_engine: str, available: dict[str, bool], *, engines: dict 
     out = [(e, dict(o), lbl) for e, o, lbl in order if available.get(e)]
     if allow_vlm and available.get("vlm") and engines and "vlm" in engines:
         out.append(("vlm", {}, engines["vlm"].label()))
+    only = os.environ.get("AIDOC_REPAIR_ONLY")         # TEST HOOK (slow VLM tests): keep only these engines
+    if only:
+        keep = {n.strip() for n in only.split(",") if n.strip()}
+        out = [o for o in out if o[0] in keep]
     return out
 
 

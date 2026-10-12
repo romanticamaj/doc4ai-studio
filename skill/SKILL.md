@@ -14,13 +14,15 @@ All routing/engine decisions live in the CLI. This skill only calls it and reads
    - Add `--lang en` only if the user says the document is English-only.
    - Add `--force` only if the user asks to re-convert.
    - Add `--allow-online-audio` only if the user explicitly accepts sending audio to Google.
+   - Add `--no-vlm-remote` when the user does not want page images sent to the configured VLM endpoint for this file.
 3. Parse the JSON on stdout. Exit code 1 → report `error_kind`/`error_msg` verbatim and stop. If the message says `run aidoc setup <engine>`, tell the user that command.
 4. Read the Markdown file inside `output_dir`: it is named after the directory itself, i.e. `<output_dir>/<last path component of output_dir>.md` (images are under `<output_dir>/assets/`). Use it to answer the user's request.
 5. If `quality.level == "low"` (or `status == "low"`), say so up front and list `quality.reasons` (e.g. `chars_per_page`, `garbage_ratio`, `missing_table`, `page_map_incomplete`, `page_map_misaligned`, `pages_flagged`) so the user knows the text may be incomplete or the page numbers unreliable. Mention `tried` (which engines were attempted).
-   If `quality.level == "warn"`, the document is usable but some pages have known problems: `quality.pages` lists them (`{page, reasons, repaired_by?}`; reasons `broken_text_layer` = the PDF's text layer is garbled, `garbage`, `page_map_missing`). Entries **with** `repaired_by` were re-read by OCR and are fine; entries **without** it are still unreliable — name those page numbers to the user (`quality.pages_unrepaired` counts them) and do not quote their text as fact.
+   If `quality.level == "warn"`, the document is usable but some pages have known problems: `quality.pages` lists them (`{page, reasons, repaired_by?}`; reasons `broken_text_layer` = the PDF's text layer is garbled, `garbage`, `page_map_missing`). Entries **with** `repaired_by` were re-read by OCR and are fine (`repaired_by` starting with `vlm:` = re-read by a vision-language model, e.g. `vlm:openai:<model>`; entries with only `advisories` such as `vlm_low_overlap` are notes, not problems); entries **without** it are still unreliable — name those page numbers to the user (`quality.pages_unrepaired` counts them) and do not quote their text as fact.
 6. Never paste the whole Markdown back unless asked; summarise or quote the relevant parts. Page numbers are available from `<!-- page: N -->` markers — cite them.
 
 ## Notes
+- `engine == "vlm"` means the pages were read by a vision-language model (the last fallback); the sidecar's `vlm` block says which endpoint got how many pages, and pictures are not extracted (`<!-- image missing -->`).
 - Large PDFs are converted in 40-page segments; an interrupted run resumes when the same command is re-run.
 - Already-converted files (same sha256) return `status: "skipped"` immediately; the `.md` is still valid.
 - `error_msg` starting with `already_converting` means another aidoc process is converting that file right now: wait and re-run.
