@@ -220,6 +220,8 @@ def test_revocation_mid_wait_does_not_abort_the_running_job(workers):
     env.ctx.store.revoke_api_token(tid, "mid", at=time.time())
     t.join(30)
     assert out["r"].status_code == 200 and out["r"].json()["status"] == "success"
+    row = next(c for c in env.ctx.store.list_mcp_calls(limit=10) if c["tool_name"] == "convert_file")
+    assert row["token_id"] == tid and row["status"] == "ok"           # plan review focus 5: attributed
     assert _post_file(env, raw).status_code == 401
 
 
