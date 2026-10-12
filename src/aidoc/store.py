@@ -273,6 +273,17 @@ class Store:
         return _row(self._q1("SELECT * FROM tasks WHERE sha256=? AND status IN ('queued','probing','converting','checking') "
                              "ORDER BY created_at DESC LIMIT 1", (sha256,)))
 
+    def document_job_options(self, doc: dict) -> dict | None:
+        """The options of the job that last produced this document (through its task), None when unknown."""
+        r = self._q1("SELECT j.options_json FROM tasks t JOIN jobs j ON j.id = t.job_id "
+                     "WHERE t.sha256=? AND t.output_dir=?", (doc["sha256"], doc["output_dir"]))
+        if r is None or not r[0]:
+            return None
+        try:
+            return json.loads(r[0])
+        except ValueError:
+            return None
+
     def documents_by_sha(self, sha256) -> list[dict]:
         """Every document with this content, newest first."""
         return self._qa("SELECT * FROM documents WHERE sha256=? ORDER BY created_at DESC", (sha256,))

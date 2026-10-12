@@ -241,16 +241,57 @@ class Admission:
     job_id: str | None = None
 
 
-def find_cached(ctx, sha: str, out_dir: Path) -> dict | None:
-    """A converted document with this content: the planned output dir first, then any other (spec §4.3 step 2 —
-    a file converted in the Library is a hit under any name)."""
-    hit = lookup_cached(ctx.store, sha, out_dir)
-    if hit is not None and hit.get("id"):
-        return ctx.store.get_document(hit["id"]) or hit
+_LEVEL_RANK = {"ok": 0, "warn": 1, "low": 2}
+
+
+def cache_matches(doc: dict, origin: dict | None, opts: CompatOptions, tier: str | None) -> bool:
+    """The output-affecting options of a request against how a document was produced (verifier item 2): language,
+    engine forced or auto (an auto request never takes a forced engine's result; a forced request takes a document
+    made by that engine), and the MinerU tier. `origin` = the options of the job that produced it (None: unknown,
+    treated as an auto conversion)."""
+    if doc.get("lang") and doc["lang"] != opts.lang:
+        return False
+    forced = (origin or {}).get("engine")
+    if opts.engine is None:
+        if forced:
+            return False
+    elif doc.get("engine") != opts.engine or forced not in (None, opts.engine):
+        return False
+    origin_tier = (origin or {}).get("mineru_tier")
+    return not (doc.get("engine") == "mineru" and tier and origin_tier and origin_tier != tier)
+
+
+def _rank(doc: dict) -> tuple:
+    q = doc.get("quality") or {}
+    level = q.get("level") or doc.get("status")
+    return (_LEVEL_RANK.get(level, 3), -(q.get("score") or 0.0), -(doc.get("created_at") or 0.0))
+
+
+def find_cached(ctx, sha: str, out_dir: Path, opts: CompatOptions | None = None, tier: str | None = None) -> dict | None:
+    """The best converted document with this content whose output is still on disk (spec §4.3 step 2: a file
+    converted in the Library is a hit under any name). With `opts`, only documents produced with the same
+    output-affecting options count, best quality first (verifier item 2)."""
+    candidates = []
     for doc in ctx.store.documents_by_sha(sha):
-        if doc["status"] in VISIBLE and lookup_cached(ctx.store, sha, Path(doc["output_dir"])) is not None:
-            return doc
-    return None
+        if doc["status"] not in VISIBLE or lookup_cached(ctx.store, sha, Path(doc["output_dir"])) is None:
+            continue
+        if opts is not None and not cache_matches(doc, ctx.store.document_job_options(doc), opts, tier):
+            continue
+        candidates.append(doc)
+    if not candidates:
+        return None
+    if opts is None:                                   # any result for this content: the planned dir's first
+        own = [d for d in candidates if Path(d["output_dir"]) == Path(out_dir)]
+        return own[0] if own else candidates[0]
+    return min(candidates, key=_rank)
+
+
+def _same_options(ctx, task: dict, opts: CompatOptions) -> bool:
+    """A running conversion answers this request only when it was started with the same engine choice and
+    language (verifier item 2); otherwise this request converts on its own."""
+    job = ctx.store.get_job(task["job_id"]) or {}
+    o = job.get("options") or {}
+    return (o.get("engine") or None) == opts.engine and (task.get("lang") or o.get("lang")) == opts.lang
 
 
 def admit(ctx, call: CompatCall, upload: Upload, name: str, convert, opts: CompatOptions) -> Admission | None:
@@ -259,15 +300,15 @@ def admit(ctx, call: CompatCall, upload: Upload, name: str, convert, opts: Compa
     with _admit_lock:
         out_dir = planned_output_dir(ctx.store, convert.output_dir, Path(name), upload.sha256)
         if not opts.force:
-            doc = find_cached(ctx, upload.sha256, out_dir)
-            if doc is not None and (opts.engine is None or doc.get("engine") == opts.engine):
-                return Admission("cached", doc=doc)
+            doc = find_cached(ctx, upload.sha256, out_dir, opts, convert.mineru_tier)
             if doc is not None:
-                # an explicit engine (doc4ai_engine, force_ocr) that the cached result did not use: convert again,
-                # past the pipeline's own cache too (review finding 6)
+                return Admission("cached", doc=doc)
+            if find_cached(ctx, upload.sha256, out_dir) is not None:
+                # this content exists, but made with other options (engine, language, tier): convert again, past
+                # the pipeline's own name-keyed cache too (review finding 6, verifier item 2)
                 convert = dataclasses.replace(convert, force=True)
         live = ctx.store.live_task_for_sha(upload.sha256)
-        if live is not None:
+        if live is not None and _same_options(ctx, live, opts):
             return Admission("attached", task_id=live["id"], job_id=live["job_id"])
         token_id = call.principal.token_id if call.principal else None
         job_id = reserve_job_once(ctx, convert, token_id, origin="compat",
