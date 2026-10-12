@@ -230,6 +230,57 @@ pnpm --dir web test             # Vitest
 pnpm --dir web e2e              # Playwright
 ```
 
+## Verify
+
+`aidoc verify` checks any Markdown against its source PDF, page by page — our own output or one made by MinerU, Docling,
+MarkItDown or another tool — with the same page model the converter uses. It reads `<!-- page: N -->` markers, the
+MinerU / Docling / pdfmux marker styles or a custom regex, and infers the page boundaries from the PDF text layer when
+there are no markers.
+
+```bash
+uv run aidoc verify out/<stem>/                               # one of our outputs (sidecar + source found for you)
+uv run aidoc verify book.md --pdf book.pdf --json report.json --html report.html --thumbnails   # any tool's Markdown
+uv run aidoc verify book.md --pdf book.pdf --fail-on warn     # CI: exit 1 on warn or low
+```
+
+It reports dropped pages (`page_dropped`: the PDF page has text, the Markdown section is empty), page markers that are
+missing, shifted or out of order, broken text layers, garbage, and — as advisories that never change the level — tables
+or formulas that seem missing on a page. Exit codes: `0` passed, `1` failed `--fail-on` (default `low`), `3`
+unverifiable, `4` usage or input error. The same check is `POST /api/verify` and the MCP tools `verify_document` /
+`verify_markdown`; none of them writes anything.
+
+What it cannot do: it sees structural losses only, not OCR misreadings, VLM hallucinations or text missed inside
+images. A scanned PDF whose Markdown has no page markers cannot be verified (no text layer to anchor on: exit 3).
+`page_dropped` also fires when a page is one big picture and the engine rightly kept only the image (use
+`--thumbnails` to look). Table / formula advisories come from ruling-line and math-font heuristics. Inferred page
+boundaries need text the PDF layer and the Markdown share; pages that are mostly tables may stay undecidable, and on
+multi-column books the text layer's order can differ from the reading order, so a boundary may sit a paragraph or
+two off.
+
+## Benchmark
+
+`bench/` (not part of the package) measures what the orchestration adds — automatic routing, fallback and per-page
+repair — against each engine alone, on documents with ground truth:
+
+- **Tier A**, synthetic and regenerated from pinned sources: Traditional Chinese and English text from Project
+  Gutenberg typeset with the SIL OFL Noto Sans CJK TC font, degraded scans, PDFs whose fonts lack `/ToUnicode` (the
+  Head First case), ruled tables, formulas, two columns, a 1,200-page book, and Markdown with deliberately dropped,
+  shifted and swapped pages for calibrating `verify`.
+- **Tier B**, real documents under open licences fetched by sha256 from `bench/corpus/MANIFEST.json`: Taiwan
+  government gazettes (Open Government Data License), arXiv CC BY 4.0 papers, NIST publications.
+- **Tier C**, two private books: reported separately and marked not reproducible.
+
+```bash
+uv run python bench/corpus/make_synthetic.py                 # Tier A (about 2 minutes; downloads the pinned sources)
+uv run python bench/corpus/fetch.py                          # Tier B
+uv run python bench/run.py --corpus A,B --configs auto,auto-norepair,docling,mineru,markitdown --out bench/results/<run>
+uv run python bench/calibrate.py --run bench/results/<run>   # gate: verify must track the ground truth
+uv run python bench/report.py --run bench/results/<run>      # summary.md
+```
+
+Single-engine columns and `auto-norepair` run with per-page repair turned off, so the comparison does not borrow
+another engine's repair.
+
 ## Docs
 
 Design specs, implementation plans and research notes live in `docs/superpowers/`.
@@ -241,3 +292,5 @@ Doc4AI Studio 不是新的解析模型，而是編排層：不知道該用 MarkI
 ## License
 
 [AGPL-3.0](LICENSE). If you run a modified version as a network service, the AGPL requires you to offer its source to the users of that service. The engines keep their own licenses (see above).
+
+Benchmark corpus: the synthetic documents are generated from public-domain Project Gutenberg texts (licence headers stripped) and the SIL Open Font License 1.1 Noto Sans CJK TC font (downloaded and embedded as subsets, never committed as a font file); Tier B documents are fetched from their publishers and are not in the repository: Taiwan Open Government Data License 1.0 (compatible with CC BY 4.0), arXiv CC BY 4.0 papers, and US-government works (17 U.S.C. §105, may be under copyright elsewhere).
