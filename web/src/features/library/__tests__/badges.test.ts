@@ -23,3 +23,11 @@ test("filters accept warn and flag", () => {
   expect(toQuery(f)).toEqual({ status: "warn", flag: "page_quality" });
   expect(parseFilters("?flag=bogus").flag).toBe("");
 });
+
+test("the engine filter accepts vlm and the remote note follows the sidecar vlm block", async () => {
+  const { vlmRemoteNote } = await import("../badges");
+  expect(parseFilters("?engine=vlm").engine).toBe("vlm");
+  expect(vlmRemoteNote({ engine: "vlm", vlm: { backend: "openai", local_endpoint: false } })).toBe("遠端");
+  expect(vlmRemoteNote({ engine: "vlm", vlm: { backend: "openai", local_endpoint: true } })).toBeNull();
+  expect(vlmRemoteNote({ engine: "docling", vlm: null })).toBeNull();
+});

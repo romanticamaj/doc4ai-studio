@@ -12,14 +12,14 @@ class _In(BaseModel):
 
 
 class SearchFilters(_In):
-    engine: Literal["markitdown", "docling", "mineru"] | None = None
+    engine: Literal["markitdown", "docling", "mineru", "vlm"] | None = None
     level: Literal["ok", "warn", "low"] | None = None
     flagged: bool | None = None
     doc_ids: list[str] | None = Field(default=None, max_length=50)
 
 
 class ListFilters(_In):
-    engine: Literal["markitdown", "docling", "mineru"] | None = None
+    engine: Literal["markitdown", "docling", "mineru", "vlm"] | None = None
     level: Literal["ok", "warn", "low"] | None = None
     flagged: bool | None = None
     q: str | None = Field(default=None, max_length=200)

@@ -61,4 +61,20 @@ def serialize_document(doc: dict) -> dict:
     out["stem"] = Path(doc["output_dir"]).name
     out["flags"] = doc_flags(doc)
     out["page_summary"] = page_summary(doc.get("quality"))
+    out["vlm"] = _vlm_summary(doc) if doc.get("engine") == "vlm" else None
     return out
+
+
+def _vlm_summary(doc: dict) -> dict | None:
+    """{backend, endpoint_host, local_endpoint, model} of a VLM-converted document, from its sidecar (VLM spec §10.2:
+    the Library marks remote conversions). Only documents whose engine is vlm pay for reading the sidecar."""
+    import json
+    out_dir = Path(doc["output_dir"])
+    try:
+        side = json.loads((out_dir / f"{out_dir.name}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    v = side.get("vlm") if isinstance(side, dict) else None
+    if not isinstance(v, dict):
+        return None
+    return {k: v.get(k) for k in ("backend", "endpoint_host", "local_endpoint", "model")}

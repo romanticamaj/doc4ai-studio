@@ -38,6 +38,10 @@ fs.mkdirSync(data, { recursive: true });
 fs.mkdirSync(out, { recursive: true });
 const scenario = path.join(root, "scenario.json");
 fs.writeFileSync(scenario, JSON.stringify({ default: "ok", delay_s: 0.3, rules: [] }));
+const vlmPort = Number(process.env.AIDOC_E2E_VLM_PORT ?? 8782);
+process.env.AIDOC_E2E_VLM_PORT = String(vlmPort);
+const vlmScenario = path.join(root, "vlm_scenario.json");
+fs.writeFileSync(vlmScenario, JSON.stringify({ default: "ok", model: "fake-vlm", require_key: "sk-test", pages: { "1": "AIDOC VLM CHECK 繁體中文 2026" } }));
 const config = path.join(root, "aidoc.toml");
 fs.writeFileSync(config, `[general]\noutput_dir = ${JSON.stringify(out.replace(/\\/g, "/"))}\n[server]\nport = ${port}\n`);
 
@@ -76,7 +80,7 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], ...(channel ? { channel } : {}), baseURL: process.env.AIDOC_E2E_REAL_BASE_URL },
     },
   ].filter((p) => (p.name === "real") === realOnly),
-  webServer: realOnly ? undefined : {
+  webServer: realOnly ? undefined : [{
     command: `uv run aidoc serve --port ${port}`,
     cwd: path.resolve(here, ".."),
     url: `http://127.0.0.1:${port}/`,
@@ -89,5 +93,13 @@ export default defineConfig({
       AIDOC_CONFIG: config,
       PYTHONUTF8: "1",
     },
-  },
+  }, {
+    // a scripted OpenAI-compatible VLM endpoint on loopback (vlm.spec.ts: Settings → connection test)
+    command: `uv run python -m tests.fakes.vlm_server --port ${vlmPort} --scenario ${JSON.stringify(vlmScenario)}`,
+    cwd: path.resolve(here, ".."),
+    url: `http://127.0.0.1:${vlmPort}/v1/models`,
+    reuseExistingServer: false,
+    timeout: 60_000,
+    env: { PYTHONUTF8: "1" },
+  }],
 });

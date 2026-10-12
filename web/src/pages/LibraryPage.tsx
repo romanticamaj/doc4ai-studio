@@ -15,7 +15,7 @@ import { ApiError } from "@/api/client";
 import type { Document } from "@/api/types";
 import { parseFilters, toQuery, toSearch, type Filters } from "@/features/library/filters";
 import { PageBadges } from "@/features/library/PageBadges";
-import { needsReconvert } from "@/features/library/badges";
+import { needsReconvert, vlmRemoteNote } from "@/features/library/badges";
 import { fileIcon } from "@/features/convert/fileIcon";
 import { baseName, formatDateTime, formatRelative } from "@/lib/format";
 import { describeError } from "@/lib/errors";
@@ -124,6 +124,7 @@ export default function LibraryPage() {
               <SelectItem value="markitdown">markitdown</SelectItem>
               <SelectItem value="docling">docling</SelectItem>
               <SelectItem value="mineru">mineru</SelectItem>
+              <SelectItem value="vlm">vlm</SelectItem>
             </SelectContent>
           </Select>
           <div role="radiogroup" aria-label="品質" className="flex h-8 items-center gap-0.5 rounded-lg bg-muted p-0.5">
@@ -281,6 +282,7 @@ function DocCard({ doc }: { doc: Document }) {
         <QualityBadge doc={doc} />
         <PageBadges doc={doc} />
         <Tag>{doc.engine}</Tag>
+        {vlmRemoteNote(doc) && <span className="text-[11px] text-warn">{vlmRemoteNote(doc)}</span>}
         <Tag>{doc.lang}</Tag>
       </div>
       <div className="mt-auto flex items-center justify-between pt-4 text-xs text-muted-foreground">

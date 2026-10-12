@@ -223,3 +223,24 @@ class FakeVlmServer:
 
     def __exit__(self, *exc) -> None:
         self.stop()
+
+
+def main(argv=None) -> None:
+    """`python -m tests.fakes.vlm_server --port 8782 --scenario '{"default": "ok"}'` (Playwright e2e)."""
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--scenario", default='{"default": "ok"}', help="JSON text or a path")
+    a = ap.parse_args(argv)
+    sc = json.loads(a.scenario) if a.scenario.lstrip().startswith("{") else a.scenario
+    state = ScenarioState(sc)
+    httpd = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(state))
+    httpd.daemon_threads = True
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
