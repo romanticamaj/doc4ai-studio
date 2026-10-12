@@ -40,6 +40,14 @@ class Limits:
     timeout_max_no_pages_s: int = 1800
     startup_timeout_s: int = 900
     disk_space_factor: int = 3
+    # ZIP-based inputs (Office, EPUB, ODF, .zip) are checked before any engine runs (decompression bombs)
+    archive_max_uncompressed_mb: int = 512
+    archive_max_entries: int = 10000
+    archive_max_entry_mb: int = 256
+    archive_max_ratio: int = 200
+    # memory cap of one engine runner process tree; 0 = automatic (75 % of RAM; MarkItDown 25 %, at most 8 GB)
+    engine_memory_mb: int = 0
+    markitdown_memory_mb: int = 0
 
 
 @dataclass

@@ -15,6 +15,12 @@ timeout_per_mb_s = 30
 timeout_max_no_pages_s = 1800
 startup_timeout_s = 900
 disk_space_factor = 3
+archive_max_uncompressed_mb = 512  # Office / EPUB / ODF / zip: refused before any engine runs when the archive
+archive_max_entries = 10000        # inflates past these limits (decompression bombs) -> input failure
+archive_max_entry_mb = 256         #   archive_too_large
+archive_max_ratio = 200            # uncompressed / compressed size
+engine_memory_mb = 0               # engine runner memory cap (process tree); 0 = 75 % of RAM
+markitdown_memory_mb = 0           # MarkItDown's cap; 0 = 25 % of RAM, at most 8192
 [server]
 host = "127.0.0.1"
 port = 8765
