@@ -10,7 +10,8 @@ export function vlmModel(repairedBy: string | null | undefined): string | null {
   return i >= 0 ? rest.slice(i + 1) : rest;
 }
 
-function textFor(page: number, reason: string, repaired: boolean, vlm: string | null): PageWarning | null {
+function textFor(page: number, reason: string, repaired: boolean, vlm: string | null,
+                 metrics: Record<string, unknown> = {}): PageWarning | null {
   const how = vlm != null ? `已用 VLM OCR 修復（${vlm}）` : "已用 OCR 修復";
   switch (reason) {
     case "broken_text_layer":
@@ -27,6 +28,21 @@ function textFor(page: number, reason: string, repaired: boolean, vlm: string | 
       return repaired
         ? { text: `第 ${page} 頁：引擎漏掉了整頁文字，${how}`, tone: "info" }
         : { text: `第 ${page} 頁：引擎漏掉了整頁文字（PDF 這頁有文字，轉出來是空的）`, tone: "warn" };
+    case "page_partial": {
+      if (repaired) return { text: `第 ${page} 頁：只轉出部分文字，${how}`, tone: "info" };
+      const cov = typeof metrics.coverage === "number" ? `約 ${Math.round(metrics.coverage * 100)}% 的` : "部分";
+      return { text: `第 ${page} 頁：只轉出這頁${cov}文字`, tone: "warn" };
+    }
+    case "page_misaligned": {
+      const where = Array.isArray(metrics.found_in) && metrics.found_in.length
+        ? `出現在第 ${metrics.found_in.join("、")} 頁底下` : "不在這頁底下";
+      return { text: `第 ${page} 頁：這頁的文字${where}（頁碼對錯）`, tone: "warn" };
+    }
+    case "page_oversized": {
+      const from = Array.isArray(metrics.foreign_pages) && metrics.foreign_pages.length
+        ? `其他頁（第 ${metrics.foreign_pages.join("、")} 頁）的文字` : "比 PDF 這頁多很多的文字";
+      return { text: `第 ${page} 頁：含有${from}`, tone: "warn" };
+    }
     case "page_conversion_failed":
       return repaired
         ? { text: `第 ${page} 頁：引擎轉換這頁失敗，${how}`, tone: "info" }
@@ -44,7 +60,7 @@ export function pageWarnings(quality: Quality | undefined | null): Map<number, P
     const repaired = !!entry.repaired_by;
     const vlm = vlmModel(entry.repaired_by);
     // advisory-only entries (no reasons, e.g. vlm_low_overlap) produce no note
-    const notes = (entry.reasons ?? []).map((r) => textFor(entry.page, r, repaired, vlm)).filter((n): n is PageWarning => !!n);
+    const notes = (entry.reasons ?? []).map((r) => textFor(entry.page, r, repaired, vlm, (entry as { metrics?: Record<string, unknown> }).metrics ?? {})).filter((n): n is PageWarning => !!n);
     if (!notes.length) continue;
     const prev = out.get(entry.page);
     const all = prev ? [prev, ...notes] : notes;

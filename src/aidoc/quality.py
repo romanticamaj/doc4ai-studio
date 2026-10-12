@@ -35,6 +35,12 @@ SHIFT_HITS_MIN = 3
 PAGE_CHECK_VERSION = 2
 DROPPED_LAYER_MIN = 120        # squashed text-layer chars a page needs before an empty section means "dropped"
 DROPPED_SECTION_MAX = 20       # non-space chars (markup stripped) below which a section counts as empty
+PARTIAL_COVERAGE_MIN = 0.5     # a section holding less of its page's content layer is page_partial; a repair of a
+                               # dropped / partial page must reach it to count as repaired
+OVERSIZE_RATIO = 2.0           # a section this many times its page's text layer ...
+OVERSIZE_SLACK = 300           # ... plus this many characters is page_oversized
+MISALIGNED_MIN_PROBES = 2      # a page is page_misaligned when at least this many of its probes sit elsewhere
+PAGE_REASONS = ("page_dropped", "page_partial", "page_misaligned", "page_oversized")
 VLM_OVERLAP_MIN = 0.2          # VLM spec §7: advisory only (collect numbers; never changes level or score)
 VLM_OVERLAP_MIN_LAYER = 120    # squashed text-layer chars a page needs before the overlap means anything
 SHIFT = 29                     # TrueType standard Mac glyph order: glyph id = char code - 29 (glyph 3 = space)
@@ -47,6 +53,7 @@ _SEP_LINE = re.compile(r"(?m)^\s*\|?\s*:?-{3,}[\s|:-]*$")
 _MARKUP_CHARS = re.compile(r"[|#*_`$]")
 _TABLE_GFM = re.compile(r"(?m)^\s*\|.*\|\s*$\n\s*\|?\s*:?-{3,}")
 _TABLE_HTML = re.compile(r"<table", re.IGNORECASE)
+_TAG = re.compile(r"</?[A-Za-z][^>]*>")
 # Mojibake (UTF-8 bytes decoded as cp1252/latin-1): runs over this alphabet that contain at least one Latin-1
 # symbol/control. Letters-only runs ("ÄÖÜß") and common symbols (★ → ● … ━ ①) are never garbage.
 _MOJIBAKE_ALPHABET = (set(map(chr, range(0x80, 0x180)))
@@ -182,23 +189,80 @@ def flag_pages(md: str, broken_font_pages: Iterable[int]) -> list[dict]:
     return out
 
 
-def dropped_pages(md: str, layers: list[str], blank_pages: Iterable[int] = ()) -> list[dict]:
-    """Pages the engine silently lost (spec 2026-10-05 verify §2.3): the PDF page's squashed text layer has at least
-    DROPPED_LAYER_MIN characters but the page's section has fewer than DROPPED_SECTION_MAX non-space characters
-    (markup stripped). Blank pages and pages without a marker (page_map_missing) are not considered. A page that is
-    one big picture whose text layer the engine rightly skipped is flagged too: its text is still missing from the
-    Markdown, so OCR repair is the right answer."""
-    _, secs = pagemap.split_pages(md)
-    blank = set(blank_pages)
-    out = []
-    for p, layer in enumerate(layers, 1):
-        if p in blank or p not in secs or len(layer) < DROPPED_LAYER_MIN:
-            continue
-        chars = sum(1 for c in strip_markup(secs[p]) if not c.isspace())
-        if chars < DROPPED_SECTION_MAX:
-            out.append({"page": p, "reasons": ["page_dropped"],
-                        "metrics": {"layer_chars": len(layer), "section_chars": chars}})
+def _bigrams(s: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for i in range(len(s) - 1):
+        g = s[i:i + 2]
+        out[g] = out.get(g, 0) + 1
     return out
+
+
+def coverage(section: str, layer: str) -> float | None:
+    """Share of the page's (squashed) text layer that the section holds: multiset coverage of character bigrams,
+    markup and HTML tags removed. None for an empty layer."""
+    if len(layer) < 2:
+        return None
+    sec = pagemap.squash(strip_markup(_TAG.sub(" ", section)))
+    a, b = _bigrams(layer), _bigrams(sec)
+    hit = sum(min(c, b.get(g, 0)) for g, c in a.items())
+    return round(hit / max(1, len(layer) - 1), 4)
+
+
+def page_checks(md: str, layers: list[str], content: list[str], blank_pages: Iterable[int] = (),
+                broken_font_pages: Iterable[int] = ()) -> list[dict]:
+    """Per-page structural checks against the PDF text layer (verifier round on spec 2026-10-05 verify §2.3):
+
+    - page_misaligned: every probe of the page that was found sits in another page's section (swapped content,
+      a page's text under a neighbour) — never treated as dropped, so it is never OCR-copied a second time;
+    - page_dropped: the content layer (running header / footer / page number removed) has DROPPED_LAYER_MIN chars,
+      the section fewer than DROPPED_SECTION_MAX;
+    - page_partial: the section covers less than PARTIAL_COVERAGE_MIN of the content layer;
+    - page_oversized: the section holds another page's text (that page's probes, misplaced or duplicated) or is
+      far larger than its own text layer.
+    Broken-font pages (their layer is not their text) only get page_dropped."""
+    _, secs = pagemap.split_pages(md)
+    blank, broken = set(blank_pages), set(broken_font_pages)
+    homes = pagemap.page_homes(md, layers, exclude=broken)
+    entries: dict[int, dict] = {}
+    foreign: dict[int, set[int]] = {}
+    for q, h in homes.items():
+        if h["found"] >= MISALIGNED_MIN_PROBES and not h["home"]:
+            entries[q] = {"page": q, "reasons": ["page_misaligned"],
+                          "metrics": {"found_in": sorted(h["hosts"]), "probes_found": h["found"]}}
+            for p in h["hosts"]:
+                foreign.setdefault(p, set()).add(q)
+        for p in h["duplicated_in"]:
+            foreign.setdefault(p, set()).add(q)
+    for p, layer in enumerate(layers, 1):
+        if p in entries or p in blank or p not in secs:
+            continue
+        cl = content[p - 1] if p - 1 < len(content) else layer
+        sec = secs[p]
+        chars = sum(1 for c in strip_markup(sec) if not c.isspace())
+        if len(cl) >= DROPPED_LAYER_MIN and chars < DROPPED_SECTION_MAX:
+            entries[p] = {"page": p, "reasons": ["page_dropped"],
+                          "metrics": {"layer_chars": len(cl), "section_chars": chars}}
+            continue
+        if p in broken:
+            continue
+        if len(cl) >= DROPPED_LAYER_MIN:
+            cov = coverage(sec, cl)
+            if cov is not None and cov < PARTIAL_COVERAGE_MIN:
+                entries[p] = {"page": p, "reasons": ["page_partial"],
+                              "metrics": {"coverage": cov, "layer_chars": len(cl), "section_chars": chars}}
+                continue
+        size = len(pagemap.squash(strip_markup(_TAG.sub(" ", sec))))
+        too_big = len(layer) >= DROPPED_SECTION_MAX and size > OVERSIZE_RATIO * len(layer) + OVERSIZE_SLACK
+        if p in foreign or too_big:
+            entries[p] = {"page": p, "reasons": ["page_oversized"],
+                          "metrics": {"foreign_pages": sorted(foreign.get(p, ())), "section_chars": size,
+                                      "layer_chars": len(layer)}}
+    return [entries[p] for p in sorted(entries)]
+
+
+def dropped_pages(md: str, layers: list[str], blank_pages: Iterable[int] = ()) -> list[dict]:
+    """page_dropped only (kept for callers that have no content layers): see `page_checks`."""
+    return [e for e in page_checks(md, layers, layers, blank_pages) if e["reasons"] == ["page_dropped"]]
 
 
 def vlm_overlap(section: str, layer: str) -> float | None:
@@ -238,7 +302,7 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
            repaired: list[dict] | None = None, align_sample: int | None = None, last_resort: bool = False,
            failed_pages: dict[int, str] | None = None,
            layers: list[str] | None = None, vlm_pages=None,
-           skip_page_map_reasons: bool = False) -> QualityResult:
+           skip_page_map_reasons: bool = False, content_layers: list[str] | None = None) -> QualityResult:
     """Document quality. Legacy rules for non-PDFs; PDFs add the page map, alignment spot check and flagged pages
     (spec 2026-10-01 §5.2: any document reason -> low; else unrepaired flagged pages -> warn; else ok).
     `skip_page_map_reasons`: the markers were inferred by `verify` (index A26) — the page map is not evaluated
@@ -256,8 +320,8 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     pm["invalid_markers"] = pagemap.invalid_markers(markdown, pages)
     if pm["invalid_markers"] and not skip_page_map_reasons:
         reasons.append("page_map_invalid")
-    if pdf is not None and layers is None and (vlm_pages or not quick) and Path(pdf).is_file():
-        layers = pagemap.pdf_text_layers(pdf)          # once: spot check, dropped pages, VLM overlap
+    if pdf is not None and (layers is None or (content_layers is None and not quick))             and (vlm_pages or not quick) and Path(pdf).is_file():
+        layers, content_layers = pagemap.pdf_layers(pdf)   # once: spot check, page checks, VLM overlap
     if pdf is not None and not skip_page_map_reasons:
         # quick (segment) check: every page of the segment — a 10-page sample let one legitimately merged
         # cross-page paragraph read as 1/9 misaligned on a real book (2026-10-01 acceptance)
@@ -281,9 +345,9 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
             by_page[p] = {**by_page[p], "reasons": by_page[p]["reasons"] + ["page_conversion_failed"], "error": msg}
         else:
             by_page[p] = {"page": p, "reasons": ["page_conversion_failed"], "error": msg}
-    # pages the engine lost without saying so (empty section, text in the PDF layer); not in the quick segment check
+    # pages lost, cut, moved or swollen without the engine saying so; not in the quick segment check
     if not quick and layers is not None:
-        for e in dropped_pages(markdown, layers, probe.blank_pages):
+        for e in page_checks(markdown, layers, content_layers or layers, probe.blank_pages, probe.broken_font_pages):
             if e["page"] not in repaired_pages and e["page"] not in by_page and e["page"] <= pages:
                 by_page[e["page"]] = e
     flagged = [by_page[p] for p in sorted(by_page)]

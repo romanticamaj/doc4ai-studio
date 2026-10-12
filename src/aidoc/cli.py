@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     vf.add_argument("--html", metavar="PATH", help="write a self-contained HTML report")
     vf.add_argument("--thumbnails", action="store_true", help="HTML: page thumbnails of flagged pages (needs PDF)")
     vf.add_argument("--fail-on", choices=["warn", "low"], default="low", help="level that makes the exit code 1")
-    vf.add_argument("--sample", type=int, default=30, help="alignment spot-check pages (0 = every page)")
+    vf.add_argument("--sample", type=int, default=0, help="alignment spot-check pages (default 0 = every page)")
     vf.add_argument("--lang", choices=["cht", "en"], default="cht", help="wording of the summary / HTML")
     vf.add_argument("--allow-unverifiable", action="store_true", help="exit 0 instead of 3 when unverifiable")
     s = sub.add_parser("setup", help="install an engine env, download models, self-check")

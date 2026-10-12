@@ -165,10 +165,10 @@ def test_page_cap_and_daily_budget(tmp_root, monkeypatch, fixtures):
     tid = e.task(e.copy("span_margin.pdf"))                         # 45 pages > the 10-page cap
     assert e.run(tid) == TaskStatus.low
     assert any("vlm(page_cap)" in line for line in e.logs) and e.store.get_task(tid)["engine"] != "vlm"
-    # the "low" fake output of each 40-page segment is a 5-character page: page_dropped on pages 1 and 41; the other
-    # engines' repairs give 5 characters again (not a real section), so the VLM repairs both: 2 of the 5 budget pages
+    # the "low" fake output of each 40-page segment is a 5-character page; the one whose PDF page has a prose text
+    # layer is page_dropped, the other engines' repairs give 5 characters again, so the VLM gets it: 1 budget page
     used = e.store.vlm_usage_today("openai", "127.0.0.1:9")["pages"]
-    assert used == 2
+    assert used == 1
     # per-page repair is not capped per document, only by the daily budget: 3 pages fit into the 3 left, 3 more do not
     e.scenario(default="ok", garbled_pages=[1, 2, 3], rules=STICKY)
     a = e.task(_pdf(tmp_root / "r1.pdf", fixtures, broken=3, text_pages=12), engine="docling")
@@ -217,9 +217,13 @@ def test_refusal_and_truncation_are_failed_pages_and_the_key_is_never_written(tm
     e.real_vlm()
     e.scenario()
     rules = [{"match": {"page": 1}, "behavior": "refuse"}, {"match": {"page": 2}, "behavior": "length"}]
-    with FakeVlmServer({"default": "ok", "require_key": KEY, "rules": rules, "with_table": True}) as base:
+    pdf = _ten_text_pages(tmp_root / "ten.pdf", fixtures)
+    with pymupdf.open(pdf) as d:                       # the fake endpoint "reads" each page's own text (page checks)
+        texts = {str(k): p.get_text() for k, p in enumerate(d, 1)}
+    with FakeVlmServer({"default": "ok", "require_key": KEY, "rules": rules, "with_table": True,
+                        "pages": texts}) as base:
         _config(tmp_root, base)
-        tid = e.task(_ten_text_pages(tmp_root / "ten.pdf", fixtures), engine="vlm")
+        tid = e.task(pdf, engine="vlm")
         assert e.run(tid) == TaskStatus.done
     side = e.sidecar("ten")
     q = side["quality"]

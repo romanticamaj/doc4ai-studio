@@ -270,7 +270,9 @@ def test_vlm_low_overlap_is_advisory_only():
     good = "The quick brown fox jumps over the lazy dog near the river bank today. " * 6
     md = "".join(f"<!-- page: {i} -->\n\n{good}\n\n" for i in (1, 2)).replace(good, "Ships and harbours and sails and masts. " * 8, 1)
     layers = [squash(good), squash(good)]
-    q = assess(md, _probe(2), 2, page_map_method="vlm_per_page", vlm_pages=[1, 2], layers=layers)
+    # no prose layer: this test isolates the overlap advisory (page_partial is test_page_checks.py's subject)
+    q = assess(md, _probe(2), 2, page_map_method="vlm_per_page", vlm_pages=[1, 2], layers=layers,
+               content_layers=["", ""])
     assert q.level == "ok" and q.pages[0]["page"] == 1 and q.pages[0]["advisories"] == ["vlm_low_overlap"]
     assert q.pages_unrepaired == 0 and q.to_json()["pages_unrepaired"] == 0
 

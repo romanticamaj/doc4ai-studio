@@ -99,6 +99,119 @@ def pdf_text_layers(pdf: Path) -> list[str]:
         return [squash(page.get_text()) for page in doc]
 
 
+# ---- page content without running headers / footers / page numbers (for per-page coverage checks)
+
+FURNITURE_EDGE_LINES = 3          # a running header / footer sits among the first or last lines of a page
+FURNITURE_MIN_SHARE = 0.2         # ... and repeats on at least this share of the pages (and on 3 pages)
+PROSE_LINE_MIN = 20               # shorter lines (diagram labels, table cells, page furniture) are not prose
+FURNITURE_MAX_SHARE = 0.5         # furniture never takes more than half of a page's text
+_DIGITS = re.compile(r"\d+")
+
+
+def _furniture_key(line: str) -> str:
+    return _DIGITS.sub("#", squash(line))
+
+
+def _edges(lines: list[str]) -> list[int]:
+    idx = [i for i, ln in enumerate(lines) if squash(ln)]
+    return sorted(set(idx[:FURNITURE_EDGE_LINES] + idx[-FURNITURE_EDGE_LINES:]))
+
+
+def content_layers(pages_lines: list[list[str]], prose_only: bool = False) -> list[str]:
+    """Squashed page text without its running header / footer and page number: lines among the first / last
+    FURNITURE_EDGE_LINES of a page whose digit-normalised form recurs at those positions on many pages, plus edge
+    lines that are only a number. A figure page whose text is just the header, the page number and a caption must
+    not look like a page full of text."""
+    counts: dict[str, int] = {}
+    for lines in pages_lines:
+        for k in {_furniture_key(lines[i]) for i in _edges(lines)}:
+            counts[k] = counts.get(k, 0) + 1
+    need = max(3, FURNITURE_MIN_SHARE * len(pages_lines))
+    furniture = {k for k, c in counts.items() if c >= need and k}
+    out = []
+    for lines in pages_lines:
+        edge = set(_edges(lines))
+        drop = {i for i in edge if (k := _furniture_key(lines[i])) in furniture or k == "#"}
+        total = sum(len(squash(ln)) for ln in lines)
+        if total and sum(len(squash(lines[i])) for i in drop) > FURNITURE_MAX_SHARE * total:
+            drop = set()          # a page repeating its whole text (synthetic / boilerplate pages): not furniture
+        keep = []
+        for i, ln in enumerate(lines):
+            if i in drop:
+                continue
+            sq = squash(ln)
+            if prose_only and len(sq) < PROSE_LINE_MIN:
+                continue
+            keep.append(sq)
+        out.append("".join(keep))
+    return out
+
+
+def pdf_layers(pdf: Path) -> tuple[list[str], list[str]]:
+    """(squashed text layers, squashed prose layers) in one pass. The prose layer drops the running header / footer /
+    page number and every line shorter than PROSE_LINE_MIN (labels inside drawn figures, table cells): an engine that
+    keeps a diagram as a picture has not lost the page's text."""
+    import pymupdf
+    texts = []
+    with pymupdf.open(pdf) as doc:
+        for page in doc:
+            texts.append(page.get_text())
+    return [squash(t) for t in texts], content_layers([t.split("\n") for t in texts], prose_only=True)
+
+
+def page_homes(md: str, layers: list[str], *, exclude: Iterable[int] = (), win: int = 24, k: int = 3,
+               min_chars: int = 120) -> dict[int, dict]:
+    """Where every page's text sits in the Markdown: for each page with probes (unique in the whole text layer,
+    `_probe_spans`), how many were found, how many in the page's own section, and which other sections hold them.
+    Every page is probed (unlike the sampled spot check)."""
+    n = len(layers)
+    excl = set(exclude)
+    whole = "\0".join(layers)
+    pre, chunks = _chunks(md)
+    parts, starts, owners = [squash(pre)], [0], [None]
+    pos = len(parts[0])
+    for page, a, b in chunks:
+        sq = squash(md[a:b])
+        starts.append(pos)
+        owners.append(page)
+        parts.append(sq)
+        pos += len(sq)
+    t = "".join(parts)
+
+    def owner_at(i: int):
+        return owners[bisect.bisect_right(starts, i) - 1]
+
+    out: dict[int, dict] = {}
+    for p in range(1, n + 1):
+        if p in excl or len(layers[p - 1]) < min_chars:
+            continue
+        spans = _probe_spans(layers[p - 1], p, whole, win, k)
+        if not spans:
+            continue
+        found = home = 0
+        hosts: dict[int, int] = {}
+        dup: dict[int, int] = {}                   # other sections holding a probe that is ALSO in the page's own
+        for _, probe in spans:
+            hit_pages = []
+            i = t.find(probe)
+            while i != -1 and len(hit_pages) < _FIND_MAX:
+                hit_pages.append(owner_at(i))
+                i = t.find(probe, i + 1)
+            if not hit_pages:
+                continue
+            found += 1
+            if p in hit_pages:
+                home += 1
+            for h in set(hit_pages):
+                if h is not None and h != p:
+                    hosts[h] = hosts.get(h, 0) + 1
+                    if p in hit_pages:
+                        dup[h] = dup.get(h, 0) + 1
+        out[p] = {"probes": len(spans), "found": found, "home": home, "hosts": dict(sorted(hosts.items())),
+                  "duplicated_in": dict(sorted(dup.items()))}
+    return out
+
+
 def _even_sample(items: list[int], k: int) -> list[int]:
     if k >= len(items):
         return list(items)

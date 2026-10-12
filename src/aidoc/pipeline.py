@@ -34,7 +34,7 @@ from aidoc.normalize import normalize
 from aidoc.output import OutputWriter, build_sidecar, lookup_cached, planned_output_dir
 from aidoc.pagemap import MARKER
 from aidoc.probe import probe_file
-from aidoc.quality import DROPPED_SECTION_MAX, FLAGGED_MAX_RATIO, assess, dropped_pages, flag_pages
+from aidoc.quality import FLAGGED_MAX_RATIO, assess, flag_pages, page_checks
 from aidoc.repair import repair_pages
 from aidoc.retry import RetryPolicy
 from aidoc.router import route
@@ -346,14 +346,21 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
             by_page[p] = {**by_page[p], "reasons": by_page[p]["reasons"] + ["page_conversion_failed"], "error": msg}
         else:
             by_page[p] = {"page": p, "reasons": ["page_conversion_failed"], "error": msg}
-    # pages the engine lost without reporting them (spec 2026-10-05 verify §2.3): repaired like failed pages
-    layers = pagemap.pdf_text_layers(ctx.work_src) if ctx.work_src is not None else None
-    if layers is not None and len(layers) == probe.pages:
-        for e in dropped_pages(merged.markdown, layers, probe.blank_pages):
+    # pages the engine lost, cut, moved or swelled without reporting it (verifier round on spec 2026-10-05 verify
+    # §2.3): dropped / partial pages are repaired like failed pages; misaligned / oversized pages are only flagged —
+    # their text is somewhere else in the Markdown, so an OCR copy would duplicate it
+    layers = content = None
+    if ctx.work_src is not None:
+        layers, content = pagemap.pdf_layers(ctx.work_src)
+        if len(layers) != probe.pages:
+            layers = content = None
+    if layers is not None:
+        for e in page_checks(merged.markdown, layers, content, probe.blank_pages, probe.broken_font_pages):
             by_page.setdefault(e["page"], e)
-    else:
-        layers = None
     flagged = [by_page[p] for p in sorted(by_page)]
+    to_repair = [e for e in flagged if not set(e["reasons"]) & {"page_misaligned", "page_oversized"}]
+    repair_layers = {e["page"]: content[e["page"] - 1] for e in to_repair
+                     if content is not None and set(e["reasons"]) & {"page_dropped", "page_partial"}}
     effective = max(1, probe.pages - len(probe.blank_pages))
     repaired: list[dict] = []
     outcome_repaired: dict[int, str] = {}
@@ -362,10 +369,9 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     no_repair = os.environ.get("AIDOC_BENCH_NO_REPAIR") == "1"
     if flagged and no_repair:
         ctx.log(f"repair disabled (benchmark): {len(flagged)} flagged page(s) left as they are")
-    elif flagged and (last_resort or len(flagged) <= FLAGGED_MAX_RATIO * effective) and ctx.engines:
-        need = {e["page"]: DROPPED_SECTION_MAX for e in flagged if "page_dropped" in e["reasons"]}
-        outcome = repair_pages(ctx, ctx.engines, merged, [e["page"] for e in flagged], engine_name,
-                               min_chars=need or None)
+    elif to_repair and (last_resort or len(flagged) <= FLAGGED_MAX_RATIO * effective) and ctx.engines:
+        outcome = repair_pages(ctx, ctx.engines, merged, [e["page"] for e in to_repair], engine_name,
+                               layers=repair_layers or None)
         merged = NormalizedResult(markdown=outcome.markdown, assets=outcome.assets)
         labels = sorted(set(outcome.repaired.values()))
         ctx.log(f"repaired {len(outcome.repaired)}/{len(flagged)} pages"
@@ -382,7 +388,7 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     q = assess(merged.markdown, probe, probe.pages, pdf=ctx.work_src, page_map_method=method,
                flagged_before=len(flagged), repaired=repaired, last_resort=last_resort,
                failed_pages={p: m for p, m in failed.items() if p not in outcome_repaired},
-               vlm_pages=vlm_pages, layers=layers)
+               vlm_pages=vlm_pages, layers=layers, content_layers=content)
     if q.page_map and q.page_map.get("alignment"):
         al = q.page_map["alignment"]
         ctx.log(f"page map {q.page_map['found']}/{q.page_map['expected']} ({q.page_map.get('method')}); "
