@@ -6,6 +6,7 @@ content that is already converted answers from the library (cache, by sha256 reg
 that is being converted right now is attached to instead of converted twice."""
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import re
 import shutil
@@ -259,8 +260,12 @@ def admit(ctx, call: CompatCall, upload: Upload, name: str, convert, opts: Compa
         out_dir = planned_output_dir(ctx.store, convert.output_dir, Path(name), upload.sha256)
         if not opts.force:
             doc = find_cached(ctx, upload.sha256, out_dir)
-            if doc is not None:
+            if doc is not None and (opts.engine is None or doc.get("engine") == opts.engine):
                 return Admission("cached", doc=doc)
+            if doc is not None:
+                # an explicit engine (doc4ai_engine, force_ocr) that the cached result did not use: convert again,
+                # past the pipeline's own cache too (review finding 6)
+                convert = dataclasses.replace(convert, force=True)
         live = ctx.store.live_task_for_sha(upload.sha256)
         if live is not None:
             return Admission("attached", task_id=live["id"], job_id=live["job_id"])

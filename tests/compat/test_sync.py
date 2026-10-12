@@ -242,3 +242,15 @@ def test_server_token_is_not_a_pat_on_v1(token_ctx):
     with TestClient(create_app(token_ctx), client=("10.0.0.9", 5000), base_url="http://127.0.0.1:8765") as c:
         r = c.post("/v1/convert/file", headers={"Authorization": "Bearer s3cret"}, files={"files": ("a.pdf", PDF)})
         assert r.status_code == 401 and "detail" in r.json() and "workspace" not in r.json()
+
+
+def test_an_explicit_engine_is_not_answered_by_another_engines_cache(workers):
+    """Review finding 6: retrying with force_ocr / doc4ai_engine must not return the earlier engine's result."""
+    env = workers
+    raw, _ = env.issue()
+    first = _post_file(env, raw, name="eng.pdf", data=PDF + b"\n% eng\n").json()["document"]["doc4ai"]
+    other = next(e for e in ("markitdown", "docling", "mineru") if e != first["engine"])
+    again = _post_file(env, raw, name="eng.pdf", data=PDF + b"\n% eng\n", doc4ai_engine=first["engine"]).json()
+    assert again["document"]["doc4ai"]["cached"] is True
+    redo = _post_file(env, raw, name="eng.pdf", data=PDF + b"\n% eng\n", doc4ai_engine=other).json()
+    assert redo["document"]["doc4ai"]["cached"] is False and redo["document"]["doc4ai"]["engine"] == other
