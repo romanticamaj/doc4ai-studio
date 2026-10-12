@@ -350,6 +350,7 @@ def score(s: Sample, config: str, conv: dict) -> dict:
         m["pages_repaired"] = sum(1 for p in q.get("pages") or [] if p.get("repaired_by"))
         m["pages_unrepaired"] = q.get("pages_unrepaired")
     low_pages: list[int] = []
+    unrecovered: list[int] = []
     if s.gt_level == "L1":
         if secs:
             sc = M.page_scores(gt, secs)
@@ -366,6 +367,7 @@ def score(s: Sample, config: str, conv: dict) -> dict:
         broken = (gt.get("defects") or {}).get("broken_text_layer_pages") or []
         if broken:
             m["recovery"] = M.recovery_rate(broken, sc)
+        unrecovered = [p for p in _gt_defects(gt) if sc.get(p, {"ned": 0.0})["ned"] < M.RECOVERED_NED]
         low_pages = sorted(p for p in content if sc[p]["ned"] < 0.5)
         if gt.get("tables"):
             teds, teds_s = [], []
@@ -388,7 +390,8 @@ def score(s: Sample, config: str, conv: dict) -> dict:
              "inferred": bool(rep.page_map and rep.page_map.get("method") == "inferred")}
     except ValueError as e:
         v["error"] = str(e)
-    return {"metrics": m, "verify": v, "gt_defects": _gt_defects(gt), "low_pages": low_pages}
+    return {"metrics": m, "verify": v, "gt_defects": _gt_defects(gt), "gt_defects_unrecovered": unrecovered,
+            "low_pages": low_pages}
 
 
 def _gt_defects(gt: dict) -> list[int]:
