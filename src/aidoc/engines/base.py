@@ -46,6 +46,20 @@ def raw_from_result(res: dict, raw_dir: Path) -> RawResult:
                      images_missing={int(k): int(v) for k, v in (res.get("images_missing") or {}).items()})
 
 
+def memory_limit_mb(engine: str, limits) -> int:
+    """The memory cap of one runner process tree (verifier round, item 1b): [limits] engine_memory_mb /
+    markitdown_memory_mb, or automatic — 75 % of RAM for the GPU engines, 25 % (1–8 GB) for MarkItDown, which only
+    parses files and is where an Office decompression bomb would land."""
+    configured = limits.markitdown_memory_mb if engine == "markitdown" else limits.engine_memory_mb
+    if configured:
+        return int(configured)
+    import psutil
+    total_mb = psutil.virtual_memory().total // (1024 * 1024)
+    if engine == "markitdown":
+        return int(max(1024, min(8192, total_mb // 4)))
+    return int(max(2048, total_mb * 3 // 4))
+
+
 class RunnerEngine:
     """Engine backed by a runner script in envs/<name>/.venv; open_session() keeps one runner alive."""
     name: str = ""
@@ -91,7 +105,8 @@ class RunnerEngine:
         """Start the runner once; every convert() on the session reuses the loaded models (spec §3)."""
         from aidoc.engines.host import RunnerHost
         eo = engine_opts if engine_opts is not None else self.engine_opts(opts, probe, full_page_ocr)
-        host = RunnerHost(self.python(), self.script(), self.env_extra(), self.config.limits.startup_timeout_s)
+        host = RunnerHost(self.python(), self.script(), self.env_extra(), self.config.limits.startup_timeout_s,
+                          memory_limit_mb=memory_limit_mb(self.name, self.config.limits))
         cwd = paths.data_dir() / "work"
         host.start(cwd)
         return RunnerSession(self, host, eo, opts, probe)
