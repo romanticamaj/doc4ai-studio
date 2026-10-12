@@ -362,3 +362,22 @@ def resolve_inputs(path: Path, pdf: Path | None) -> tuple[str, Path | None, dict
         if pdf is None:
             pdf = _library_pdf(path, sc.get("sha256"))
     return md_path.read_text(encoding="utf-8-sig"), pdf, previous, sc.get("pages"), str(md_path)
+
+
+class OutputMissing(FileNotFoundError):
+    pass
+
+
+def document_inputs(doc: dict) -> tuple[str, Path | None, dict, int | None, str]:
+    """(markdown, pdf, previous, pages, input name) of a Library document — shared by `POST /api/verify` and the
+    MCP tools. The PDF is the retained work copy or the sha-checked original; neither -> None (partial verify)."""
+    from aidoc.reassess import _source_pdf
+    out = Path(doc["output_dir"])
+    md_path = out / f"{out.name}.md"
+    if not md_path.is_file():
+        raise OutputMissing(str(md_path))
+    q = doc.get("quality") or {}
+    previous = {"engine": doc.get("engine"),
+                "quality": {k: q.get(k) for k in ("level", "score", "reasons", "pages_unrepaired")}}
+    pdf = _source_pdf(doc) if Path(str(doc.get("source_path") or "")).suffix.lower() == ".pdf" else None
+    return md_path.read_text(encoding="utf-8-sig"), pdf, previous, doc.get("pages"), md_path.name
