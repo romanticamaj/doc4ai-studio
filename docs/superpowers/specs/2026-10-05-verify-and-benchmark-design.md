@@ -383,7 +383,7 @@ GPU 機器（RTX 5070 Ti）的時間預估：Tier A（不含 1200 頁書）≈ 1
 - MinerU 的 1200 頁書 143 頁：跨頁長段落被整段歸到其中一頁，半頁內容落在鄰頁（NED < 0.5，但探針抽查仍判對齊）。
 - 其餘：Docling 對英文合成書的頁歸屬錯位（文件層 `page_map_misaligned` → low，但頁層只標出空頁）。
 
-診斷變體（只供參考，閘門仍以計畫定義為準）：把 `low` 文件的每一頁都算成已標出 → recall 0.55；只用 spec §3.4 的 GT 缺陷頁 → recall 0.57；去掉掃描樣本 → ρ 0.50、recall 0.32。沒有一種達標，所以不是定義問題。修正後（`auto`＋小樣本 `vlm`，40 列）：ρ 0.67、recall 0.25。
+診斷變體（只供參考，閘門仍以計畫定義為準）：把 `low` 文件的每一頁都算成已標出 → recall 0.55；只用 spec §3.4 的 GT 缺陷頁 → recall 0.57；去掉掃描樣本 → ρ 0.50、recall 0.32。沒有一種達標，所以不是定義問題。**更正（2026-10-13）**：先前寫的「修正後 ρ 0.48 → 0.67」比較的是不同的列（142 列的五個設定 vs 40 列的 `auto`＋小樣本 `vlm`），0.67 主要來自 11 列 `vlm`（其 ρ 0.82）；只看 `auto`，修正前 ρ 0.11、修正後 ρ −0.10，兩者都表示 `auto` 的 verify 分數與 NED 幾乎無關，不是改善。
 
 後續（未做）：頁層的「整份 low → 每頁標記」呈現、掃描檔的 OCR 信心訊號、跨頁段落的頁歸屬檢查。
 
@@ -407,3 +407,31 @@ Tier A 平均 NED（括號內為最差樣本）：
 修正後（`2026-10-12-ulove-arrangement-pagedrop/`）：`auto` 與基準相比只有三處改變，全是 `page_dropped` 修復：壞字型頁尾樣本 0.49 → 0.94（改走 MinerU）、arXiv RL-ARC 修好 5 頁、兩份 NIST 各修好 1 頁；其他樣本 NED 不變。
 
 VLM 欄（本機 Ollama `gemma4:12b`，`max_output_tokens` 4096，只跑小樣本）：幾乎每頁都 `truncated`，NED 多為 0、每頁約 66 s——這個模型在這個輸出上限下不可用，數字不代表 VLM 引擎本身。
+
+### 10.3 驗證者回合（2026-10-13）
+
+修正（每項都有先失敗的測試，見計畫偏差節「Verifier round」）：
+
+1. 逐頁修復的接受條件改為「新段落涵蓋該頁 prose 文字層 ≥ 0.5」（字元二元組多重集合）；只有標題與圖片的「修復」不再算數。
+2. 每頁用唯一探針找出它的文字在哪一段：文字整頁跑到別頁底下 → `page_misaligned`（不做 OCR 修復，不會重複插入）；收容別頁文字、或遠大於自己文字層的段落 → `page_oversized`。
+3. 沒有原始檔也沒有工作副本時，重評不蓋新版本章（Library 顯示「未評估」）；兩本書的原始檔經 sha 驗證後寫回 `source_path`。
+4. 重評沿用每頁歷史（`repaired_by`、引擎回報的失敗頁、頁界方法），資料庫被前次重評洗掉時從 sidecar 讀回；`PAGE_CHECK_VERSION` 3。Live 資料庫先備份為 `data/aidoc.db.bak-20261013-023339`、在副本上試跑後才套用：Head First 的 55 筆修復紀錄從 sidecar 找回；骨科書沒有逐頁歷史可找（原轉換本來就 0 筆）；11 份沒有 PDF 的文件維持舊版本、顯示「未評估」。
+5. `page_misaligned` 成為頁層級理由，verify 預設檢查每一頁；benchmark 加入「標記不動、兩頁內容對調」與「一頁截到 15 %」兩個負樣本（列在閘門旁，不改閘門）。
+6. `page_partial`：段落涵蓋 prose 文字層 < 0.5。prose 文字層去掉頁首頁尾、頁碼與 20 字以下的短行（圖中標籤、表格儲存格）——這也修好了「圖頁只有頁首加圖說卻被判 dropped」。
+小項：自訂標記 regex 限長 200、群組必須一定參與比對、拒絕巢狀無界量詞（422／exit 4）。
+
+**重跑 benchmark（`bench/results/2026-10-13-ulove-arrangement/`，A＋B × 5 設定，閘門未改）**：ρ 0.47、頁級 recall 0.045、precision 1.00 → 仍未通過。recall 比前次（0.16）低，原因是閘門定義只算 `page_dropped`／`broken_text_layer`／`garbage`／缺標記／失敗頁：原本被當成 dropped 的錯位頁現在是 `page_misaligned`，不在閘門的計算裡。僅供參考：
+- 計入所有頁層級理由（含 `page_partial`／`page_misaligned`／`page_oversized`）：全部 142 列 recall 0.32、precision 0.87；
+- 只看有文字層的樣本（102 列，`verify` 能檢查的範圍）：ρ 0.51，計入所有理由時 recall 0.68、precision 0.87；
+- `verify` 對有標記的掃描檔也回報 `verifiable: true`，所以「verifiable 列」與全部列相同（142 列，ρ 0.47、recall 0.045）；
+- 只看 `auto`：ρ −0.03（verify 分數幾乎都是 1.0，`auto` 的錯誤主要是掃描檔的 OCR 錯字，看不到）。
+Tier A 各類 NED 與前次相同（例如繁中掃描 `auto` 0.68、Docling 0.96）；壞字型只在頁尾樣本 `auto` 0.94。
+
+**兩本書以 force 在 Library 重轉**（逐頁抽查過）：
+
+| 書 | 引擎 | page_dropped | page_partial | page_misaligned | page_oversized | broken_text_layer | 已修復 | 等級 | 秒 |
+|---|---|---|---|---|---|---|---|---|---|
+| 骨科書（1192 頁） | MinerU | 12（修 4） | 6（修 0） | 1 | 4 | 0 | 4 | warn | 830 |
+| Head First（532 頁） | Docling → MinerU（Docling 被標頁 > 20 %） | 2（修 0） | 22（修 3） | 0 | 1 | 12（修 12） | 15 | warn | 3443 |
+
+抽查：骨科 1052（整頁表格）修復後是完整的 HTML 表格；282（流程圖頁，標籤都是長行）OCR 只拿回少量文字，涵蓋率不到 0.5 → 不算修好、留 `warn`（前次這種頁會被誤記為已修）；1014 的文字確實在 1013 底下（`page_misaligned`，1013 為 `page_oversized`）。Head First 120 是程式碼頁，PDF 文字層含被手寫註記蓋住的舊版程式碼，MinerU 輸出畫面上的版本 → `page_partial`（文字層與畫面不一致，屬於訊號的已知限制）；74 由 Docling 全頁 OCR 修好。

@@ -1078,7 +1078,7 @@ code before the page_dropped fix (20:07–21:59, 1 h 52 min, 187 conversions, 0 
 `…-pagedrop/` — `auto` on A + B after the fix, Tier C `auto` (orthopaedic book 781 s, Head First 3268 s), `vlm` on the
 small corpus (local Ollama `gemma4:12b`: nearly every page `truncated` at `max_output_tokens` 4096, about 66 s per page —
 not a usable column). Calibration gate (Task 14) **failed**: ρ 0.48, page recall 0.16 (precision 1.00) on the base run;
-ρ 0.67, recall 0.25 after the fix. Diagnostic variants (low documents flag every page, spec-only defect pages,
+ρ 0.67, recall 0.25 on the post-fix run — **corrected 2026-10-13**: that run has different rows (40: `auto` plus 11 small-corpus `vlm` rows, whose ρ is 0.82); `auto` alone went from ρ 0.11 to ρ −0.10, so it was no improvement. Diagnostic variants (low documents flag every page, spec-only defect pages,
 text-layer samples only) all stay below the gate, so the failure is not a matter of definition. As Step 3 says, nothing
 was published: no `docs/benchmarks/`, no README table (README "Benchmark" says why). The numbers, the reasons for the
 misses and the routing findings the run exposed are in the spec acceptance record (§10). Follow-ups: page-level
@@ -1099,3 +1099,41 @@ final).
 40-page segment is a 5-character page, now `page_dropped`; the other engines' repairs return 5 characters again (not a
 real section), so the VLM repairs pages 1 and 41 and uses 2 of the 5 budget pages. The test asserts that and counts the
 later repairs on top of it.
+
+**Verifier round (2026-10-13).** Fixes, each pinned by a test that failed first:
+1. Repair acceptance by coverage: `repair.accept_repaired_section(layer=)` needs ≥ `PARTIAL_COVERAGE_MIN` (0.5)
+   bigram-multiset coverage of the page's prose layer — `tests/unit/test_repair.py::test_a_dropped_page_repair_must_cover_its_text_layer`.
+2. No duplicated OCR copies: `pagemap.page_homes()` locates every page's unique probes; `quality.page_checks()` gives
+   `page_misaligned` (all found probes elsewhere, ≥ 2) and `page_oversized` (holds another page's text, or > 2 × its
+   layer + 300); misaligned / oversized pages are never sent to repair —
+   `test_page_checks.py::test_misplaced_page_is_misaligned_not_dropped`,
+   `test_pipeline.py::test_misplaced_page_is_flagged_never_copied_twice` (fake engine `misplace`, verifier's case),
+   `test_repair.py::test_check_document_repairs_dropped_and_partial_pages_against_their_layer`.
+3. `reassess` returns without stamping when there is no PDF — `test_reassess.py::test_a_document_without_its_pdf_is_not_stamped_as_checked`.
+4. History carried forward (sidecar first, then DB): `test_reassess_keeps_repaired_pages_failures_and_method`,
+   `test_history_wiped_by_an_earlier_regrade_is_recovered_from_the_sidecar`; `PAGE_CHECK_VERSION` 3. Re-grades use
+   `last_resort=True` (only unrepaired pages count for the 20 % rule).
+5. `page_misaligned` per page and `verify` checks every page by default (function, CLI, API) —
+   `test_verify.py::test_every_page_is_the_default_in_the_function_and_the_cli`; bench negatives
+   `swapped_content.md` and `partial.md` (generator v2) — `tests/bench/test_calibrate.py::test_swapped_content_and_partial_negatives_are_caught`.
+   They are reported as `extra_negatives_ok` next to the gate; the gate's definition and thresholds are unchanged.
+6. `page_partial` (coverage < 0.5) in conversions and verify — `test_page_checks.py::test_partial_page_is_flagged_with_its_coverage`.
+   Prose layers (`pagemap.content_layers(prose_only=True)`): running header / footer and page numbers removed (edge
+   lines repeating on ≥ 20 % of pages, never more than half a page), and lines under 20 squashed characters (figure
+   labels, table cells) left out; this also fixes the figure-page `page_dropped` false positive —
+   `test_figure_page_with_only_header_labels_and_caption_is_not_dropped`. Measured on the two real books before
+   reconversion: orthopaedic 12 dropped / 6 partial / 1 misaligned / 4 oversized, Head First 50 / 33 / 3 / 1; the
+   partial pages are mostly diagram pages whose long labels are prose-length lines (the engine kept the diagram as a
+   picture) and code pages whose text layer differs from what is drawn.
+Minor: custom marker regex limited to 200 characters, its group must always take part and match something, nested
+unbounded quantifiers are refused (`tests/unit/test_markers.py`, API 422 in `tests/api/test_verify.py`). `aidoc serve
+--help` and the README say to pass the token through `AIDOC_TOKEN` / `aidoc.toml`, not `--token`.
+
+Other changes forced by the new checks: the fake engine writes the whole page text (it wrote 400 characters, which
+is now `page_partial`); `test_vlm_low_overlap_is_advisory_only` passes an empty prose layer to isolate the advisory;
+the reliability VLM tests give the fake endpoint each page's own text (`pages`), and the budget test now sees 1 VLM
+page (only one of the two 5-character pages has a prose layer). The bench runner gained `--rescore` (re-score rows
+from the outputs on disk) and records `flagged_all`; the calibration report adds diagnostics (all page reasons,
+verifiable rows) for information only. Live DB: backup `data/aidoc.db.bak-20261013-023339`, dry run on a copy, then
+the two books' `source_path` set to their sha-verified originals and the server restarted (v3 re-grade). Numbers in
+the spec acceptance record §10.3.
