@@ -37,3 +37,10 @@ def test_vlm_repairs_reject_refused_truncated_and_blank():
     assert not accept_repaired_section("<!-- blank -->", "vlm:openai:m", {}, 1)
     assert not accept_repaired_section("", "docling:pypdfium_full_page_ocr", {}, 1)
     assert accept_repaired_section(good, "docling:pypdfium_full_page_ocr", {1: "x"}, 1)   # only vlm looks at failed
+
+
+def test_repair_only_test_hook_keeps_the_named_engines(monkeypatch):
+    monkeypatch.setenv("AIDOC_REPAIR_ONLY", "vlm")
+    assert [o[0] for o in repair_order("docling", AV, engines=ENG)] == ["vlm"]
+    monkeypatch.setenv("AIDOC_REPAIR_ONLY", "mineru, vlm")
+    assert [o[0] for o in repair_order("docling", AV, engines=ENG)] == ["mineru", "vlm"]
