@@ -94,5 +94,5 @@ def test_subprocess_entry_point(tmp_path):
     p = tmp_path / "a.md"
     p.write_text(_own(FIX / "paged_furniture.pdf"), encoding="utf-8")
     r = subprocess.run([sys.executable, "-m", "aidoc.cli", "verify", str(p), "--pdf", str(FIX / "paged_furniture.pdf")],
-                       capture_output=True, text=True, encoding="utf-8")
+                       capture_output=True, text=True, encoding="utf-8", check=False)
     assert r.returncode == 0 and "level: ok" in r.stdout
