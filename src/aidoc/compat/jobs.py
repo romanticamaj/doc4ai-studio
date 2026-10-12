@@ -330,6 +330,14 @@ def admit(ctx, call: CompatCall, upload: Upload, name: str, convert, opts: Compa
         return Admission("started", task_id=task_id, job_id=job_id)
 
 
+def _convert_options(cfg, opts: CompatOptions):
+    """ConvertOptions for a compat request; document_timeout also bounds each engine attempt (spec §4.2, item 7)."""
+    convert = build_convert_options(cfg, engine=opts.engine, lang=opts.lang, force=opts.force)
+    if opts.timeout_s:
+        convert = dataclasses.replace(convert, timeout_s=int(opts.timeout_s))
+    return convert
+
+
 def _disk_problem(ctx, size: int) -> str | None:
     up = ctx.uploads.dir
     up.mkdir(parents=True, exist_ok=True)
@@ -426,7 +434,7 @@ async def run_sync(ctx, request, call: CompatCall, upload: Upload, opts: CompatO
     if failed is not None:
         return respond(failed)
     cfg = ctx.config
-    convert = build_convert_options(cfg, engine=opts.engine, lang=opts.lang, force=opts.force)
+    convert = _convert_options(cfg, opts)
     deadline = time.monotonic() + min(opts.timeout_s or cfg.compat.sync_timeout_s, cfg.compat.sync_timeout_s)
     while True:
         try:
@@ -498,7 +506,7 @@ async def submit_async(ctx, request, call: CompatCall, upload: Upload, opts: Com
         message = failed.errors[0].error_message
         key = _synthetic(ctx, call, opts, name, _failure=message)
         return respond(_status_model(ctx, key, state="failure", message=message))
-    convert = build_convert_options(ctx.config, engine=opts.engine, lang=opts.lang, force=opts.force)
+    convert = _convert_options(ctx.config, opts)
     try:
         adm = await anyio.to_thread.run_sync(admit, ctx, call, upload, name, convert, opts)
     except ToolFailure as f:
