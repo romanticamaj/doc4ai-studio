@@ -30,8 +30,14 @@ def endpoint_host(base_url: str) -> str:
 
 
 def is_loopback_url(base_url: str) -> bool:
-    host = urlsplit(base_url).hostname or ""
-    return host in _LOOPBACK or host.startswith("127.")
+    import ipaddress
+    host = (urlsplit(base_url).hostname or "").lower()
+    if host in _LOOPBACK:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 class VlmEngine(RunnerEngine):

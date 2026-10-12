@@ -84,7 +84,7 @@ def _runner_procs() -> list[psutil.Process]:
     out = []
     for p in psutil.process_iter(["cmdline"]):
         try:
-            if any("vlm_runner.py" in str(a) for a in (p.info["cmdline"] or [])):
+            if any(str(a).replace("\\", "/").endswith("/engines/runner/vlm_runner.py") for a in (p.info["cmdline"] or [])):
                 out.append(p)
         except (psutil.Error, TypeError):
             pass

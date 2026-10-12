@@ -173,7 +173,17 @@ export function VlmBackendForm({
         {v.backend === "openai" && (
           <>
             <Row label="base_url" hint="例：http://127.0.0.1:11434/v1（Ollama）、http://127.0.0.1:1234/v1（LM Studio）" htmlFor="vlm-url">
-              <Input id="vlm-url" value={v.base_url} onChange={(e) => set("base_url", e.target.value)} placeholder="https://…/v1" className="font-mono" />
+              <Input
+                id="vlm-url"
+                value={v.base_url}
+                onChange={(e) => {
+                  const url = e.target.value;
+                  // consent named the saved host: another host needs it again (the server enforces the same rule)
+                  setV((s) => ({ ...s, base_url: url, remote_enabled: endpointHost(url) === endpointHost(settings.base_url) ? s.remote_enabled : false }));
+                }}
+                placeholder="https://…/v1"
+                className="font-mono"
+              />
             </Row>
             <Row label="model" htmlFor="vlm-model">
               <Input id="vlm-model" value={v.model} onChange={(e) => set("model", e.target.value)} className="font-mono" />

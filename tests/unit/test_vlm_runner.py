@@ -148,3 +148,35 @@ def test_no_usage_endpoint_reports_null_tokens(tmp_path, monkeypatch):
     with FakeVlmServer({"default": "no_usage"}) as base:
         res = R.handle(_req(tmp_path, base))
     assert res["vlm"]["usage"] == {"requests": 3, "prompt_tokens": None, "completion_tokens": None}
+
+
+def test_content_filter_and_more_refusal_phrasings_are_refusals():
+    assert R.clean_markdown("I'm not able to help with that.") == ("", "refused")
+    assert R.clean_markdown("Unfortunately I can't transcribe this image.") == ("", "refused")
+
+    class _C:
+        detail = None
+        base_url = "http://127.0.0.1:1/v1"
+
+        def chat(self, messages, max_tokens):
+            return {"choices": [{"message": {"content": ""}, "finish_reason": "content_filter"}]}
+    out = R.send_page(_C(), lambda dpi: (b"\x89PNG", (1, 1), "image/png"), 1, 1, {"prompt_style": "generic"}, {})
+    assert out.flag == "refused"
+
+
+def test_one_unreachable_page_is_a_page_failure_not_a_lost_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setattr(R, "_sleep", lambda s: None)
+    sc = {"default": "ok", "rules": [{"match": {"page": 2}, "behavior": "server_error"}]}
+    with FakeVlmServer(sc) as base:
+        res = R.handle(_req(tmp_path, base, max_concurrent=1))
+    assert res["failed_pages"] == {"2": "unreachable"} and res["vlm"]["pages_sent"] == 3
+    with FakeVlmServer({"default": "server_error"}) as base, pytest.raises(R._proto.RunnerError) as e:
+        R.handle(_req(tmp_path, base))
+    assert e.value.kind == "transient"
+
+
+def test_loopback_is_an_address_not_a_prefix():
+    from aidoc.engines.vlm import is_loopback_url
+    assert is_loopback_url("http://127.0.0.1:1/v1") and is_loopback_url("http://[::1]:1/v1") and is_loopback_url("http://localhost/v1")
+    assert not is_loopback_url("http://127.evil.com/v1") and not R._is_loopback("127.evil.com:80")

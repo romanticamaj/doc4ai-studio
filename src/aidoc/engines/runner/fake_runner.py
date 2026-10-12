@@ -180,8 +180,11 @@ def handle(req):
         out = Path(req["out_dir"])
         out.mkdir(parents=True, exist_ok=True)
         (out / "out.md").write_text("<!-- page: 1 -->\nshort", encoding="utf-8")
-        return {"markdown_path": str(out / "out.md"), "images": [], "has_page_markers": True, "page_count": 1,
-                "first_table": None, "last_table": None}
+        res = {"markdown_path": str(out / "out.md"), "images": [], "has_page_markers": True, "page_count": 1,
+               "first_table": None, "last_table": None}
+        if req["engine_opts"].get("fake_engine") == "vlm":   # a low VLM answer still sent its pages
+            res["vlm"] = _vlm_block(req, len(_pdf_texts(req) or [None]))
+        return res
     if b == "error":
         raise _proto.RunnerError("engine", "fake engine error")
     if b == "bad_kind":                                 # protocol robustness test: unknown error kind

@@ -121,3 +121,22 @@ def test_vlm_attempts_carry_their_label_and_others_stay_unchanged(env):
     run_task(e["store"], tid, get_engines(e["cfg"]), e["cfg"])
     tried = e["store"].get_task(tid)["tried"]
     assert tried[-1]["label"] == "vlm:openai:m" and all("label" not in a for a in tried[:-1])
+
+
+def test_forced_vlm_respects_page_cap_and_budget(env):
+    e = env(budget=500, cap=2)
+    write_scenario(e["sc"])
+    tid = e["task"]("text.pdf", engine="vlm")                      # 3 pages > cap 2
+    logs = []
+    st = run_task(e["store"], tid, get_engines(e["cfg"]), e["cfg"], emit=lambda k, p: logs.append(p.get("line", "")))
+    assert st == TaskStatus.failed and any("vlm(page_cap)" in line for line in logs)
+    assert e["store"].vlm_usage_today("openai", "127.0.0.1:9")["pages"] == 0
+
+
+def test_sidecar_records_vlm_pages_even_when_another_candidate_wins(env):
+    e = env()
+    write_scenario(e["sc"], rules=[{"match": {"engine": n}, "behavior": "low"} for n in ("docling", "mineru", "markitdown", "vlm")])
+    tid = e["task"]("text.pdf")
+    assert run_task(e["store"], tid, get_engines(e["cfg"]), e["cfg"]) == TaskStatus.low
+    sc = json.loads((e["root"] / "out" / "text" / "text.json").read_text(encoding="utf-8"))
+    assert sc["engine"] != "vlm" and sc["vlm"]["pages_sent"] >= 1 and sc["vlm"]["role"] == "discarded"
