@@ -15,3 +15,11 @@ describe("isLoopbackUrl", () => {
     expect(isLoopbackUrl("not a url")).toBeNull();
   });
 });
+
+import table from "./loopbackCases.json";
+
+describe("isLoopbackUrl matches the server's table", () => {
+  it.each(table.cases as Array<[string, boolean | null]>)("%s -> %s", (url, expected) => {
+    expect(isLoopbackUrl(url)).toBe(expected);
+  });
+});

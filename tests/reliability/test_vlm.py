@@ -238,3 +238,87 @@ def test_resume_after_interrupt_redoes_segments_when_the_model_changed(tmp_root,
     calls = [json.loads(x) for x in (tmp_root / "calls.jsonl").read_text(encoding="utf-8").splitlines()[calls_before:]]
     assert sorted(c["pages"] for c in calls if c["engine"] == "vlm") == [[1, 40], [41, 45]]
     assert e.sidecar("big")["vlm"]["model"] == "other-vlm"
+
+
+# verifier finding 1: every page image that left the process is counted, however the run ends
+def _calls(path: Path) -> list[dict]:
+    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+
+
+def test_usage_counts_every_sent_page_when_the_run_times_out(tmp_root, monkeypatch, fixtures):
+    e = Env(tmp_root, monkeypatch, fixtures)
+    e.real_vlm()
+    e.scenario()
+    log = tmp_root / "vlm_calls.jsonl"
+    with FakeVlmServer({"default": "ok", "rules": [{"match": {"page": 5}, "behavior": "hang"}], "call_log": str(log)}) as base:
+        _config(tmp_root, base, max_concurrent=1, request_timeout_s=10)
+        tid = e.task(_ten_text_pages(tmp_root / "ten.pdf", fixtures), engine="vlm", timeout_s=4)
+        assert e.run(tid) in (TaskStatus.failed, TaskStatus.low)
+    calls = _calls(log)
+    host = base.split("//", 1)[1].split("/", 1)[0]
+    used = e.store.vlm_usage_today("openai", host)
+    assert calls and used["requests"] == len(calls)
+    # pages 1-4 answered on the first attempt are kept (page cache): the retries only send page 5 again
+    assert sorted({c["page"] for c in calls}) == [1, 2, 3, 4, 5] and sum(c["page"] == 1 for c in calls) == 1
+    assert used["pages"] == len({(c["page"]) for c in calls}) + sum(c["page"] == 5 for c in calls) - 1
+
+
+def test_usage_counts_pages_sent_before_a_cancel(tmp_root, monkeypatch, fixtures):
+    e = Env(tmp_root, monkeypatch, fixtures)
+    e.real_vlm()
+    e.scenario()
+    log = tmp_root / "vlm_calls.jsonl"
+    with FakeVlmServer({"default": "slow", "delay_s": 0.7, "call_log": str(log)}) as base:
+        _config(tmp_root, base, max_concurrent=1)
+        tid = e.task(_ten_text_pages(tmp_root / "ten.pdf", fixtures), engine="vlm")
+        cancel = threading.Event()
+        threading.Timer(4.0, cancel.set).start()
+        assert e.run(tid, cancel=cancel) == TaskStatus.cancelled
+    host = base.split("//", 1)[1].split("/", 1)[0]
+    used = e.store.vlm_usage_today("openai", host)
+    calls = _calls(log)
+    # pages are charged just before they leave: the one in flight when the runner was killed may not have reached the
+    # endpoint, so the count may be one higher than what arrived — never lower
+    assert 2 <= len(calls) < 10 and len(calls) <= used["requests"] <= len(calls) + 1
+    assert used["pages"] == used["requests"]
+
+
+def test_retries_of_a_timed_out_vlm_run_respect_the_budget(tmp_root, monkeypatch, fixtures):
+    e = Env(tmp_root, monkeypatch, fixtures)
+    e.real_vlm()
+    e.scenario()
+    log = tmp_root / "vlm_calls.jsonl"
+    with FakeVlmServer({"default": "ok", "rules": [{"match": {"page": 5}, "behavior": "hang"}], "call_log": str(log)}) as base:
+        _config(tmp_root, base, max_concurrent=1, request_timeout_s=10, remote_daily_page_budget=12)
+        tid = e.task(_ten_text_pages(tmp_root / "ten.pdf", fixtures), engine="vlm", timeout_s=4)
+        assert e.run(tid) == TaskStatus.failed
+    t = e.store.get_task(tid)
+    assert "vlm(budget)" in (t["error_msg"] or "") and len(t["tried"]) == 1     # no retry past the budget
+    host = base.split("//", 1)[1].split("/", 1)[0]
+    assert e.store.vlm_usage_today("openai", host)["pages"] <= 12
+
+
+def test_a_forced_vlm_refused_by_the_gate_ends_with_the_reason(tmp_root, monkeypatch, fixtures):
+    e = Env(tmp_root, monkeypatch, fixtures)
+    _config(tmp_root, remote_max_pages_per_doc=2)
+    e.scenario()
+    tid = e.task(e.copy("text.pdf"), engine="vlm")
+    assert e.run(tid) == TaskStatus.failed
+    msg = e.store.get_task(tid)["error_msg"]
+    assert msg.startswith("vlm(page_cap)") and "all engines failed" not in msg
+    tid = e.task(e.copy("text.pdf", "t2.pdf"), engine="vlm", vlm_remote=False)
+    assert e.run(tid) == TaskStatus.failed and e.store.get_task(tid)["error_msg"].startswith("vlm(disabled_remote)")
+
+
+def test_an_endpoint_echoing_the_key_never_puts_it_in_the_task(tmp_root, monkeypatch, fixtures):
+    """verifier finding 3: a 401 body that echoes the Authorization header."""
+    e = Env(tmp_root, monkeypatch, fixtures)
+    e.real_vlm()
+    e.scenario()
+    with FakeVlmServer({"default": "unauthorized_echo"}) as base:
+        _config(tmp_root, base)
+        tid = e.task(e.copy("text.pdf"), engine="vlm")
+        assert e.run(tid) == TaskStatus.failed
+    t = e.store.get_task(tid)
+    everything = json.dumps(t["tried"]) + (t["error_msg"] or "") + "\n".join(e.logs)
+    assert "401" in everything and KEY not in everything and "Bearer sk" not in everything

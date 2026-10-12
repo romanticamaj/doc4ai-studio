@@ -19,3 +19,9 @@ def test_changing_the_endpoint_host_withdraws_consent(client_factory, monkeypatc
     assert r.status_code == 200 and c.app.state.ctx.config.vlm.remote_enabled is True
     assert c.put("/api/settings", json={"vlm": {"base_url": "https://api.other.com/v2"}}).status_code == 200
     assert c.app.state.ctx.config.vlm.remote_enabled is True            # same host: consent stands
+
+
+def test_local_backend_is_refused_while_unsupported(client_factory):
+    c = client_factory()
+    r = c.put("/api/settings", json={"vlm": {"backend": "local"}})
+    assert r.status_code == 422 and "not supported on this platform yet" in r.json()["detail"]

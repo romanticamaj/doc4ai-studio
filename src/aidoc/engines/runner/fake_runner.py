@@ -79,6 +79,9 @@ def _vlm_block(req, n, refused=(), truncated=()):
     eo = req.get("engine_opts") or {}
     backend = eo.get("backend") if eo.get("backend") in ("openai", "local") else "openai"
     host = eo.get("base_url", "").split("://", 1)[-1].split("/", 1)[0] or "fake-vlm:0"
+    # like vlm_runner: the usage table is fed by per-request events, the block below only goes to the sidecar
+    _proto._emit("AIDOC_VLM_USAGE", {"backend": backend, "endpoint_host": host if backend == "openai" else "local",
+                                     "pages": n, "requests": n, "prompt_tokens": 100 * n, "completion_tokens": 50 * n})
     return {"backend": backend, "model": eo.get("model") or "fake-vlm",
             "endpoint_host": host if backend == "openai" else "local", "local_endpoint": host.startswith("127."),
             "pages_sent": n, "usage": {"requests": n, "prompt_tokens": 100 * n, "completion_tokens": 50 * n},
