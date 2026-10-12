@@ -137,6 +137,7 @@ def create_app(ctx: ServerContext) -> FastAPI:
     from aidoc.server import sse
     from aidoc.server.api import chunks, documents, jobs, settings, system, uploads
     from aidoc.server.api import mcp as mcp_api
+    from aidoc.server.api import verify as verify_api
     rt = build_mcp(ctx)                                 # MCP spec §4.1: Streamable HTTP at /mcp on the same port
     ctx.extras["mcp"] = rt
 
@@ -182,6 +183,7 @@ def create_app(ctx: ServerContext) -> FastAPI:
     api.include_router(chunks.router)
     api.include_router(settings.router)
     api.include_router(mcp_api.router)
+    api.include_router(verify_api.router)
     app.include_router(api)
     app.add_route("/mcp", rt.app, methods=["GET", "POST", "DELETE"])     # before the SPA catch-all (D2, spike S2)
     compat_router.install(app)                          # docling-serve compatible /v1 (compat spec §4), PAT auth
