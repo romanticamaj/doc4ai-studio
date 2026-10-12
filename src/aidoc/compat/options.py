@@ -5,6 +5,7 @@ unknown form fields too); only values we would otherwise misinterpret are refuse
 from __future__ import annotations
 
 import dataclasses
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +14,7 @@ from aidoc import paths
 from aidoc.compat.auth import CompatError
 from aidoc.models import ENGINE_NAMES
 
+MAX_TIMEOUT_S = 10_000_000
 PRODUCED_FORMATS = ("md", "text")
 IMAGE_MODES = ("placeholder", "referenced", "embedded")
 LANG_MAP = {"zh-hant": "cht", "zh-tw": "cht", "zh": "cht", "cht": "cht", "zh-hk": "cht", "chinese_cht": "cht",
@@ -126,8 +128,10 @@ def parse_options(raw: Mapping[str, Any], cfg, *, multipart: bool) -> CompatOpti
         v = _scalar(raw, "document_timeout")
         try:
             secs = float(v)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise _invalid("document_timeout", "must be a number of seconds") from None
+        if not math.isfinite(secs) or not 1 <= secs <= MAX_TIMEOUT_S:      # inf, nan, 1e400, negative (verifier 4)
+            raise _invalid("document_timeout", f"must be between 1 and {MAX_TIMEOUT_S} seconds")
         timeout_s = max(1, min(int(secs), cfg.compat.sync_timeout_s))
     for key in ("target_type", "target"):
         if key in raw:

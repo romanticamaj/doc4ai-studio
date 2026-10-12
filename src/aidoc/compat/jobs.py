@@ -44,6 +44,7 @@ FIELDS_MAX = 200
 SLOT_RETRY_S = 0.5
 VISIBLE = ("ok", "warn", "low")
 _UUID_PREFIX = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_(?=.)")
+_BOUNDARY = re.compile(rb"[0-9A-Za-z'()+_,\-./:=? ]{0,69}[0-9A-Za-z'()+_,\-./:=?]")
 _admit_lock = threading.Lock()          # cache / running check + job creation happen as one step (plan review 4)
 
 
@@ -81,6 +82,8 @@ async def stream_upload(request, call: CompatCall, *, max_mb: int) -> Upload:
     ctype, params = parse_options_header(request.headers.get("content-type"))
     if ctype != b"multipart/form-data" or not params.get(b"boundary"):
         raise CompatError(422, "send multipart/form-data with the document in the field 'files'")
+    if not _BOUNDARY.fullmatch(params[b"boundary"]):    # RFC 2046: 1-70 bchars, no trailing space (verifier 4)
+        raise CompatError(422, "invalid multipart boundary")
     max_bytes = max_mb * MIB
     st = {"headers": {}, "hname": b"", "hval": b"", "kind": None, "name": None, "filename": None,
           "value": bytearray(), "file": None, "path": None, "size": 0, "files": 0, "error": None}
@@ -159,8 +162,8 @@ async def stream_upload(request, call: CompatCall, *, max_mb: int) -> Upload:
     try:
         async for chunk in request.stream():
             parser.write(chunk)
-            if st["error"] is not None:
-                break
+            if st["error"] is not None or st.get("ended"):
+                break                                   # never read an epilogue after the closing boundary (verifier 5)
         else:
             parser.finalize()
         if st["error"] is not None:
