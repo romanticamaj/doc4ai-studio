@@ -18,5 +18,8 @@ _CLASSES: dict[str, type[RunnerEngine]] = {"markitdown": MarkitdownEngine, "docl
 def get_engines(config: AidocConfig) -> dict[str, RunnerEngine]:
     if os.environ.get("AIDOC_FAKE_ENGINES") == "1":
         from aidoc.engines.fake import FakeEngine
-        return {n: FakeEngine(n, config) for n in ENGINE_NAMES}
+        # test hook: AIDOC_FAKE_ENGINES_EXCEPT=vlm keeps the real engine for the listed names (VLM plan Task 12:
+        # the real vlm_runner.py against the fake OpenAI-compatible endpoint, every other engine faked)
+        real = {n.strip() for n in os.environ.get("AIDOC_FAKE_ENGINES_EXCEPT", "").split(",") if n.strip()}
+        return {n: (_CLASSES[n](config) if n in real else FakeEngine(n, config)) for n in ENGINE_NAMES}
     return {n: _CLASSES[n](config) for n in ENGINE_NAMES}

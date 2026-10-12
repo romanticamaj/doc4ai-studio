@@ -19,7 +19,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-DEFAULT_TEXT = "假端點產生的內容 fake vlm content for page {k}. 這一頁的文字足夠長，可以通過每頁字數的檢查。"
+DEFAULT_TEXT = ("假端點產生的內容 fake vlm content for page {k}. 這一頁的文字足夠長，可以通過每頁字數的檢查。"
+                "The fake endpoint writes a few ordinary sentences so that the page passes the quality gate.")
 _PAGE_RE = re.compile(r"Page (\d+) of (\d+)")
 _ERRORS = {
     "rate_limit": (429, "rate_limit_exceeded", "requests", "Rate limit reached"),
