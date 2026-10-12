@@ -11,7 +11,8 @@ from pathlib import Path
 
 from aidoc.models import TERMINAL_TASK, Attempt, ConvertOptions, JobStatus, TaskStatus
 
-SCHEMA_VERSION = 5   # v3 was never issued (MCP went to "v4"); v5 adds compat_tasks (docling-serve compatible API)
+SCHEMA_VERSION = 6   # v3 was never issued (MCP went to "v4"); v5 adds compat_tasks (docling-serve compatible API);
+                     # v6 adds vlm_usage (VLM spec 2026-10-05 §8.2, which said v5 before compat took that number)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -65,6 +66,12 @@ CREATE INDEX IF NOT EXISTS mcp_jobs_token ON mcp_jobs(token_id);
 CREATE TABLE IF NOT EXISTS compat_tasks(
   job_id TEXT PRIMARY KEY, token_id TEXT NOT NULL, options_json TEXT NOT NULL, created_at REAL NOT NULL,
   protocol TEXT NOT NULL);
+-- schema v6 (VLM spec 2026-10-05 §8.2): pages / requests / tokens sent to a VLM backend per local day and endpoint
+CREATE TABLE IF NOT EXISTS vlm_usage(
+  day TEXT NOT NULL, backend TEXT NOT NULL, endpoint_host TEXT NOT NULL,
+  pages INTEGER NOT NULL DEFAULT 0, requests INTEGER NOT NULL DEFAULT 0,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, backend, endpoint_host));
 """
 
 _ACTIVE = {TaskStatus.probing.value, TaskStatus.converting.value, TaskStatus.checking.value}
@@ -183,6 +190,44 @@ class Store:
 
     def close(self) -> None:
         self.con.close()
+
+    def schema_version(self) -> int:
+        r = self._q1("SELECT value FROM meta WHERE key='schema_version'")
+        return int(r[0]) if r else 0
+
+    # ---- VLM usage (schema v6, VLM spec §8.2); `day` is the local date YYYY-MM-DD
+    @staticmethod
+    def _today() -> str:
+        return time.strftime("%Y-%m-%d")
+
+    def add_vlm_usage(self, day: str, backend: str, host: str, pages: int = 0, requests: int = 0,
+                      prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+        self.con.execute(
+            "INSERT INTO vlm_usage(day, backend, endpoint_host, pages, requests, prompt_tokens, completion_tokens) "
+            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(day, backend, endpoint_host) DO UPDATE SET "
+            "pages=pages+excluded.pages, requests=requests+excluded.requests, "
+            "prompt_tokens=prompt_tokens+excluded.prompt_tokens, "
+            "completion_tokens=completion_tokens+excluded.completion_tokens",
+            (day, backend, host, int(pages or 0), int(requests or 0), int(prompt_tokens or 0),
+             int(completion_tokens or 0)))
+
+    def vlm_usage_today(self, backend: str, host: str, today: str | None = None) -> dict:
+        day = today or self._today()
+        r = self._qa("SELECT * FROM vlm_usage WHERE day=? AND backend=? AND endpoint_host=?", (day, backend, host))
+        return r[0] if r else {"day": day, "backend": backend, "endpoint_host": host, "pages": 0, "requests": 0,
+                               "prompt_tokens": 0, "completion_tokens": 0}
+
+    def vlm_usage_days(self, n: int = 30, today: str | None = None) -> list[dict]:
+        """Rows of the last `n` days (newest first)."""
+        import datetime
+        end = datetime.date.fromisoformat(today or self._today())
+        start = (end - datetime.timedelta(days=max(0, n - 1))).isoformat()
+        return self._qa("SELECT * FROM vlm_usage WHERE day >= ? ORDER BY day DESC, backend, endpoint_host", (start,))
+
+    def prune_vlm_usage(self, keep_days: int = 180, today: str | None = None) -> int:
+        import datetime
+        cutoff = (datetime.date.fromisoformat(today or self._today()) - datetime.timedelta(days=keep_days)).isoformat()
+        return self.con.execute("DELETE FROM vlm_usage WHERE day < ?", (cutoff,)).rowcount
 
     # ---- helpers
     def _q1(self, sql, args=()):

@@ -164,3 +164,37 @@ def test_create_task_stores_work_path(tmp_path):
     job = store.create_job(ConvertOptions(output_dir=Path("out")), "web")
     tid, _ = store.create_task(job, "a.pdf", "s" * 64, 1, 1.0, "cht", "out/a", work_path="w/src.pdf")
     assert store.get_task(tid)["work_path"] == "w/src.pdf"
+
+
+def test_vlm_usage_upsert_and_today(tmp_path):
+    from aidoc.store import Store
+    s = Store(tmp_path / "a.db")
+    assert s.schema_version() >= 6
+    s.add_vlm_usage("2026-10-05", "openai", "h:1", pages=3, requests=3, prompt_tokens=10, completion_tokens=5)
+    s.add_vlm_usage("2026-10-05", "openai", "h:1", pages=2, requests=2, prompt_tokens=1, completion_tokens=1)
+    s.add_vlm_usage("2026-10-04", "openai", "h:1", pages=9, requests=9, prompt_tokens=0, completion_tokens=0)
+    row = s.vlm_usage_days(30)
+    assert {r["day"]: r["pages"] for r in row} == {"2026-10-05": 5, "2026-10-04": 9}
+    assert s.vlm_usage_today("openai", "h:1", today="2026-10-05")["pages"] == 5
+    assert s.vlm_usage_today("local", "local", today="2026-10-05")["pages"] == 0
+    assert s.prune_vlm_usage(keep_days=0, today="2026-10-06") == 2
+
+
+def test_v5_database_migrates_to_v6_with_data_intact(tmp_path):
+    import sqlite3
+
+    from aidoc.store import Store
+    db = tmp_path / "a.db"
+    s = Store(db)
+    job = s.create_job(ConvertOptions(output_dir=tmp_path), "web")
+    s.close()
+    con = sqlite3.connect(db)
+    con.execute("DROP TABLE vlm_usage")
+    con.execute("UPDATE meta SET value='5' WHERE key='schema_version'")
+    con.commit()
+    con.close()
+    for _ in range(2):                                 # idempotent on a second open
+        s = Store(db)
+        assert s.schema_version() == 6 and s.get_job(job) is not None
+        s.add_vlm_usage("2026-10-05", "openai", "h", pages=1)
+        s.close()

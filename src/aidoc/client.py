@@ -57,6 +57,8 @@ class ServerClient:
                 "lang": opts.lang, "force": opts.force, "retry_low": opts.retry_low,
                 "allow_online_audio": opts.allow_online_audio, "origin": "cli",
                 "output_dir": str(Path(opts.output_dir).resolve()), "timeout_s": opts.timeout_s}
+        if opts.vlm_remote is not None:
+            body["vlm_remote"] = opts.vlm_remote
         # the server hashes every input before answering: no read timeout for big batches
         return self._json(self._http.post("/api/jobs", json=body, timeout=httpx.Timeout(30.0, read=None)))["job"]
 

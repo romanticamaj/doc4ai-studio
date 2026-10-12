@@ -59,10 +59,14 @@ def lookup_cached(store: Store, sha256: str, output_dir: Path) -> dict | None:
     return None
 
 
-def build_sidecar(*, source, sha256, pages, engine, tried, segments, probe, quality, lang, elapsed_s) -> dict:
-    return {"source": str(source), "sha256": sha256, "pages": pages, "engine": engine, "tried": tried,
-            "segments": segments, "probe": probe, "quality": quality, "lang": lang,
-            "elapsed_s": round(float(elapsed_s), 3), "aidoc_version": __version__}
+def build_sidecar(*, source, sha256, pages, engine, tried, segments, probe, quality, lang, elapsed_s,
+                  vlm: dict | None = None) -> dict:
+    d = {"source": str(source), "sha256": sha256, "pages": pages, "engine": engine, "tried": tried,
+         "segments": segments, "probe": probe, "quality": quality, "lang": lang,
+         "elapsed_s": round(float(elapsed_s), 3), "aidoc_version": __version__}
+    if vlm:                                     # only when a VLM was used (VLM spec §8.1)
+        d["vlm"] = vlm
+    return d
 
 
 def list_output_dirs(out_root: Path) -> list[Path]:

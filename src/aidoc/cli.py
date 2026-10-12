@@ -8,7 +8,7 @@ from pathlib import Path
 
 from aidoc import __version__
 
-ENGINE_CHOICES = ["markitdown", "docling", "mineru"]
+ENGINE_CHOICES = ["markitdown", "docling", "mineru", "vlm"]
 
 
 def _add_convert_options(p: argparse.ArgumentParser) -> None:
@@ -20,6 +20,8 @@ def _add_convert_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--timeout", type=int, metavar="SECONDS", help="override the computed timeout")
     p.add_argument("--allow-online-audio", action="store_true",
                    help="allow audio transcription (sends audio to an online service)")
+    p.add_argument("--no-vlm-remote", action="store_true",
+                   help="never send page images to the remote VLM endpoint in this run ([vlm] backend openai)")
     p.add_argument("-v", "--verbose", action="store_true", help="print engine log lines to stderr")
     p.add_argument("--token", help="API token of a running server (default: AIDOC_TOKEN, aidoc.toml server.token)")
 
@@ -59,7 +61,8 @@ def options_from_args(args, cfg):
     return ConvertOptions(output_dir=out, engine=args.engine, lang=args.lang or cfg.general.lang, force=args.force,
                           retry_low=args.retry_low, timeout_s=args.timeout,
                           allow_online_audio=bool(args.allow_online_audio or cfg.general.enable_audio),
-                          mineru_tier=cfg.engines.mineru_tier, docling_ocr=cfg.engines.docling_ocr)
+                          mineru_tier=cfg.engines.mineru_tier, docling_ocr=cfg.engines.docling_ocr,
+                          vlm_remote=False if getattr(args, "no_vlm_remote", False) else None)
 
 
 def open_store(cfg):
