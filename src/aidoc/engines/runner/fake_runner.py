@@ -70,10 +70,23 @@ def _pdf_texts(req):
 
 def _repairing(req):
     eo = req.get("engine_opts") or {}
+    if eo.get("fake_engine") == "vlm":                 # VLM repair runs get the flagged pages as pages.pdf
+        return os.path.basename(req["src"]) == "pages.pdf"
     return eo.get("backend") == "pypdfium" or eo.get("ocr_mode") == "ocr"
 
 
-def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, failing=False):
+def _vlm_block(req, n, refused=(), truncated=()):
+    eo = req.get("engine_opts") or {}
+    backend = eo.get("backend") if eo.get("backend") in ("openai", "local") else "openai"
+    host = eo.get("base_url", "").split("://", 1)[-1].split("/", 1)[0] or "fake-vlm:0"
+    return {"backend": backend, "model": eo.get("model") or "fake-vlm",
+            "endpoint_host": host if backend == "openai" else "local", "local_endpoint": host.startswith("127."),
+            "pages_sent": n, "usage": {"requests": n, "prompt_tokens": 100 * n, "completion_tokens": 50 * n},
+            "truncated_pages": list(truncated), "refused_pages": list(refused), "dpi": eo.get("dpi", 150),
+            "prompt_version": eo.get("prompt_version", 1)}
+
+
+def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, failing=False, vlm_flag=None):
     out = Path(req["out_dir"])
     (out / "images").mkdir(parents=True, exist_ok=True)
     pages = req.get("pages")
@@ -93,12 +106,15 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
         for i in range(1, n + 1):
             if (repair_src and sticky) or (not repair_src and first - 1 + i in set(sc.get("failed_pages", []))):
                 failed[i] = "Page failed to parse."
+    is_vlm = (req.get("engine_opts") or {}).get("fake_engine") == "vlm"
+    if vlm_flag:                                        # fake vlm refuse / length: every page (spec §4.4)
+        failed = {i: vlm_flag for i in range(1, n + 1)}
     parts, images = [], []
     images_missing = {}
     for i in range(1, n + 1):
         if with_pages:
             parts.append(f"<!-- page: {i + shift} -->")
-        if i in failed:                                 # the engine lost this page: an empty section
+        if i in failed and vlm_flag != "truncated":     # the engine lost this page: an empty section
             continue
         excerpt = ""
         if texts is not None and len(texts) == n:
@@ -121,13 +137,17 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
         _proto.progress(i, n)
     md = out / "out.md"
     md.write_text("\n".join(parts), encoding="utf-8")
-    return {"markdown_path": str(md), "images": images, "has_page_markers": with_pages, "page_count": n,
-            "first_table": {"page": 1, "n_cols": 2, "touches_edge": False},
-            "last_table": {"page": n, "n_cols": 2, "touches_edge": False},
-            "page_map_method": "fake_per_page" if with_pages else "none",
-            "failed_pages": {str(k): v for k, v in failed.items()},
-            "errors": [f"p{k}: {v}" for k, v in failed.items()],
-            "images_missing": {str(k): v for k, v in images_missing.items()}}
+    res = {"markdown_path": str(md), "images": images, "has_page_markers": with_pages, "page_count": n,
+           "first_table": {"page": 1, "n_cols": 2, "touches_edge": False},
+           "last_table": {"page": n, "n_cols": 2, "touches_edge": False},
+           "page_map_method": ("vlm_per_page" if is_vlm else "fake_per_page") if with_pages else "none",
+           "failed_pages": {str(k): v for k, v in failed.items()},
+           "errors": [f"p{k}: {v}" for k, v in failed.items()],
+           "images_missing": {str(k): v for k, v in images_missing.items()}}
+    if is_vlm:
+        res["vlm"] = _vlm_block(req, n, refused=sorted(failed) if vlm_flag == "refused" else (),
+                                truncated=sorted(failed) if vlm_flag == "truncated" else ())
+    return res
 
 
 def handle(req):
@@ -146,6 +166,8 @@ def handle(req):
         return _write_ok(req, sc, garbled=True)
     if b == "garbled_sticky":                           # ... and the repair engines cannot fix it either
         return _write_ok(req, sc, garbled=True, sticky=True)
+    if b in ("refuse", "length") and req["engine_opts"].get("fake_engine") == "vlm":
+        return _write_ok(req, sc, vlm_flag="refused" if b == "refuse" else "truncated")
     if b == "partial":                                  # PARTIAL_SUCCESS: scenario failed_pages come out empty
         return _write_ok(req, sc, failing=True)
     if b == "partial_sticky":                           # ... and the repair runs fail those pages too

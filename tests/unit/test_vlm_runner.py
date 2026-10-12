@@ -122,13 +122,13 @@ def test_bad_request_rerenders_at_lower_dpi(tmp_path, monkeypatch):
 
 def test_otsl_table_becomes_gfm():
     otsl = "<fcel>R0C0 值<fcel>R0C1 值<nl><fcel>R1C0<lcel><nl><fcel>a|b<ecel><nl>"
-    assert R.otsl_to_gfm(otsl) == "| R0C0 值 | R0C1 值 |\n| --- | --- |\n| R1C0 | R1C0 |\n| a\|b |  |"
+    assert R.otsl_to_gfm(otsl) == "| R0C0 值 | R0C1 值 |\n| --- | --- |\n| R1C0 | R1C0 |\n| a\\|b |  |"
     assert R.otsl_to_gfm("plain text, no table") is None
 
 
 def test_latex_delimiters_and_missing_images():
-    md, flag = R.clean_markdown("Intro\n\n\(E = mc^2\)\n\n\[\int_0^1 x\,dx\]")
-    assert flag is None and "$E = mc^2$" in md and "$$\int_0^1 x\,dx$$" in md
+    md, flag = R.clean_markdown("Intro\n\n" r"\(E = mc^2\)" "\n\n" r"\[\int_0^1 x\,dx\]")
+    assert flag is None and "$E = mc^2$" in md and r"$$\int_0^1 x\,dx$$" in md
     assert R.mark_missing_images("a\n<!-- image -->\nFig. 1\n<!-- image -->") == (
         "a\n<!-- image missing -->\nFig. 1\n<!-- image missing -->", 2)
 
