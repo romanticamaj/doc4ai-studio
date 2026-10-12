@@ -335,9 +335,13 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
         ctx.vlm_repair = outcome.vlm
     elif flagged:
         ctx.log(f"{len(flagged)} of {effective} pages have a broken text layer or garbage: not repaired page by page")
+    # pages a VLM produced get the collect-only vlm_low_overlap advisory (VLM spec §7)
+    vlm_pages = (list(range(1, probe.pages + 1)) if engine_name == "vlm"
+                 else [p for p, lbl in outcome_repaired.items() if str(lbl).startswith("vlm:")])
     q = assess(merged.markdown, probe, probe.pages, pdf=ctx.work_src, page_map_method=method,
                flagged_before=len(flagged), repaired=repaired, last_resort=last_resort,
-               failed_pages={p: m for p, m in failed.items() if p not in outcome_repaired})
+               failed_pages={p: m for p, m in failed.items() if p not in outcome_repaired},
+               vlm_pages=vlm_pages)
     if q.page_map and q.page_map.get("alignment"):
         al = q.page_map["alignment"]
         ctx.log(f"page map {q.page_map['found']}/{q.page_map['expected']} ({q.page_map.get('method')}); "

@@ -253,3 +253,31 @@ def test_pages_the_engine_failed_on_are_flagged():
     q2 = assess(_doc([GOOD_EN] * 10), _probe(10), 10, page_map_method="x", failed_pages={3: "x"},
                 flagged_before=1, repaired=[entry])
     assert q2.level == "ok" and q2.pages == [entry]
+
+
+from aidoc.pagemap import squash
+from aidoc.quality import vlm_overlap
+
+
+def test_vlm_overlap_jaccard():
+    layer = squash("The quick brown fox jumps over the lazy dog near the river bank today " * 3)
+    assert vlm_overlap("The quick brown fox jumps over the lazy dog near the river bank today " * 3, layer) > 0.9
+    assert vlm_overlap("Completely different text about ships and harbours " * 4, layer) < 0.2
+    assert vlm_overlap("x", squash("short")) is None
+
+
+def test_vlm_low_overlap_is_advisory_only():
+    good = "The quick brown fox jumps over the lazy dog near the river bank today. " * 6
+    md = "".join(f"<!-- page: {i} -->\n\n{good}\n\n" for i in (1, 2)).replace(good, "Ships and harbours and sails and masts. " * 8, 1)
+    layers = [squash(good), squash(good)]
+    q = assess(md, _probe(2), 2, page_map_method="vlm_per_page", vlm_pages=[1, 2], layers=layers)
+    assert q.level == "ok" and q.pages[0]["page"] == 1 and q.pages[0]["advisories"] == ["vlm_low_overlap"]
+    assert q.pages_unrepaired == 0 and q.to_json()["pages_unrepaired"] == 0
+
+
+def test_advisory_only_entries_are_not_problem_pages_anywhere():
+    from aidoc.mcp.docs import flagged_count, page_warnings
+    row = {"quality": {"pages": [{"page": 1, "reasons": [], "advisories": ["vlm_low_overlap"],
+                                  "metrics": {"vlm_overlap": 0.05}},
+                                 {"page": 2, "reasons": ["garbage"]}]}}
+    assert [w.page for w in page_warnings(row)] == [2] and flagged_count(row) == 1

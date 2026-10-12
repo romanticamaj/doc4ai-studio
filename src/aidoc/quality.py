@@ -32,6 +32,8 @@ PAGE_GARBAGE_MAX = 0.05
 PAGE_GARBAGE_MIN_CHARS = 50
 SHIFT_HITS_MIN = 3
 PAGE_CHECK_VERSION = 1
+VLM_OVERLAP_MIN = 0.2          # VLM spec §7: advisory only (collect numbers; never changes level or score)
+VLM_OVERLAP_MIN_LAYER = 120    # squashed text-layer chars a page needs before the overlap means anything
 SHIFT = 29                     # TrueType standard Mac glyph order: glyph id = char code - 29 (glyph 3 = space)
 COMMON_WORDS = frozenset(
     ["the", "and", "you", "that", "it", "is", "to", "of", "in", "for", "on", "with", "this", "be", "are", "your", "can", "if", "what", "there", "but", "was", "as", "at", "by", "from", "or", "an", "not", "have", "will", "all", "so", "do", "just", "like", "how", "app"])
@@ -177,11 +179,43 @@ def flag_pages(md: str, broken_font_pages: Iterable[int]) -> list[dict]:
     return out
 
 
+def vlm_overlap(section: str, layer: str) -> float | None:
+    """Character 3-gram Jaccard between a VLM page section and the page's (squashed) PDF text layer — a coarse
+    hallucination signal (VLM spec §7). None when the layer is too short to say anything."""
+    if len(layer) < VLM_OVERLAP_MIN_LAYER:
+        return None
+    a = pagemap.squash(strip_markup(section))
+    ga = {a[i:i + 3] for i in range(len(a) - 2)}
+    gb = {layer[i:i + 3] for i in range(len(layer) - 2)}
+    if not ga or not gb:
+        return 0.0
+    return round(len(ga & gb) / len(ga | gb), 3)
+
+
+def _vlm_advisories(markdown: str, entries: list[dict], vlm_pages, layers, broken: set[int]) -> list[dict]:
+    """Add `advisories: ["vlm_low_overlap"]` + `metrics.vlm_overlap` for VLM-made pages whose text barely overlaps
+    the PDF text layer. Advisory-only entries carry no `reasons` and are never flagged or unrepaired pages."""
+    _, secs = pagemap.split_pages(markdown)
+    by_page = {e["page"]: e for e in entries}
+    for p in sorted(set(vlm_pages)):
+        if p in broken or not 1 <= p <= len(layers):
+            continue
+        ov = vlm_overlap(secs.get(p, ""), layers[p - 1])
+        if ov is None or ov >= VLM_OVERLAP_MIN:
+            continue
+        e = by_page.get(p)
+        if e is None:
+            e = by_page[p] = {"page": p, "reasons": []}
+        e["advisories"] = sorted(set(e.get("advisories") or []) | {"vlm_low_overlap"})
+        e["metrics"] = {**(e.get("metrics") or {}), "vlm_overlap": ov}
+    return [by_page[p] for p in sorted(by_page)]
+
+
 def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | None = None,
            page_map_method: str | None = None, quick: bool = False, flagged_before: int | None = None,
            repaired: list[dict] | None = None, align_sample: int | None = None, last_resort: bool = False,
            failed_pages: dict[int, str] | None = None,
-           layers: list[str] | None = None) -> QualityResult:
+           layers: list[str] | None = None, vlm_pages=None) -> QualityResult:
     """Document quality. Legacy rules for non-PDFs; PDFs add the page map, alignment spot check and flagged pages
     (spec 2026-10-01 §5.2: any document reason -> low; else unrepaired flagged pages -> warn; else ok)."""
     base = _assess_base(markdown, probe, pages)
@@ -197,6 +231,8 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     pm["invalid_markers"] = pagemap.invalid_markers(markdown, pages)
     if pm["invalid_markers"]:
         reasons.append("page_map_invalid")
+    if pdf is not None and layers is None and vlm_pages:
+        layers = pagemap.pdf_text_layers(pdf)          # once, for the spot check and the VLM overlap
     if pdf is not None:
         # quick (segment) check: every page of the segment — a 10-page sample let one legitimately merged
         # cross-page paragraph read as 1/9 misaligned on a real book (2026-10-01 acceptance)
@@ -235,5 +271,7 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     unrepaired += max(0, (pm["expected"] - pm["found"]) - len(pm["missing"]))
     level = "low" if reasons else ("warn" if unrepaired else "ok")
     score = base.score * pm["coverage"] * max(0.0, 1 - unrepaired / effective)
+    if vlm_pages and layers:
+        entries = _vlm_advisories(markdown, entries, vlm_pages, layers, set(probe.broken_font_pages))
     return QualityResult(score=round(score, 3), level=level, reasons=reasons, metrics=base.metrics,
                          page_check=PAGE_CHECK_VERSION, page_map=pm, pages=entries, pages_flagged=n_flagged)

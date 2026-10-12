@@ -126,6 +126,8 @@ def page_warnings(row: dict, start: int | None = None, end: int | None = None) -
     out = []
     for p in (row.get("quality") or {}).get("pages") or []:
         page = p.get("page")
+        if not p.get("reasons"):                 # advisory-only entry (vlm_low_overlap): not a problem page
+            continue
         if page is None or (start is not None and page < start) or (end is not None and page > end):
             continue
         reasons = list(p.get("reasons") or [])
@@ -135,7 +137,7 @@ def page_warnings(row: dict, start: int | None = None, end: int | None = None) -
 
 
 def flagged_count(row: dict) -> int:
-    return len((row.get("quality") or {}).get("pages") or [])
+    return sum(1 for p in (row.get("quality") or {}).get("pages") or [] if p.get("reasons"))
 
 
 def stale_job(ctx, row: dict) -> str | None:
