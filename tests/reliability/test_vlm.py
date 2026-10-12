@@ -165,18 +165,22 @@ def test_page_cap_and_daily_budget(tmp_root, monkeypatch, fixtures):
     tid = e.task(e.copy("span_margin.pdf"))                         # 45 pages > the 10-page cap
     assert e.run(tid) == TaskStatus.low
     assert any("vlm(page_cap)" in line for line in e.logs) and e.store.get_task(tid)["engine"] != "vlm"
-    # per-page repair is not capped per document, only by the daily budget: 3 pages fit into 5, 3 more do not
+    # the "low" fake output of each 40-page segment is a 5-character page: page_dropped on pages 1 and 41; the other
+    # engines' repairs give 5 characters again (not a real section), so the VLM repairs both: 2 of the 5 budget pages
+    used = e.store.vlm_usage_today("openai", "127.0.0.1:9")["pages"]
+    assert used == 2
+    # per-page repair is not capped per document, only by the daily budget: 3 pages fit into the 3 left, 3 more do not
     e.scenario(default="ok", garbled_pages=[1, 2, 3], rules=STICKY)
     a = e.task(_pdf(tmp_root / "r1.pdf", fixtures, broken=3, text_pages=12), engine="docling")
     assert e.run(a) == TaskStatus.done
     assert all(p["repaired_by"].startswith("vlm:") for p in e.store.get_task(a)["quality"]["pages"])
-    assert e.store.vlm_usage_today("openai", "127.0.0.1:9")["pages"] == 3
+    assert e.store.vlm_usage_today("openai", "127.0.0.1:9")["pages"] == used + 3
     e.logs.clear()
     b = e.task(_pdf(tmp_root / "r2.pdf", fixtures, broken=3, text_pages=13), engine="docling")
     assert e.run(b) == TaskStatus.done
     assert any("repair: vlm skipped (budget)" in line for line in e.logs)
     assert e.store.get_task(b)["quality"]["pages_unrepaired"] == 3
-    assert e.store.vlm_usage_today("openai", "127.0.0.1:9")["pages"] == 3
+    assert e.store.vlm_usage_today("openai", "127.0.0.1:9")["pages"] == used + 3
 
 
 # 5 ⚑
