@@ -34,3 +34,14 @@ describe("VlmBackendForm", () => {
     expect(screen.getByRole("option", { name: /local/ })).toHaveAttribute("aria-disabled", "true");
   });
 });
+
+describe("VlmBackendForm consent and endpoint changes", () => {
+  it("turns consent off when the endpoint host changes", () => {
+    const onSave = vi.fn();
+    render(<VlmBackendForm settings={{ ...base, base_url: "http://127.0.0.1:1/v1", model: "m", remote_enabled: true }} info={{ installed: true, ready: true, backend: "openai" }} onSave={onSave} />);
+    fireEvent.change(screen.getByLabelText("base_url"), { target: { value: "https://api.example.com/v1" } });
+    expect(screen.getByRole("switch", { name: /我了解/ })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "儲存" }));
+    expect(onSave.mock.calls[0][0].vlm.remote_enabled).toBe(false);
+  });
+});

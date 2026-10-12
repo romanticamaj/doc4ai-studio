@@ -1,8 +1,8 @@
 """VLM OCR runner (spec 2026-10-05 VLM §4). Runs on the HOST interpreter: stdlib + pymupdf + the sibling
 _proto.py / _vlm_prompt.py only — never import aidoc here.
 
-One page = one Chat Completions request (data-URI image + prompt) to an OpenAI-compatible endpoint: `base_url`
-(backend "openai") or a llama-server this runner starts on loopback (backend "local", see LocalServer / main()).
+One page = one Chat Completions request (data-URI image + prompt) to an OpenAI-compatible endpoint (`base_url`,
+backend "openai"; the local llama.cpp backend is not delivered yet — spike S1 rule 4).
 Every page gets a `<!-- page: k -->` marker (page_map_method "vlm_per_page"); refusals and truncations are reported
 as failed_pages; usage goes to result.json["vlm"].
 
@@ -94,8 +94,9 @@ _TRAILER_RE = re.compile(
     r"(?:\n|^)[ \t]*(?:Let me know if[^\n]*|Is there anything else[^\n]*|I hope this helps[^\n]*|"
     r"Feel free to ask[^\n]*|希望這對您有幫助[^\n]*|希望对您有帮助[^\n]*|如果您還需要[^\n]*|如有其他需要[^\n]*)\s*$", re.IGNORECASE)
 _REFUSAL_RE = re.compile(
-    r"^\s*(?:I['\u2019]m sorry|I am sorry|Sorry,|I cannot|I can['\u2019]t|I can not|I'm unable|I am unable|"
-    r"As an AI|無法|抱歉|很抱歉|對不起|对不起|无法)", re.IGNORECASE)
+    r"^\s*(?:I['\u2019]m sorry|I am sorry|Sorry,|I cannot|I can['\u2019]t|I can not|I['\u2019]m unable|I am unable|"
+    r"I['\u2019]m not able|I am not able|I won['\u2019]t|I will not|Unfortunately|As an AI|"
+    r"無法|抱歉|很抱歉|對不起|对不起|无法)", re.IGNORECASE)
 REFUSAL_MAX_CHARS = 200
 
 
@@ -329,6 +330,9 @@ def send_page(client: Client, render, k: int, n: int, opts: dict, stats: dict) -
             stats["has_usage"] = True
         text, finish = _content(out)
         res.finish_reason = finish
+        if finish not in (None, "stop", "length", "eos", "end_turn"):   # content_filter & co: the model declined
+            res.flag, res.markdown = "refused", ""
+            return res
         if finish == "length" and max_tokens < MAX_OUTPUT_TOKENS_CAP and not res.flag:
             max_tokens = min(MAX_OUTPUT_TOKENS_CAP, max_tokens * TRUNCATION_RETRY_FACTOR)
             res.flag = "retrying_length"
@@ -375,9 +379,16 @@ def resolve_key(eo: dict) -> str | None:
 
 
 def _is_loopback(host: str) -> bool:
+    """`host[:port]` names this computer: localhost or a loopback IP (not merely a name starting with "127.")."""
+    import ipaddress
     h = host.rsplit(":", 1)[0] if host.count(":") == 1 or host.startswith("[") else host
-    h = h.strip("[]")
-    return h in ("127.0.0.1", "localhost", "::1") or h.startswith("127.")
+    h = h.strip("[]").lower()
+    if h == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
 
 
 def handle(req: dict) -> dict:
@@ -426,7 +437,13 @@ def handle(req: dict) -> dict:
             cap = max_px if dpi >= base_dpi else max(256, int(max_px * dpi / base_dpi))
             with render_lock:
                 return render_page(doc, i, dpi, cap)
-        results[i] = send_page(client, render, i + 1, n, eo, stats)
+        try:
+            results[i] = send_page(client, render, i + 1, n, eo, stats)
+        except _proto.RunnerError as e:
+            if e.kind != "transient":
+                raise                           # 401/403/404: a configuration error, the whole run fails
+            _proto.log(f"vlm: page {i + 1}: {e}")
+            results[i] = PageOut(flag="unreachable")   # retries used up: this page only (spec §4.4 page level)
         with render_lock:
             done[0] += 1
             _proto.progress(done[0], n)
@@ -448,6 +465,8 @@ def handle(req: dict) -> dict:
                     raise
     finally:
         doc.close()
+    if n and all(r is not None and r.flag == "unreachable" for r in results):
+        raise _proto.RunnerError("transient", f"vlm: {host} did not answer for any of the {n} page(s)")
 
     parts, failed, refused, truncated, images_missing = [], {}, [], [], {}
     usage = None
@@ -465,8 +484,8 @@ def handle(req: dict) -> dict:
         elif r.flag == "truncated":
             failed[str(k)] = "truncated"
             truncated.append(k)
-        elif r.flag == "bad_request":
-            failed[str(k)] = "bad_request"
+        elif r.flag in ("bad_request", "unreachable"):
+            failed[str(k)] = r.flag
     md_path = out_dir / "out.md"
     md_path.write_text("".join(parts), encoding="utf-8")
     vlm = {"backend": backend, "model": model, "endpoint_host": "local" if backend == "local" else host,

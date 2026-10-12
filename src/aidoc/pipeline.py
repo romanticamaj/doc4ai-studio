@@ -113,6 +113,7 @@ class PipelineContext:
     work_src: Path | None = None
     attempt: int = 0
     engines: dict | None = None               # all engines (per-page repair may use another one)
+    vlm_all: dict | None = None               # every VLM block of this run, kept or not (sidecar privacy record)
     vlm_primary: dict | None = None           # VLM usage of the current VLM engine attempt (segments merged)
     vlm_repair: dict | None = None            # VLM usage of the current attempt's per-page repair
 
@@ -150,6 +151,7 @@ class PipelineContext:
         """One VLM runner result (a segment or a repair run) into the vlm_usage table (VLM spec §8.2)."""
         if not block:
             return
+        self.vlm_all = merge_vlm_blocks(self.vlm_all, block)
         u = block.get("usage") or {}
         backend = block.get("backend") or "openai"
         host = "local" if backend == "local" else (block.get("endpoint_host") or "")
@@ -470,7 +472,7 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
                             pages=probe.pages if probe.pages is not None else cand.page_count,
                             engine=cand.engine, tried=tried, segments=n_segments, probe=probe.to_json(),
                             quality=cand.quality.to_json(), lang=opts.lang, elapsed_s=time.time() - ctx.started,
-                            vlm=cand.vlm)
+                            vlm=_sidecar_vlm(ctx, cand))
     writer = OutputWriter(opts.output_dir, ctx.task_id, stem)
     try:
         writer.write(cand.norm.markdown, cand.norm.assets, sidecar)
@@ -493,6 +495,16 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
             error_kind=None, error_msg=None, pid=None)
     _purge_intermediates(ctx)
     return status
+
+
+def _sidecar_vlm(ctx: PipelineContext, cand: _Candidate) -> dict | None:
+    """The kept candidate's VLM block; pages a discarded attempt sent are still counted (VLM spec §4.6: the sidecar
+    records which pages went to which host)."""
+    if ctx.vlm_all is None:
+        return cand.vlm
+    if cand.vlm is None:
+        return {**ctx.vlm_all, "role": "discarded"}
+    return {**cand.vlm, "pages_sent": ctx.vlm_all.get("pages_sent"), "usage": ctx.vlm_all.get("usage")}
 
 
 def _index_pages(ctx: PipelineContext, store: Store, output_dir) -> None:
@@ -672,8 +684,9 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
         eo = engine.engine_opts(opts, probe)
         last = i == len(order) - 1
         if name == "vlm" and engine.is_remote():
-            if not engine.remote_allowed(opts):          # --no-vlm-remote with a forced vlm
-                ctx.log("vlm(disabled_remote): this run does not use the remote VLM")
+            veto = ctx.vlm_gate(probe)                 # again right before sending: budget, cap, --no-vlm-remote
+            if veto:                                   # (a forced vlm never went through the routing gate)
+                ctx.log(f"vlm({veto}): the VLM is not used for this document")
                 continue
             ctx.log(f"vlm(openai): sending {probe.pages or 1} page image(s) to {engine.endpoint_host()} "
                     f"model={engine.model_name()}")

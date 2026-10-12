@@ -141,6 +141,12 @@ def _validate_vlm(changes: dict, cfg) -> None:
     v = copy.deepcopy(cfg.vlm)
     for key, val in changes.items():
         setattr(v, key, val)
+    from urllib.parse import urlsplit
+    if "base_url" in changes and v.remote_enabled and "remote_enabled" not in changes \
+            and urlsplit(changes["base_url"]).netloc.lower() != urlsplit(cfg.vlm.base_url).netloc.lower():
+        # consent named the old host (spec §4.6): a new host needs it again
+        v.remote_enabled = False
+        changes["remote_enabled"] = False
     problem = vlm_problem(v)
     if problem:
         raise ApiError(422, "invalid_settings", detail=problem)
