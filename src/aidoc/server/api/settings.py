@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import copy
 from dataclasses import fields
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 
-from aidoc.config import _SECTIONS, config_path, mcp_list_problem, save_config
+from aidoc.config import _SECTIONS, VLM_RANGES, config_path, mcp_list_problem, save_config, vlm_problem
 from aidoc.server.auth import ApiError
 
 router = APIRouter()
@@ -48,6 +49,14 @@ _MAX.update({("compat", "sync_timeout_s"): 3600, ("compat", "max_file_mb"): 4096
              ("compat", "poll_max_wait_s"): 300, ("compat", "task_retention_days"): 3650})
 
 
+# [vlm] (VLM spec §8.3)
+_CHOICES.update({("vlm", "backend"): {"none", "local", "openai"},
+                 ("vlm", "local_preset"): {"paddleocr-vl-1.6", "qwen2.5-vl-3b", "custom"},
+                 ("vlm", "local_prompt_style"): {"", "paddle_tasks", "generic"}})
+_MIN.update({("vlm", k): lo for k, (lo, _hi) in VLM_RANGES.items()})
+_MAX.update({("vlm", k): hi for k, (_lo, hi) in VLM_RANGES.items()})
+
+
 def _validate_mcp_lists(key: str, val, allow_drive_root: bool = False) -> None:
     if not isinstance(val, list) or not all(isinstance(v, str) for v in val):
         raise ApiError(422, "invalid_settings", detail=f"mcp.{key} must be a list of strings")
@@ -61,6 +70,8 @@ def masked(ctx) -> dict:
     d = ctx.config.to_dict()
     if d["server"].get("token") or ctx.token:
         d["server"]["token"] = "***"
+    if d["vlm"].get("api_key"):
+        d["vlm"]["api_key"] = "***"
     return d
 
 
@@ -80,6 +91,8 @@ def _validate(body: dict, cfg) -> dict:
                 if val in ("***", cur):              # the masked or unchanged value a settings form echoes back
                     continue
                 raise ApiError(403, "token_readonly")
+            if (section, key) == ("vlm", "api_key") and val == "***":
+                continue                             # the masked value a settings form echoes back: unchanged
             if (section, key) == ("preview", "soffice_path"):
                 if val == cur:
                     continue                         # a settings form echoes the value back
@@ -112,6 +125,8 @@ def _validate(body: dict, cfg) -> dict:
                     continue
                 raise ApiError(403, "server_readonly", detail=f"{section}.{key} is set when aidoc serve starts")
             clean.setdefault(section, {})[key] = val
+    if "vlm" in clean:
+        _validate_vlm(clean["vlm"], cfg)
     if "mcp" in clean:
         m = clean["mcp"]
         default_ttl = m.get("default_token_ttl_days", cfg.mcp.default_token_ttl_days)
@@ -119,6 +134,23 @@ def _validate(body: dict, cfg) -> dict:
         if default_ttl > max_ttl:
             raise ApiError(422, "invalid_settings", detail="mcp.default_token_ttl_days must be <= mcp.max_token_ttl_days")
     return clean
+
+
+def _validate_vlm(changes: dict, cfg) -> None:
+    """The merged [vlm] section must pass the same rules aidoc.toml is loaded with, plus the API-only ones."""
+    v = copy.deepcopy(cfg.vlm)
+    for key, val in changes.items():
+        setattr(v, key, val)
+    problem = vlm_problem(v)
+    if problem:
+        raise ApiError(422, "invalid_settings", detail=problem)
+    if v.remote_enabled and v.backend != "openai":
+        raise ApiError(422, "invalid_settings", detail="vlm.remote_enabled requires vlm.backend = \"openai\"")
+    if v.backend == "local" and v.local_preset == "custom":
+        for key in ("local_gguf", "local_mmproj"):
+            val = getattr(v, key)
+            if not val or not Path(val).is_absolute() or not Path(val).is_file():
+                raise ApiError(422, "invalid_settings", detail=f"vlm.{key} must be an existing absolute path")
 
 
 @router.get("/settings")

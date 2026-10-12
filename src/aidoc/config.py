@@ -98,6 +98,101 @@ class Compat:
     json_content: str = "null"          # "null" | "doc4ai" (spike S1: RAGFlow reads md_content first)
 
 
+@dataclass
+class Vlm:
+    """[vlm] VLM OCR engine (spec 2026-10-05 VLM §8.3). backend "none" (default) changes nothing."""
+    backend: str = "none"                  # "none" | "local" | "openai"
+    use_as_fallback: bool = True
+    use_for_repair: bool = True
+    dpi: int = 150                         # remote; the local backend uses local_dpi
+    max_image_px: int = 2000               # remote: long-side limit
+    request_timeout_s: int = 120
+    max_output_tokens: int = 4096
+    # --- openai backend
+    remote_enabled: bool = False           # explicit consent: page images are sent to base_url
+    base_url: str = ""
+    model: str = ""
+    api_key_env: str = "AIDOC_VLM_API_KEY"
+    api_key: str = ""                      # prefer the environment variable; masked over the API
+    allow_no_key: bool = False
+    max_concurrent: int = 2
+    remote_max_pages_per_doc: int = 200
+    remote_daily_page_budget: int = 500    # 0 = unlimited
+    # --- local backend (llama.cpp + GGUF)
+    local_preset: str = "paddleocr-vl-1.6"  # "paddleocr-vl-1.6" | "qwen2.5-vl-3b" | "custom"
+    local_dpi: int = 200
+    local_max_image_px: int = 1400
+    local_ctx_size: int = 8192
+    local_gguf: str = ""                   # preset "custom": absolute path
+    local_mmproj: str = ""
+    local_prompt_style: str = ""           # "" = by preset; "paddle_tasks" | "generic"
+
+
+VLM_BACKENDS = ("none", "local", "openai")
+VLM_PRESETS = ("paddleocr-vl-1.6", "qwen2.5-vl-3b", "custom")
+VLM_PROMPT_STYLES = ("", "paddle_tasks", "generic")
+# (key, low, high) — shared by load_config and PUT /api/settings
+VLM_RANGES = {"max_concurrent": (1, 8), "dpi": (72, 300), "local_dpi": (72, 300), "max_image_px": (512, 4096),
+              "local_max_image_px": (512, 4096), "local_ctx_size": (2048, 32768), "request_timeout_s": (10, 600),
+              "max_output_tokens": (256, 16384), "remote_max_pages_per_doc": (0, 10 ** 6),
+              "remote_daily_page_budget": (0, 10 ** 7)}
+
+
+def vlm_base_url_problem(url: str) -> str | None:
+    """None when `url` is an absolute http(s) URL without credentials or a query (spec §8.3)."""
+    from urllib.parse import urlsplit
+    try:
+        u = urlsplit(url)
+    except ValueError:
+        return "vlm.base_url is not a URL"
+    if u.scheme not in ("http", "https") or not u.netloc:
+        return "vlm.base_url must be an absolute http(s):// URL"
+    if "@" in u.netloc:
+        return "vlm.base_url must not contain credentials (@); use api_key_env"
+    if u.query or u.fragment:
+        return "vlm.base_url must not contain a query or fragment"
+    return None
+
+
+def vlm_problem(v: Vlm) -> str | None:
+    """The first fatal problem of a [vlm] section (load_config: refuse to start; PUT /api/settings: 422)."""
+    if v.backend not in VLM_BACKENDS:
+        return f"vlm.backend must be one of {list(VLM_BACKENDS)}"
+    if v.local_preset not in VLM_PRESETS:
+        return f"vlm.local_preset must be one of {list(VLM_PRESETS)}"
+    if v.local_prompt_style not in VLM_PROMPT_STYLES:
+        return f"vlm.local_prompt_style must be one of {list(VLM_PROMPT_STYLES)}"
+    for key, (lo, hi) in VLM_RANGES.items():
+        val = getattr(v, key)
+        if not isinstance(val, int) or isinstance(val, bool) or not lo <= val <= hi:
+            return f"vlm.{key} must be an integer in {lo}..{hi}"
+    if v.backend == "openai" or v.base_url:
+        problem = vlm_base_url_problem(v.base_url)
+        if problem:
+            return problem
+    if v.backend == "openai" and not v.model.strip():
+        return "vlm.model must be set for the openai backend"
+    return None
+
+
+def _check_vlm(cfg: AidocConfig, where: Path) -> None:
+    v = cfg.vlm
+    problem = vlm_problem(v)
+    if problem:
+        raise ConfigError(f"{where}: {problem}")
+    if v.remote_enabled and v.backend != "openai":
+        cfg.warnings.append("vlm.remote_enabled is only meaningful with backend = \"openai\"; ignored")
+        v.remote_enabled = False
+    if v.api_key:
+        cfg.warnings.append("vlm.api_key is stored in aidoc.toml; prefer the environment variable "
+                            f"{v.api_key_env or 'AIDOC_VLM_API_KEY'}")
+    if v.local_preset == "custom" and v.backend == "local":
+        for key in ("local_gguf", "local_mmproj"):
+            val = getattr(v, key)
+            if not val or not Path(val).is_absolute() or not Path(val).is_file():
+                cfg.warnings.append(f"vlm.{key} must be an existing absolute path for local_preset = \"custom\"")
+
+
 class ConfigError(ValueError):
     """aidoc.toml holds a value that is unsafe to run with (the server refuses to start)."""
 
@@ -162,7 +257,7 @@ def _check_mcp(cfg: AidocConfig, where: Path) -> None:
 
 
 _SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp,
-             "preview": Preview, "compat": Compat}
+             "preview": Preview, "compat": Compat, "vlm": Vlm}
 
 
 @dataclass
@@ -174,6 +269,7 @@ class AidocConfig:
     mcp: Mcp = field(default_factory=Mcp)
     preview: Preview = field(default_factory=Preview)
     compat: Compat = field(default_factory=Compat)
+    vlm: Vlm = field(default_factory=Vlm)
     root: Path = field(default_factory=paths.project_root)
     data_dir: Path = field(default_factory=paths.data_dir)
     warnings: list[str] = field(default_factory=list)            # load-time problems that were ignored
@@ -211,6 +307,7 @@ def load_config(path: Path | None = None) -> AidocConfig:
             raise ValueError(f"unknown config section {section}")
         setattr(cfg, section, _build(section, _SECTIONS[section], data))
     _check_mcp(cfg, p)
+    _check_vlm(cfg, p)
     return cfg
 
 

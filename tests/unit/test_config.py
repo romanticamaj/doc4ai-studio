@@ -77,3 +77,48 @@ def test_save_config_keeps_crlf_line_endings(tmp_path):
     lf.write_bytes(b"[mcp]\nrate_limit_per_min = 60\n")
     save_config(load_config(lf), lf, {"mcp": {"rate_limit_per_min": 70}})
     assert b"\r" not in lf.read_bytes()
+
+
+def _write_vlm(tmp_path, body):
+    p = tmp_path / "aidoc.toml"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def test_vlm_defaults_are_off(tmp_path):
+    cfg = load_config(_write_vlm(tmp_path, ""))
+    v = cfg.vlm
+    assert v.backend == "none" and v.remote_enabled is False and v.use_as_fallback and v.use_for_repair
+    assert v.api_key_env == "AIDOC_VLM_API_KEY" and v.remote_daily_page_budget == 500 and v.local_preset == "paddleocr-vl-1.6"
+
+
+def test_vlm_openai_requires_clean_base_url(tmp_path):
+    from aidoc.config import ConfigError
+    with pytest.raises(ConfigError, match="base_url"):
+        load_config(_write_vlm(tmp_path, '[vlm]\nbackend = "openai"\nbase_url = "http://user:key@host/v1"\nmodel = "m"\n'))
+    with pytest.raises(ConfigError, match="base_url"):
+        load_config(_write_vlm(tmp_path, '[vlm]\nbackend = "openai"\nbase_url = "host/v1"\nmodel = "m"\n'))
+    with pytest.raises(ConfigError, match="model"):
+        load_config(_write_vlm(tmp_path, '[vlm]\nbackend = "openai"\nbase_url = "http://127.0.0.1:1234/v1"\n'))
+
+
+def test_vlm_unknown_backend_is_fatal(tmp_path):
+    from aidoc.config import ConfigError
+    with pytest.raises(ConfigError, match="backend"):
+        load_config(_write_vlm(tmp_path, '[vlm]\nbackend = "paddle"\n'))
+
+
+def test_vlm_remote_enabled_without_openai_warns(tmp_path):
+    cfg = load_config(_write_vlm(tmp_path, '[vlm]\nbackend = "none"\nremote_enabled = true\n'))
+    assert cfg.vlm.remote_enabled is False and any("remote_enabled" in w for w in cfg.warnings)
+
+
+def test_vlm_inline_key_warns(tmp_path):
+    cfg = load_config(_write_vlm(tmp_path, '[vlm]\nbackend = "openai"\nbase_url = "http://127.0.0.1:1/v1"\nmodel = "m"\napi_key = "sk-x"\n'))
+    assert any("AIDOC_VLM_API_KEY" in w for w in cfg.warnings)
+
+
+def test_vlm_ranges_are_checked(tmp_path):
+    from aidoc.config import ConfigError
+    with pytest.raises(ConfigError, match="max_concurrent"):
+        load_config(_write_vlm(tmp_path, '[vlm]\nmax_concurrent = 9\n'))

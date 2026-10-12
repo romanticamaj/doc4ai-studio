@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 Lang = Literal["cht", "en"]
-ENGINE_NAMES = ("markitdown", "docling", "mineru")
+ENGINE_NAMES = ("markitdown", "docling", "mineru", "vlm")   # vlm: spec 2026-10-05 VLM, always last (A21)
 SEGMENT_PAGES = 40
 
 
@@ -67,6 +67,7 @@ class ConvertOptions:
     allow_online_audio: bool = False
     mineru_tier: str = "basic"         # "basic" | "standard"
     docling_ocr: str = "rapidocr"      # "easyocr" | "rapidocr" (P1 spike B chose rapidocr)
+    vlm_remote: bool | None = None     # False = never use the remote VLM backend for this run (--no-vlm-remote)
 
     def to_json(self) -> dict:
         d = asdict(self)
@@ -138,6 +139,7 @@ class RawResult:
     failed_pages: dict[int, str] = field(default_factory=dict)   # page (1-based, segment) -> engine error message
     engine_errors: list[str] = field(default_factory=list)       # every error the engine reported (partial success)
     images_missing: dict[int, int] = field(default_factory=dict) # page (1-based, segment) -> pictures without image
+    extra: dict = field(default_factory=dict)                    # runner result.json extras (e.g. "vlm" usage block)
 
 
 @dataclass
