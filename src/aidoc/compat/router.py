@@ -57,6 +57,24 @@ def _rate_limit(ctx, principal: Principal, call) -> None:
         raise CompatError(429, "rate limited", headers={"Retry-After": str(retry)}, retry_after=retry)
 
 
+JSON_MAX_DEPTH = 32
+
+
+def _depth(value) -> int:
+    """Nesting depth of decoded JSON, iteratively (no recursion on hostile input)."""
+    deepest, stack = 0, [(value, 1)]
+    while stack:
+        v, d = stack.pop()
+        deepest = max(deepest, d)
+        if d > JSON_MAX_DEPTH:
+            return d
+        if isinstance(v, dict):
+            stack.extend((x, d + 1) for x in v.values())
+        elif isinstance(v, list):
+            stack.extend((x, d + 1) for x in v)
+    return deepest
+
+
 async def _read_json(request: Request, call, max_mb: int) -> dict:
     declared = request.headers.get("content-length")
     if declared and declared.strip().isdigit() and int(declared) > max_mb * MIB:
@@ -69,8 +87,10 @@ async def _read_json(request: Request, call, max_mb: int) -> dict:
         body += chunk
     try:
         data = json.loads(bytes(body) or b"null")
-    except ValueError:
+    except (ValueError, RecursionError):
         raise CompatError(422, [{"type": "json_invalid", "loc": ["body"], "msg": "body is not JSON"}]) from None
+    if _depth(data) > JSON_MAX_DEPTH:                     # verifier item 4: never hand deep structures onwards
+        raise CompatError(422, [{"type": "json_invalid", "loc": ["body"], "msg": f"nested deeper than {JSON_MAX_DEPTH}"}])
     if not isinstance(data, dict):
         raise CompatError(422, [{"type": "dict_type", "loc": ["body"], "msg": "body must be a JSON object"}])
     return data
