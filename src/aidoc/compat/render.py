@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import os
 import re
+import stat
 import time
 from pathlib import Path
 from typing import Literal
@@ -113,17 +115,36 @@ def failure_info(message: str, task_row: dict | None = None) -> PublicFailureInf
 
 # ---- Markdown
 
-def _asset_path(assets_dir: Path | None, name: str) -> Path | None:
-    """`assets_dir/name` when `name` is a plain relative path that stays inside assets_dir, else None."""
+def _is_link(p: Path) -> bool:
+    """A symlink, junction or any other reparse point."""
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return False
+    if stat.S_ISLNK(st.st_mode):
+        return True
+    return bool(getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def asset_file(assets_dir: Path | None, name: str) -> Path | None:
+    """`assets_dir/name` (resolved) when `name` is a plain relative path that stays inside assets_dir without
+    passing through a link (symlink, junction, reparse point), else None. The file itself may be missing.
+    Shared by image_export_mode handling and the referenced-assets route (review finding 1, verifier item 3)."""
     from aidoc.server.app import safe_relative
     rel = safe_relative(name)
     if rel is None:
         return None
     if assets_dir is None:
         return Path(rel)
-    base = Path(assets_dir).resolve()
+    base = Path(assets_dir)
+    cur = base
+    for part in rel.split("/"):
+        cur = cur / part
+        if _is_link(cur):
+            return None
+    root = base.resolve()
     target = (base / rel).resolve()
-    return target if target.is_relative_to(base) else None
+    return target if target.is_relative_to(root) else None
 
 
 def _images(md: str, opts: CompatOptions, *, doc_id: str, asset_base: str | None, assets_dir: Path | None,
@@ -140,7 +161,7 @@ def _images(md: str, opts: CompatOptions, *, doc_id: str, asset_base: str | None
         if a < last:                                    # overlapping constructs (an <img> inside alt text): skip
             continue
         out.append(md[last:a])
-        path = _asset_path(assets_dir, name)
+        path = asset_file(assets_dir, name)
         if path is None and opts.image_mode != "placeholder":
             # the name comes from document text: never follow ../, absolute, drive or UNC names (review finding 1)
             warnings.append(f"image {name[:80]!r} is not a file of this document's assets; left as a placeholder")
