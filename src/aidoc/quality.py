@@ -215,25 +215,28 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
            page_map_method: str | None = None, quick: bool = False, flagged_before: int | None = None,
            repaired: list[dict] | None = None, align_sample: int | None = None, last_resort: bool = False,
            failed_pages: dict[int, str] | None = None,
-           layers: list[str] | None = None, vlm_pages=None) -> QualityResult:
+           layers: list[str] | None = None, vlm_pages=None,
+           skip_page_map_reasons: bool = False) -> QualityResult:
     """Document quality. Legacy rules for non-PDFs; PDFs add the page map, alignment spot check and flagged pages
-    (spec 2026-10-01 §5.2: any document reason -> low; else unrepaired flagged pages -> warn; else ok)."""
+    (spec 2026-10-01 §5.2: any document reason -> low; else unrepaired flagged pages -> warn; else ok).
+    `skip_page_map_reasons`: the markers were inferred by `verify` (index A26) — the page map is not evaluated
+    (no coverage / invalid / alignment reasons, no spot check)."""
     base = _assess_base(markdown, probe, pages)
     base.page_check = PAGE_CHECK_VERSION
     if probe.kind != "pdf" or pages is None:
         return base
     reasons = list(base.reasons)
     pm = pagemap.page_map(markdown, pages, page_map_method)
-    if pm["coverage"] < COVERAGE_MIN:
+    if pm["coverage"] < COVERAGE_MIN and not skip_page_map_reasons:
         reasons.append("page_map_incomplete")
     # runners emit one marker per page in order: a duplicate, a decrease or a page outside 1..pages means the map
     # was relabelled somewhere (a shifted / swapped / repeated range) — deterministic, no sampling
     pm["invalid_markers"] = pagemap.invalid_markers(markdown, pages)
-    if pm["invalid_markers"]:
+    if pm["invalid_markers"] and not skip_page_map_reasons:
         reasons.append("page_map_invalid")
     if pdf is not None and layers is None and vlm_pages:
         layers = pagemap.pdf_text_layers(pdf)          # once, for the spot check and the VLM overlap
-    if pdf is not None:
+    if pdf is not None and not skip_page_map_reasons:
         # quick (segment) check: every page of the segment — a 10-page sample let one legitimately merged
         # cross-page paragraph read as 1/9 misaligned on a real book (2026-10-01 acceptance)
         al = pagemap.spot_check(markdown, pdf, sample=align_sample or (max(pages, 1) if quick else 30),
