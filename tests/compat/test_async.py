@@ -165,3 +165,18 @@ def test_low_quality_task_is_success_and_its_result_partial_success(workers):
     st = env.client.get(f"/v1/status/poll/{tid}", params={"wait": 10}, headers={"X-Api-Key": raw}).json()
     assert st["task_status"] == "success" and st["task_meta"]["num_partially_succeeded"] == 1
     assert env.client.get(f"/v1/result/{tid}", headers={"X-Api-Key": raw}).json()["status"] == "partial_success"
+
+
+def test_attaching_to_another_tokens_job_uses_none_of_my_slots(workers):
+    """Review finding 3: the attached job belongs to someone else; it must not count against my cap."""
+    from tests.fakes.scenario import write_scenario
+    env = workers
+    write_scenario(env.ctx.config.root / "sc.json", default="slow_ok", delay_s=3.0)
+    env.ctx.config.compat.max_concurrent_jobs_per_token = 1
+    a, _ = env.issue()
+    b, _ = env.issue()
+    _submit(env, a, name="shared.pdf", data=PDF + b"\n% shared\n")
+    key = _submit(env, b, name="shared.pdf", data=PDF + b"\n% shared\n").json()["task_id"]
+    env.client.get(f"/v1/status/poll/{key}", headers={"X-Api-Key": b})
+    r = _submit(env, b, name="mine.pdf", data=PDF + b"\n% mine\n")
+    assert r.status_code == 200, r.text
