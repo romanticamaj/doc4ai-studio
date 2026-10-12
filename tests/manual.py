@@ -36,3 +36,13 @@ def manual_sample(name: str) -> Path:
         return p
     msg = f"manual sample missing: {name} — run: uv run python tests/fixtures/make_manual.py"
     pytest.fail(msg) if _required() else pytest.skip(msg)
+
+
+def recorded_fixture(rel: str) -> Path:
+    """A third-party output recorded by tests/integration/test_record_third_party.py (committed). Missing ones skip
+    normally and FAIL when AIDOC_REQUIRE_MANUAL=1."""
+    p = FIXTURES / rel
+    if p.is_file():
+        return p
+    msg = f"recorded fixture missing: {rel} — run: uv run pytest -m slow tests/integration/test_record_third_party.py"
+    pytest.fail(msg) if _required() else pytest.skip(msg)

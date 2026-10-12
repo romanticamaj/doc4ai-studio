@@ -33,3 +33,17 @@ def test_unknown_sample_name_always_fails(tmp_path):
     from tests.manual import manual_sample
     with pytest.raises(pytest.fail.Exception):
         manual_sample("not_in_manifest.pdf")
+
+
+def test_missing_recorded_fixture_skips_normally_and_fails_in_acceptance(tmp_path):
+    t = tmp_path / "test_rec_probe.py"
+    t.write_text(textwrap.dedent("""
+        from tests.manual import recorded_fixture
+        def test_x():
+            recorded_fixture("docling_recorded/not_there/export.md")
+    """), encoding="utf-8")
+    for req, want in (("0", "1 skipped"), ("1", "1 failed")):
+        env = {**os.environ, "AIDOC_REQUIRE_MANUAL": req, "PYTHONPATH": ROOT}
+        r = subprocess.run([sys.executable, "-m", "pytest", str(t), "-q", "-p", "no:cacheprovider", "--rootdir", ROOT],
+                           capture_output=True, text=True, env=env, cwd=ROOT, check=False)
+        assert want in r.stdout, r.stdout
