@@ -50,6 +50,26 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--token", help="API token (default: AIDOC_TOKEN, aidoc.toml server.token); "
                                     "required when binding a non-loopback address")
     sv.add_argument("--no-recover", action="store_true", help="skip startup recovery")
+    vf = sub.add_parser("verify", help="score any Markdown against its source PDF, page by page",
+                        description="Checks structural losses only (dropped / shifted / missing pages, broken text "
+                                    "layers, garbage, missing tables). It cannot see OCR misreadings, VLM "
+                                    "hallucinations or text missed inside images. A scanned PDF with no page markers "
+                                    "cannot be verified (exit 3). Exit codes: 0 passed, 1 failed --fail-on, "
+                                    "3 unverifiable, 4 usage/input error.")
+    vf.add_argument("path", help="Markdown file, or an aidoc output directory (out/<stem>/)")
+    vf.add_argument("--pdf", help="source PDF (directory form: found from the sidecar / Library when omitted)")
+    vf.add_argument("--format", default="auto",
+                    choices=["auto", "aidoc", "mineru", "docling", "markitdown", "pdfmux", "none"],
+                    help="page-marker dialect (none = ignore markers, infer page boundaries)")
+    vf.add_argument("--page-marker-regex", help="custom page marker with one group capturing the 1-based page")
+    vf.add_argument("--pages", type=int, help="total pages when there is no PDF (marker coverage only)")
+    vf.add_argument("--json", metavar="PATH", help="write the JSON report (- = stdout)")
+    vf.add_argument("--html", metavar="PATH", help="write a self-contained HTML report")
+    vf.add_argument("--thumbnails", action="store_true", help="HTML: page thumbnails of flagged pages (needs PDF)")
+    vf.add_argument("--fail-on", choices=["warn", "low"], default="low", help="level that makes the exit code 1")
+    vf.add_argument("--sample", type=int, default=30, help="alignment spot-check pages (0 = every page)")
+    vf.add_argument("--lang", choices=["cht", "en"], default="cht", help="wording of the summary / HTML")
+    vf.add_argument("--allow-unverifiable", action="store_true", help="exit 0 instead of 3 when unverifiable")
     s = sub.add_parser("setup", help="install an engine env, download models, self-check")
     s.add_argument("engine", choices=ENGINE_CHOICES + ["all"])
     return p
@@ -390,6 +410,44 @@ def cmd_setup(args) -> int:
     return 0 if ok else 1
 
 
+def cmd_verify(args) -> int:
+    from aidoc.models import EXIT_UNVERIFIABLE, EXIT_USAGE
+    from aidoc.verify import NeedsPagesError, exit_code, resolve_inputs, summary_text, verify_markdown
+    pdf = Path(args.pdf) if args.pdf else None
+    if pdf is not None and not pdf.is_file():
+        print(f"error: PDF not found: {pdf}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        md, pdf, previous, pages, name = resolve_inputs(Path(args.path), pdf)
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        report = verify_markdown(md, pdf, pages=args.pages or (pages if pdf is None else None), fmt=args.format,
+                                 marker_regex=args.page_marker_regex, sample=args.sample, previous=previous,
+                                 input_name=name)
+    except NeedsPagesError as e:
+        print(f"unverifiable: {e}", file=sys.stderr)
+        return 0 if args.allow_unverifiable else EXIT_UNVERIFIABLE
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return EXIT_USAGE
+    if args.json:
+        payload = json.dumps(report.to_json(), ensure_ascii=False, indent=2)
+        if args.json == "-":
+            print(payload, flush=True)
+        else:
+            Path(args.json).write_text(payload + "\n", encoding="utf-8")
+    if args.html:
+        from aidoc.verify_report import render_html, thumbnails
+        thumbs = None
+        if args.thumbnails and pdf is not None:
+            thumbs = thumbnails(pdf, [e["page"] for e in report.pages if e.get("reasons")])
+        Path(args.html).write_text(render_html(report, thumbs, args.lang), encoding="utf-8")
+    print(summary_text(report, args.lang), file=sys.stderr if args.json == "-" else sys.stdout, flush=True)
+    return exit_code(report, args.fail_on, args.allow_unverifiable)
+
+
 def _fix_stdio() -> None:
     """Never crash on characters the console code page (e.g. cp950) cannot encode."""
     for stream in (sys.stdout, sys.stderr):
@@ -451,6 +509,8 @@ def _main(argv: list[str] | None) -> int:
         return cmd_cancel(args)
     if args.cmd == "serve":
         return cmd_serve(args)
+    if args.cmd == "verify":
+        return cmd_verify(args)
     return 0
 
 
