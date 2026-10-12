@@ -414,6 +414,21 @@ def main():
     shutil.copy(HERE / "page.png", SAMPLES / "selfcheck_cht.png")
     shutil.copy(HERE / "text.pdf", SAMPLES / "selfcheck_text.pdf")
     shutil.copy(HERE / "sample.docx", SAMPLES / "selfcheck.docx")
+    make_vlm_check_png(SAMPLES / "vlm_check.png")
+
+
+VLM_CHECK_TEXT = "AIDOC VLM CHECK 繁體中文 2026"
+
+
+def make_vlm_check_png(path):
+    """VLM connection test image (VLM spec §9): 300×120 px, our own text only, no user data."""
+    doc = fitz.open()
+    page = doc.new_page(width=300, height=120)
+    tw = fitz.TextWriter(page.rect)
+    tw.append((10, 66), VLM_CHECK_TEXT, font=_font(page), fontsize=17)
+    tw.write_text(page)
+    Path(path).write_bytes(page.get_pixmap(dpi=72).tobytes("png"))
+    doc.close()
 
 
 if __name__ == "__main__":
