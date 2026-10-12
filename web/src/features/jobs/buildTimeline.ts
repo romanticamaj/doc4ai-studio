@@ -40,6 +40,14 @@ const FINAL: Record<string, { title: string; state: StepState; detail?: string }
  * The pipeline records an attempt when it ends, so while converting the engine in use is shown as an extra step
  * unless the last recorded attempt is still open (no score and no error).
  */
+/** "vlm · openai · <model>" for a VLM attempt with a label (VLM spec §10.2); the engine name otherwise. */
+function attemptName(a: { engine: string; label?: string | null }): string {
+  if (a.engine !== "vlm" || !a.label?.startsWith("vlm:")) return a.engine;
+  const rest = a.label.slice(4);
+  const i = rest.indexOf(":");
+  return i < 0 ? `vlm · ${rest}` : `vlm · ${rest.slice(0, i)} · ${rest.slice(i + 1)}`;
+}
+
 export function buildTimeline(task: Task): TimelineStep[] {
   const status = task.status;
   const active = ACTIVE.has(status);
@@ -67,7 +75,7 @@ export function buildTimeline(task: Task): TimelineStep[] {
     else if (status === "failed") state = "failed";
     else if (status === "cancelled") state = "skipped";
     else state = "pending";
-    steps.push({ key: `attempt-${i + 1}`, title: `使用 ${a.engine}`, detail: attemptDetail(a), state });
+    steps.push({ key: `attempt-${i + 1}`, title: `使用 ${attemptName(a)}`, detail: attemptDetail(a), state });
   });
 
   if (active && !lastOpen && status !== "probing" && task.engine) {

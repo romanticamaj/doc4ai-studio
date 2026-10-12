@@ -693,7 +693,8 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
                     changed = {k: v for k, v in d.engine_opts.items() if eo.get(k) != v}
                     msg = f"oom: retrying with {changed}; {e.message}"
                 store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=None, reasons=[],
-                                                      error_kind=e.kind.value, error_msg=msg[:1000]))
+                                                      error_kind=e.kind.value, error_msg=msg[:1000],
+                                                      label=engine.label() if name == "vlm" else None))
                 ctx.log(f"{name} failed ({e.kind.value}, {d.action}): {msg[:300]}")
                 if d.action == "fail":
                     for seg in store.list_segments(task_id):      # the segment that hit the input error
@@ -718,7 +719,8 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
         if result is None:                                 # fell back: next engine
             continue
         norm, q, page_count = result
-        store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=q.score, reasons=q.reasons))
+        store.append_attempt(task_id, Attempt(engine=name, attempt=ctx.attempt, score=q.score, reasons=q.reasons,
+                                              label=engine.label() if name == "vlm" else None))
         if name == "vlm" and ctx.vlm_primary:
             vlm_block = {**ctx.vlm_primary, "role": "primary"}
         elif ctx.vlm_repair:

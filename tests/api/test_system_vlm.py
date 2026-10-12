@@ -54,3 +54,16 @@ def test_vlm_local_backend_reports_unsupported(client_factory):
     c.post("/api/system/vlm/check")
     done = c.wait_event("setup.done", lambda p: p["engine"] == "vlm")
     assert done["ok"] is False and "not supported on this platform yet" in done["error"]
+
+
+def test_documents_expose_the_vlm_block_of_vlm_documents(client, ctx, tmp_root):
+    out = tmp_root / "out" / "a"
+    out.mkdir(parents=True)
+    (out / "a.json").write_text(json.dumps({"engine": "vlm", "vlm": {"backend": "openai", "endpoint_host": "h:1",
+                                            "local_endpoint": False, "model": "m", "pages_sent": 2}}), encoding="utf-8")
+    (out / "a.md").write_text("<!-- page: 1 -->\nx", encoding="utf-8")
+    ctx.store.upsert_document(sha256="0" * 64, source_path="a.pdf", output_dir=str(out), engine="vlm",
+                              quality={"score": 1, "level": "ok", "reasons": []}, pages=1, lang="cht",
+                              aidoc_version="0.1.0", status="ok", created_at=time.time())
+    docs = client.get("/api/documents").json()["documents"]
+    assert docs[0]["vlm"] == {"backend": "openai", "endpoint_host": "h:1", "local_endpoint": False, "model": "m"}

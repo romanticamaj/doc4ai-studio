@@ -185,13 +185,18 @@ class Attempt:                         # one entry of tasks.tried_json
     reasons: list[str]
     error_kind: str | None = None
     error_msg: str | None = None
+    label: str | None = None           # VLM attempts: "vlm:openai:<model>" / "vlm:local:<preset>" (VLM spec §10.2)
 
     def to_json(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        if d.get("label") is None:      # other engines' attempts keep their shape
+            d.pop("label", None)
+        return d
 
     @classmethod
     def from_json(cls, d: dict) -> Attempt:
-        return cls(**d)
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in d.items() if k in known})
 
 
 ProgressCb = Callable[[float, str], None]   # (fraction 0..1 within the segment, log line)

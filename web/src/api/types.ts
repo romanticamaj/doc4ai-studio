@@ -46,6 +46,8 @@ export interface Attempt {
   reasons: string[];
   error_kind?: string | null;
   error_msg?: string | null;
+  /** VLM attempts: "vlm:openai:<model>" | "vlm:local:<preset>" */
+  label?: string | null;
 }
 
 export interface PageAlignment {
@@ -73,6 +75,8 @@ export interface PageFlag {
   reasons: string[];
   metrics?: Record<string, number>;
   repaired_by?: string;
+  /** collect-only notes that never make a page a problem page (e.g. "vlm_low_overlap") */
+  advisories?: string[];
 }
 
 export interface Quality {
@@ -150,6 +154,8 @@ export interface Document {
   stem: string;
   flags: DocFlag[];
   page_summary: PageSummary | null;
+  /** VLM-converted documents only (from the sidecar): where the pages went */
+  vlm?: { backend: string | null; endpoint_host: string | null; local_endpoint: boolean | null; model: string | null } | null;
 }
 
 export interface Sidecar {

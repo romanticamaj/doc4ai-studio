@@ -112,3 +112,12 @@ def test_maintenance_prunes_vlm_usage(ctx):
     from aidoc.server.maintenance import Maintenance
     ctx.store.add_vlm_usage("2020-01-01", "openai", "h", 1, 1, 0, 0)
     assert Maintenance(ctx).run_once()["vlm_usage_pruned"] == 1
+
+
+def test_vlm_attempts_carry_their_label_and_others_stay_unchanged(env):
+    e = env()
+    write_scenario(e["sc"], rules=[{"match": {"engine": n}, "behavior": "low"} for n in ("docling", "mineru", "markitdown")])
+    tid = e["task"]("text.pdf")
+    run_task(e["store"], tid, get_engines(e["cfg"]), e["cfg"])
+    tried = e["store"].get_task(tid)["tried"]
+    assert tried[-1]["label"] == "vlm:openai:m" and all("label" not in a for a in tried[:-1])

@@ -90,3 +90,15 @@ test("reason labels: human text + code once; an unknown code is not repeated", a
   for (const r of ["page_map_misaligned", "page_map_invalid", "pages_flagged"]) expect(reasonText([r])).not.toBe(`${r} (${r})`);
   expect(reasonText(["something_new"])).toBe("something_new");
 });
+
+test("a VLM attempt names its backend and model", () => {
+  const t = { ...base, engine: "vlm", tried: [
+    { engine: "docling", attempt: 1, score: 0.1, reasons: ["chars_per_page"] },
+    { engine: "vlm", attempt: 2, score: 0.95, reasons: [], label: "vlm:openai:gemma3:4b" },
+  ] } as any;
+  expect(buildTimeline(t)[2].title).toBe("使用 vlm · openai · gemma3:4b");
+  const local = { ...t, tried: [{ engine: "vlm", attempt: 1, score: 0.9, reasons: [], label: "vlm:local:paddleocr-vl-1.6" }] } as any;
+  expect(buildTimeline(local)[1].title).toBe("使用 vlm · local · paddleocr-vl-1.6");
+  const old = { ...t, tried: [{ engine: "vlm", attempt: 1, score: 0.9, reasons: [] }] } as any;
+  expect(buildTimeline(old)[1].title).toBe("使用 vlm");
+});

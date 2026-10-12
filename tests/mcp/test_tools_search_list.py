@@ -135,3 +135,12 @@ def test_search_says_when_it_hit_the_scan_cap(mcp_server, mcp_env, make_doc, mon
     raw, _ = mcp_env.issue()
     out = _out(mcp_call(mcp_server, raw, "search_library", {"query": "驗證"}))
     assert out["truncated"] is True and "narrow" in out["hint"]
+
+
+def test_list_documents_accepts_engine_vlm(mcp_server, mcp_env, make_doc):
+    make_doc("alpha", pages=1, md=page_md(1, body="text"))
+    raw, _ = mcp_env.issue()
+    out = _out(mcp_call(mcp_server, raw, "list_documents", {"filters": {"engine": "vlm"}}))
+    assert out["documents"] == []
+    out = _out(mcp_call(mcp_server, raw, "search_library", {"query": "text", "filters": {"engine": "vlm"}}))
+    assert out["hits"] == []

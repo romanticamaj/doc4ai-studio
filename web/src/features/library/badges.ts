@@ -12,6 +12,14 @@ export function docBadges(doc: Pick<Document, "flags" | "page_summary">): DocBad
   return out;
 }
 
+/** 「遠端」 for a document a VLM converted on a non-loopback endpoint (VLM spec §4.6 / §10.2); else null. */
+export function vlmRemoteNote(doc: {
+  engine?: string | null;
+  vlm?: { backend?: string | null; local_endpoint?: boolean | null } | null;
+}): string | null {
+  return doc.engine === "vlm" && doc.vlm?.backend === "openai" && doc.vlm.local_endpoint === false ? "遠端" : null;
+}
+
 /** Documents worth the one-click 「重新轉換」. */
 export function needsReconvert(doc: Pick<Document, "flags">): boolean {
   return (doc.flags ?? []).some((f) => f === "page_map_incomplete" || f === "page_quality");
