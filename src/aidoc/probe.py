@@ -74,6 +74,41 @@ def _ruled_grid(hs, vs, tol: float = 2.0) -> bool:
     return sum(1 for ys in levels.values() if len(ys) >= 3) >= 2
 
 
+def _is_math(page, text: str) -> bool:
+    fonts = [str(f[3]).upper() for f in page.get_fonts()]
+    if any(m in f for f in fonts for m in _MATH_FONTS):
+        return True
+    non_space = [c for c in text if not c.isspace()]
+    n_sym = sum(1 for c in non_space if c in _MATH_SYMS)
+    return n_sym >= 15 and n_sym >= 0.01 * max(1, len(non_space))
+
+
+def _grid_from_drawings(drawings, W: float, H: float) -> bool:
+    """Ruling lines of `get_drawings()` or `get_cdrawings()` paths (points / rects read by index, so both shapes
+    work) -> `_ruled_grid`."""
+    hs: list[tuple[float, float, float]] = []      # (x0, x1, y)
+    vs: list[tuple[float, float, float]] = []      # (x, y0, y1)
+
+    def classify(x1, y1, x2, y2):
+        dx, dy = abs(x2 - x1), abs(y2 - y1)
+        if dy < 1 and dx >= 0.05 * W:
+            hs.append((min(x1, x2), max(x1, x2), (y1 + y2) / 2))
+        elif dx < 1 and dy >= 0.02 * H:
+            vs.append(((x1 + x2) / 2, min(y1, y2), max(y1, y2)))
+
+    for d in drawings:
+        for item in d.get("items", []):
+            if item[0] == "l":
+                classify(item[1][0], item[1][1], item[2][0], item[2][1])
+            elif item[0] == "re":
+                x0, y0, x1, y1 = item[1][0], item[1][1], item[1][2], item[1][3]
+                classify(x0, y0, x1, y0)
+                classify(x0, y1, x1, y1)
+                classify(x0, y0, x0, y1)
+                classify(x1, y0, x1, y1)
+    return _ruled_grid(hs, vs)
+
+
 def _analyse_page(page) -> dict:
     rect = page.rect
     W, H = rect.width, rect.height
@@ -90,11 +125,7 @@ def _analyse_page(page) -> dict:
             img_area += r.width * r.height
     image_cover = min(1.0, img_area / area)
 
-    fonts = [str(f[3]).upper() for f in page.get_fonts()]
-    math_fonts = any(m in f for f in fonts for m in _MATH_FONTS)
-    non_space = [c for c in text if not c.isspace()]
-    n_sym = sum(1 for c in non_space if c in _MATH_SYMS)
-    math_syms = n_sym >= 15 and n_sym >= 0.01 * max(1, len(non_space))
+    math = _is_math(page, text)
 
     blocks = [b for b in page.get_text("blocks") if b[6] == 0 and (b[2] - b[0]) < 0.6 * W]
     two_col = False
@@ -104,30 +135,24 @@ def _analyse_page(page) -> dict:
         two_col = left >= 0.35 * len(blocks) and right >= 0.35 * len(blocks)
 
     drawings = page.get_drawings()
-    hs: list[tuple[float, float, float]] = []      # (x0, x1, y)
-    vs: list[tuple[float, float, float]] = []      # (x, y0, y1)
-
-    def classify(p1, p2):
-        dx, dy = abs(p2.x - p1.x), abs(p2.y - p1.y)
-        if dy < 1 and dx >= 0.05 * W:
-            hs.append((min(p1.x, p2.x), max(p1.x, p2.x), (p1.y + p2.y) / 2))
-        elif dx < 1 and dy >= 0.02 * H:
-            vs.append(((p1.x + p2.x) / 2, min(p1.y, p2.y), max(p1.y, p2.y)))
-
-    for d in drawings:
-        for item in d.get("items", []):
-            if item[0] == "l":
-                classify(item[1], item[2])
-            elif item[0] == "re":
-                r = item[1]
-                classify(r.tl, r.tr)
-                classify(r.bl, r.br)
-                classify(r.tl, r.bl)
-                classify(r.tr, r.br)
-    table_lines = _ruled_grid(hs, vs)
+    table_lines = _grid_from_drawings(drawings, W, H)
     blank = len(stripped) < 3 and not infos and not drawings
-    return {"has_text": has_text, "image_cover": image_cover, "math": math_fonts or math_syms,
+    return {"has_text": has_text, "image_cover": image_cover, "math": math,
             "two_col": two_col, "table_lines": table_lines, "blank": blank}
+
+
+def page_features(doc, index: int, text: str | None = None) -> dict:
+    """Per-page signals for `verify` advisories (spec 2026-10-05 verify §2.3), with the probe's own rules: ruled
+    table grid, math fonts/symbols, squashed text-layer length. Uses the faster `get_cdrawings()` (same paths)."""
+    from aidoc.pagemap import squash
+    page = doc[index]
+    text = page.get_text() if text is None else text
+    try:
+        drawings = page.get_cdrawings()
+    except Exception:  # noqa: BLE001  older PyMuPDF / damaged content stream: the full parser
+        drawings = page.get_drawings()
+    return {"ruled_grid": _grid_from_drawings(drawings, page.rect.width, page.rect.height),
+            "math": _is_math(page, text), "layer_chars": len(squash(text))}
 
 
 def _base_name(name: str) -> str:
