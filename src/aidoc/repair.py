@@ -54,10 +54,7 @@ def accept_repaired_section(section: str, label: str, failed: dict[int, str], pa
     sig = page_signals(section)
     if sig["chars"] <= 0 or flag_page(sig, broken_font=True):
         return False
-    if label.startswith("vlm:"):
-        if page in failed or "<!-- blank -->" in section:
-            return False
-    return True
+    return not (label.startswith("vlm:") and (page in failed or "<!-- blank -->" in section))
 
 
 def _merge_vlm(acc: dict | None, block: dict | None) -> dict | None:

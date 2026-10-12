@@ -9,7 +9,7 @@ def test_repair_order_prefers_same_style_engine():
     assert [e for e, _, _ in repair_order("docling", {"docling": False, "mineru": True})] == ["mineru"]
 
 
-from aidoc.repair import accept_repaired_section, repair_order
+from aidoc.repair import accept_repaired_section
 
 
 class _E:  # minimal stand-in with a label
