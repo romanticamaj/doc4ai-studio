@@ -297,7 +297,7 @@ another engine's repair.
 No results are published yet. Before a table goes here, `verify` must track the ground truth (Spearman ρ ≥ 0.6
 between its score and the page text accuracy, page recall ≥ 0.9). The first run on 2026-10-12 did not pass
 (ρ 0.48, recall 0.16 — precision was 1.00: the pages it flags are bad, but it misses most bad pages, mainly OCR
-misreadings in scans and paragraphs moved to a neighbouring page). The record, with the reasons and what the run
+misreadings in scans and paragraphs moved to a neighbouring page), nor did the re-run on 2026-10-13 after the page-level checks were added (ρ 0.47, recall 0.05 under the unchanged gate definition). The record, with the reasons and what the run
 showed about routing, is in [the verify spec, §10](docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md).
 
 ## Docs
