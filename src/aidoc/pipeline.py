@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import json
 import shutil
 import sqlite3
@@ -349,7 +350,12 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     effective = max(1, probe.pages - len(probe.blank_pages))
     repaired: list[dict] = []
     outcome_repaired: dict[int, str] = {}
-    if flagged and (last_resort or len(flagged) <= FLAGGED_MAX_RATIO * effective) and ctx.engines:
+    # benchmark only (spec 2026-10-05 verify §3.5): single-engine and auto-norepair configs must not borrow another
+    # engine's per-page repair; read here and nowhere else
+    no_repair = os.environ.get("AIDOC_BENCH_NO_REPAIR") == "1"
+    if flagged and no_repair:
+        ctx.log(f"repair disabled (benchmark): {len(flagged)} flagged page(s) left as they are")
+    elif flagged and (last_resort or len(flagged) <= FLAGGED_MAX_RATIO * effective) and ctx.engines:
         outcome = repair_pages(ctx, ctx.engines, merged, [e["page"] for e in flagged], engine_name)
         merged = NormalizedResult(markdown=outcome.markdown, assets=outcome.assets)
         labels = sorted(set(outcome.repaired.values()))
