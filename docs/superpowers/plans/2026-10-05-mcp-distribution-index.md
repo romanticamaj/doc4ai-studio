@@ -228,6 +228,18 @@ create_oauth_consent(*, cookie_hash, expires_at, ip) -> str;  get_oauth_consent_
 
 Record each answer (date, choice) in the relevant sub-plan's deviations section before executing the gated step.
 
+### 7.1 Answers (2026-10-12, user)
+
+| Gate | Answer |
+|---|---|
+| G1 | **Do not expose publicly. Sub-plan 4b (OAuth) is SKIPPED** — no Funnel/Cloudflare; keep tailnet + LAN with PAT. Revisit only on explicit request. |
+| G2 | n/a (4b skipped) |
+| G3 | **Publish** to the MCP Registry as `io.github.romanticamaj/doc4ai`, **no `remotes[]`** (install-method only). Publishing needs the user's interactive GitHub auth (`mcp-publisher login github`) — prepare everything and hand the final command to the user. |
+| G4 | **Publish public** images to `ghcr.io/romanticamaj/doc4ai-studio` (CPU + CUDA). Pushing needs the user's GHCR auth — prepare the workflow/commands; hand the push/login step to the user if no credentials are available. |
+| G5 | self-signed (default, not asked) |
+| G6 | yes (default) |
+| G7 | n/a (4b skipped) |
+
 ## 8. Definition of done
 
 1. All three sub-plan acceptance checklists pass on the Windows host (4a's container checks on the Windows host via Docker Desktop WSL 2, plus one Linux run if available).
