@@ -292,6 +292,7 @@ layer[i]    = squash(PDF 第 i 頁文字層)；whole = "\0".join(layer)
 - 掃描 PDF 沒有文字層 → 不可判定 → 只看覆蓋率（由構造保證）。
 - 文字層本身壞掉的頁（壞字型頁）一律排除，否則 OCR 修好的頁反而會被判錯位。
 - 成本：全書文字層抽取一次（1192 頁 7.3 s），探針搜尋可忽略。
+- 2026-10-05：同一家族的新成員 `pagemap.infer_pages()`——第三方 Markdown 沒有頁碼標記時，用相同的唯一 24 字探針（20%–80%、在全書文字層唯一）定位每頁、最長遞增子序列去掉錯序頁、推出頁界；只給 `aidoc verify` 使用，見 `docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md` 第 2.2 節。
 
 ## 8. 文字層損壞頁：偵測與逐頁修復
 

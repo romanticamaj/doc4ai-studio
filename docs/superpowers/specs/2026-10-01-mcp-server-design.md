@@ -206,6 +206,8 @@ CREATE TABLE oauth_clients (                  -- Phase 2 預留：建表不使�
 | `cancel_job` | manage | destructive |
 | `reconvert_document` | manage | not idempotent, not destructive |
 | `delete_document`（1.5） | manage | destructive |
+| `verify_document`（2026-10-05，`docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md`） | read | readOnly, idempotent |
+| `verify_markdown`（2026-10-05，同上） | convert | idempotent, not destructive |
 
 ### 5.3 定義
 

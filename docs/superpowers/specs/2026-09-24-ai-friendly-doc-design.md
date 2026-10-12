@@ -89,6 +89,8 @@ ai-friendly-doc/
    └─ fixtures/
 ```
 
+2026-10-05 修訂：加 `src/aidoc/{markers,verify,verify_report}.py`（`aidoc verify`：任何 Markdown 對原始 PDF 的逐頁稽核）與 repo 根目錄的 `bench/`（公開 benchmark，不進 wheel）。見 `docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md`。
+
 ### 環境隔離
 
 - 主程式依賴僅 PyMuPDF、FastAPI、uvicorn、tiktoken、psutil、nvidia-ml-py 等輕量套件，偵測與判斷都很快。
@@ -208,6 +210,8 @@ out/<檔名>/
 
 2026-10-01 修訂：`quality` 另含 `page_check`、`page_map`（PDF：`expected`／`found`／`coverage`／`missing`／`method`／`alignment`）、`pages`（被標記頁，含 `repaired_by`）、`pages_flagged`、`pages_unrepaired`；`probe` 另含 `broken_fonts`、`broken_font_pages_count`。欄位定義見 `docs/superpowers/specs/2026-10-01-per-page-quality-and-page-map.md` 第 5.4 節。
 
+2026-10-05 修訂：`aidoc verify out/<stem>/ --json report.json [--html report.html]` 產生逐頁稽核報告（不改任何輸出檔、不寫資料庫）；格式見 `docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md` 第 2.4 節。
+
 ### 批次（CLI）
 
 `aidoc batch <輸入目錄> -o <輸出目錄> [--force] [--engine X] [--lang en]`
@@ -260,6 +264,7 @@ out/<檔名>/
 - **安全**：`POST /jobs` 的「本機路徑」等於讓呼叫端讀取 server 主機上的任何檔案（轉換結果會回傳內容）。此輸入只在請求來自 loopback、或 `--token` 驗證通過時接受；未帶 token 而綁 `0.0.0.0` 時 server 拒絕啟動。
 - **SSE 重連**：每個事件帶遞增 `id`（來自資料庫 `events` 表的流水號），`EventSource` 重連時自動送 `Last-Event-ID`，server 補送遺漏事件；補不到（太舊）時回 `resync` 事件，前端讓 TanStack Query 重新抓 `/jobs`。
 - `HEAD /uploads/{id}` 以 `Upload-Offset` header 回傳已收位元組數。
+- 2026-10-05 修訂：`POST /verify`（multipart 上傳、`{doc_id}`、本機路徑三種形狀；不寫資料庫），見 `docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md` 第 2.6 節。
 
 ### 頁面
 
@@ -279,6 +284,7 @@ out/<檔名>/
 - 觸發詞：「轉成 markdown」「把這份文件轉給 AI 讀」「convert this doc」等。
 - 行為：執行 `aidoc convert <檔案> -o <暫存或指定目錄>`，讀出 `.md`；`level: "low"` 時主動告知並附上 `reasons`。
 - 判斷邏輯不寫在 skill 裡，只呼叫 CLI。
+- 2026-10-05 修訂：使用者懷疑某頁時，可執行 `aidoc verify out/<stem>/ --json -` 看逐頁報告（exit code 0／1／3／4）。
 
 ## 8. 批次、進度、續傳與錯誤處理
 
@@ -400,6 +406,7 @@ server（或 CLI batch）啟動時：
 - **API 測試**：FastAPI TestClient 覆蓋各端點與 SSE 事件順序。
 - **前端**：Vitest 測關鍵元件邏輯（上傳續傳、SSE 狀態合併）；Playwright 跑一條端到端流程（上傳 → 轉換 → 預覽）。
 - **真實樣本關卡與同步準確度**（2026-10-01 修訂）：`tests/fixtures/manual_samples.json` 列出真實樣本（不進版控），`AIDOC_REQUIRE_MANUAL=1` 時缺樣本或缺引擎環境即失敗；`web/e2e/sync.spec.ts`（假引擎 45 頁）與 `sync-real.spec.ts`（真實樣本）驗證左右同步。見 `docs/superpowers/specs/2026-10-01-per-page-quality-and-page-map.md` 第 10 節。
+- **verify 與 benchmark**（2026-10-05 修訂）：見 `docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md` 第 6 節（方言、推頁、負樣本、第三方原生輸出錄製、benchmark 管線的 `--fake` 測試與校準閘門）。
 - **整合測試**（`@pytest.mark.slow`，需要 GPU）：`tests/fixtures/` 每類一個小樣本——docx、pptx、xlsx、電子 PDF、繁中掃描 PDF、中英混排掃描 PDF、公式 PDF、png，以及一份 > 40 頁的 PDF 驗證分段。斷言：引擎選擇正確、品質為 `ok`、產出檔案齊全。
 
 ## 11. 不在範圍內（第一版）
