@@ -121,8 +121,8 @@ def env_line(env: dict) -> str:
     return "環境：" + "；".join(parts)
 
 
-def tier_a(rows: list[dict], *, compact: bool = False) -> str:
-    rows = [r for r in rows if r["tier"] == "A"]
+def tier_a(rows: list[dict], *, compact: bool = False, small: bool = False) -> str:
+    rows = [r for r in rows if r["tier"] == "A" and (r.get("corpus") == "A-small") == small]
     cols = _columns(rows)
     body = []
     for label, gtl, pred, metric, cell in _cats():
@@ -221,8 +221,12 @@ def summary(run: Path) -> str:
     if failed:
         out += [f"轉換失敗 {len(failed)} 筆（以 NED 0 計入）：" +
                 "；".join(f"{r['config']}/{r['sample']}" for r in failed[:20]), ""]
-    out += ["## Tier A — 合成語料（可重現）", "", tier_a(rows), "", NONCLAIMS, "",
-            "## verify 校準", "", calibration(run), "", NONCLAIMS, ""]
+    full = any(r["tier"] == "A" and r.get("corpus") != "A-small" for r in rows)
+    out += ["## Tier A — 合成語料（可重現）", "", tier_a(rows, small=not full), "", NONCLAIMS, ""]
+    if full and any(r["tier"] == "A" and r.get("corpus") == "A-small" for r in rows):
+        out += ["## Tier A 小樣本（每類 1 份、3 頁；只在小樣本上跑的設定，例如 vlm）", "", tier_a(rows, small=True), "",
+                NONCLAIMS, ""]
+    out += ["## verify 校準", "", calibration(run), "", NONCLAIMS, ""]
     b = tier_b(rows)
     if b:
         out += ["## Tier B — 公開文件（可重現，依 MANIFEST 下載）", "", b, "", NONCLAIMS, ""]

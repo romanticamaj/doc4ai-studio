@@ -42,3 +42,15 @@ def test_readme_snippet_and_calibration_block(tmp_path):
     assert "docs/benchmarks/2026-10-05.md" in s and "不是 OmniDocBench" in s and "繁中數位" in s
     text = (run / "summary.md").read_text(encoding="utf-8")
     assert "Spearman ρ" in text and "0.83" in text and "通過" in text
+
+
+def test_small_corpus_rows_get_their_own_table(tmp_path):
+    run = _run(tmp_path)
+    extra = {"config": "vlm", "sample": "syn-text-zh", "tier": "A", "corpus": "A-small", "gt_level": "L1",
+             "status": "low", "engine_used": "vlm", "seconds": 200.0, "pages": 3, "metrics": {"ned": 0.1},
+             "verify": {"score": 0.3, "level": "low"}}
+    with open(run / "results.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(extra) + "\n")
+    subprocess.run([sys.executable, str(BENCH / "report.py"), "--run", str(run)], check=True)
+    text = (run / "summary.md").read_text(encoding="utf-8")
+    assert "Tier A 小樣本" in text and "繁中數位 ×2（L1）" in text        # the small sample is not mixed in
