@@ -7,7 +7,8 @@ from aidoc.mcp.principal import SCOPES, Principal
 from aidoc.mcp.server import PROTOCOL_VERSIONS, endpoint_urls, local_hosts, transport_security_for
 from tests.mcp.conftest import mcp_call, mcp_client, mcp_list_tools, raw_post
 
-READ_TOOLS = {"search_library", "list_documents", "get_document_info", "read_document", "get_chunks", "get_job"}
+READ_TOOLS = {"search_library", "list_documents", "get_document_info", "read_document", "get_chunks", "get_job",
+              "verify_document"}
 
 
 @pytest.mark.parametrize("mode,version", [("auto", "2026-07-28"), ("legacy", "2025-11-25")])
@@ -40,13 +41,14 @@ def test_instructions_describe_the_flow(mcp_server, mcp_env):
 def test_tools_list_filtered_by_scope(mcp_server, mcp_env):
     raw, _ = mcp_env.issue(scopes=SCOPES)
     names = {t.name for t in mcp_list_tools(mcp_server, raw).tools}
-    assert names == READ_TOOLS | {"convert_document", "cancel_job", "reconvert_document"}   # convert_path hidden: no roots
+    assert names == READ_TOOLS | {"convert_document", "verify_markdown", "cancel_job", "reconvert_document"}   # no roots:
+    # convert_path hidden
     mcp_env.ctx.config.mcp.local_path_roots = [str(mcp_env.ctx.config.root)]
     names = {t.name for t in mcp_list_tools(mcp_server, raw).tools}
     assert "convert_path" in names
     mcp_env.ctx.config.mcp.local_path_roots = []
     raw2, _ = mcp_env.issue(scopes=("doc4ai:read", "doc4ai:convert"))
-    assert {t.name for t in mcp_list_tools(mcp_server, raw2).tools} == READ_TOOLS | {"convert_document"}
+    assert {t.name for t in mcp_list_tools(mcp_server, raw2).tools} == READ_TOOLS | {"convert_document", "verify_markdown"}
 
 
 def test_every_tool_has_title_annotations_and_output_schema(mcp_server, mcp_env):
