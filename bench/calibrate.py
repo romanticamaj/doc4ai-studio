@@ -106,14 +106,27 @@ def judge_defect_markdowns(corpus_dir: Path) -> dict:
     base = json.loads((d / gt["pdf"]).parent.joinpath("gt.json").read_text(encoding="utf-8"))
     out: dict = {"_gt": {"pages": gt["pages"], "blank_pages": base.get("blank_pages") or [],
                          "dropped_pages": gt["defects"]["dropped_pages"]}}
-    for name in ("control", "dropped", "shifted", "swapped"):
+    names = ["control", "dropped", "shifted", "swapped"] + [x for x in EXTRA if (d / f"{x}.md").is_file()]
+    for name in names:
         rep = verify_markdown((d / f"{name}.md").read_text(encoding="utf-8"), pdf, sample=0)
         flagged = sorted(e["page"] for e in rep.pages if e.get("reasons"))
         expected = {"dropped": gt["defects"]["dropped_pages"], "shifted": [], "swapped": gt["defects"]["swapped_pages"],
-                    "control": []}[name]
+                    "control": [], "swapped_content": gt["defects"].get("swapped_content_pages") or [],
+                    "partial": gt["defects"].get("partial_pages") or []}[name]
         out[name] = {"level": rep.level, "reasons": rep.summary["reasons"], "exit_code": exit_code(rep, "low"),
                      "exit_code_fail_on_warn": exit_code(rep, "warn"), "flagged": flagged, "expected": expected}
     return out
+
+
+EXTRA = ("swapped_content", "partial")       # verifier round; reported next to the gate, not part of it
+
+
+def extra_negatives_ok(judged: dict) -> bool | None:
+    """Swapped content under valid markers and a cut page: every expected page flagged, exit 1 with --fail-on warn."""
+    got = [judged[x] for x in EXTRA if x in judged]
+    if not got:
+        return None
+    return all(j["exit_code_fail_on_warn"] == 1 and set(j["expected"]) <= set(j["flagged"]) for j in got)
 
 
 def defects_ok(judged: dict) -> bool:
@@ -150,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         ("all_three", {"low_flags_all": True, "defects_only": True, "text_layer_only": True}))}
     out.update(min_rho=CALIBRATION_MIN_RHO, min_recall=CALIBRATION_MIN_RECALL)
     out["passed"] = gate(out) and defects_ok(out["defects"])
+    out["extra_negatives_ok"] = extra_negatives_ok(out["defects"])
     (run / "calibration.json").write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"rho={out['rho']} precision={out['precision']} recall={out['recall']} n={out['n']} "
           f"defects_ok={defects_ok(out['defects'])} -> {'PASS' if out['passed'] else 'FAIL'}")

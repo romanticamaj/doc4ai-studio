@@ -51,3 +51,12 @@ def test_diagnostic_variants():
     assert C.calibrate_rows(rows, defects_only=True)["recall"] == 1.0
     t = C.calibrate_rows(rows, text_layer_only=True)
     assert t["n"] == 2 and t["recall"] == 1 / 2
+
+
+def test_swapped_content_and_partial_negatives_are_caught():
+    res = C.judge_defect_markdowns(SMALL)
+    gt = json.loads((SMALL / "syn-dropped-pages" / "gt.json").read_text(encoding="utf-8"))
+    sc, pa = res["swapped_content"], res["partial"]
+    assert set(sc["flagged"]) >= set(gt["defects"]["swapped_content_pages"]) and sc["exit_code_fail_on_warn"] == 1
+    assert set(pa["flagged"]) >= set(gt["defects"]["partial_pages"]) and pa["exit_code_fail_on_warn"] == 1
+    assert C.extra_negatives_ok(res) is True and C.defects_ok(res)

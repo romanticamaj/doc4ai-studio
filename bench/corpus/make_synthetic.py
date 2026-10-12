@@ -27,7 +27,7 @@ import pymupdf as fitz
 
 from bench.corpus import sources
 
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
 TRUETYPE_SFNT = bytes([0, 1, 0, 0]).decode("latin-1")
 PAGE_W, PAGE_H = 595.0, 842.0
 MARGIN_X, TOP, BOTTOM = 60.0, 72.0, 64.0
@@ -752,8 +752,14 @@ def build_dropped(ctx: Context, item: Item, seed: int, out_dir: Path, base_gt: d
     order = list(range(1, n + 1))
     ia, ib = order.index(a), order.index(b)
     order[ia], order[ib] = order[ib], order[ia]
+    # swapped_content: markers stay in order, the two pages' text is exchanged (verifier round)
+    swapped_text = "".join(f"<!-- page: {p} -->\n\n{pt[str({a: b, b: a}.get(p, p))]}\n\n" for p in range(1, n + 1))
+    # partial: one page cut to its first 15 % (looked like the control before page_partial existed)
+    cut = max(content, key=lambda p: (len(pt[str(p)]), -p))    # a full page, not the short one before a blank
+    partial = "".join(f"<!-- page: {p} -->\n\n{pt[str(p)][: max(1, len(pt[str(p)]) * 15 // 100)] if p == cut else pt[str(p)]}"
+                      f"\n\n" for p in range(1, n + 1))
     files = {"control.md": md(), "dropped.md": md(empty=set(dropped)), "shifted.md": md(shift=1),
-             "swapped.md": md(order=order)}
+             "swapped.md": md(order=order), "swapped_content.md": swapped_text, "partial.md": partial}
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
         (out_dir / name).write_text(text, encoding="utf-8", newline="\n")
@@ -761,9 +767,10 @@ def build_dropped(ctx: Context, item: Item, seed: int, out_dir: Path, base_gt: d
             "kind": "verify-negative", "license": base_gt["license"], "base": base_gt["name"],
             "pdf": f"../{base_gt['name']}/{base_gt['name']}.pdf", "files": sorted(files),
             "defects": {"broken_text_layer_pages": [], "dropped_pages": dropped, "marker_shift": 1,
-                        "swapped_pages": [a, b]},
+                        "swapped_pages": [a, b], "swapped_content_pages": [a, b], "partial_pages": [cut]},
             "expected": {"control.md": {"level": "ok", "exit": 0}, "dropped.md": {"level": "warn", "exit_fail_on_warn": 1},
-                         "shifted.md": {"level": "low", "exit": 1}, "swapped.md": {"level": "low", "exit": 1}},
+                         "shifted.md": {"level": "low", "exit": 1}, "swapped.md": {"level": "low", "exit": 1},
+                         "swapped_content.md": {"exit_fail_on_warn": 1}, "partial.md": {"exit_fail_on_warn": 1}},
             "generator": {"script": "make_synthetic.py", "version": GENERATOR_VERSION, "seed": seed}}
 
 
