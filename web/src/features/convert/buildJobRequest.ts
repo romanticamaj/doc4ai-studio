@@ -10,6 +10,8 @@ export type ConvertForm = {
   force: boolean;
   retryLow: boolean;
   allowOnlineAudio: boolean;
+  /** 「本次不使用遠端 VLM」: the job never sends page images to the remote VLM endpoint */
+  noVlmRemote?: boolean;
 };
 
 /** Explorer's "Copy as path" wraps paths in double quotes; users paste them as-is. */
@@ -34,5 +36,6 @@ export function buildJobRequest(f: ConvertForm): JobCreateBody {
     allow_online_audio: f.allowOnlineAudio,
   };
   if (f.engine !== "auto") body.engine = f.engine;
+  if (f.noVlmRemote) body.vlm_remote = false;
   return body;
 }

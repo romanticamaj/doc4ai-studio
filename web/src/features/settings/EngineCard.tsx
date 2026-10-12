@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, Download, Loader2 } from "lucide-react";
+import { ChevronDown, Download, Loader2, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/Panel";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -16,6 +16,7 @@ const ABOUT: Record<EngineName, { what: string; gpu: boolean }> = {
   markitdown: { what: "Office、HTML 與電子 PDF", gpu: false },
   docling: { what: "掃描 PDF 與圖片的 OCR", gpu: true },
   mineru: { what: "公式與複雜版面", gpu: true },
+  vlm: { what: "VLM OCR：最後一道 fallback 與逐頁修復", gpu: false },
 };
 
 function checkedAt(v: EngineInfo["checked_at"]): string | null {
@@ -25,7 +26,18 @@ function checkedAt(v: EngineInfo["checked_at"]): string | null {
   return Number.isNaN(d.getTime()) ? String(v) : formatDateTime(d.getTime() / 1000);
 }
 
-export function engineState(info: EngineInfo | undefined): { label: string; status: string } {
+export function engineState(info: EngineInfo | undefined, name?: EngineName): { label: string; status: string } {
+  if (name === "vlm") {
+    const backend = info?.backend ?? "none";
+    if (backend === "none") return { label: "尚未選擇後端", status: "queued" };
+    if (backend === "local") {
+      if (info?.local_supported === false) return { label: "本機後端尚未支援", status: "low" };
+      return info?.ready ? { label: "就緒（本機）", status: "done" } : { label: "未安裝", status: "queued" };
+    }
+    if (info?.ready) return { label: info.local_endpoint ? "就緒（本機端點）" : "就緒（遠端）", status: "done" };
+    if (info?.installed && !info.remote_enabled) return { label: "已設定未啟用", status: "low" };
+    return { label: info?.installed ? "缺 API key" : "未設定端點", status: "low" };
+  }
   if (!info?.installed) return { label: "未安裝", status: "queued" };
   if (!info.ready) return { label: "已安裝未檢查", status: "low" };
   return { label: "就緒", status: "done" };
@@ -36,8 +48,9 @@ export function EngineCard({ name, info }: { name: EngineName; info: EngineInfo 
   const { subscribe } = useEventStream();
   const [installing, setInstalling] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
-  const state = engineState(info);
+  const state = engineState(info, name);
   const about = ABOUT[name];
+  const isVlm = name === "vlm";
 
   useEffect(
     () =>
@@ -63,6 +76,10 @@ export function EngineCard({ name, info }: { name: EngineName; info: EngineInfo 
     );
 
   const details = [
+    isVlm && info?.backend && info.backend !== "none" && ["後端", info.backend],
+    isVlm && info?.endpoint_host && ["端點", info.endpoint_host],
+    isVlm && info?.model && ["模型", info.model],
+    isVlm && info?.budget && ["今日頁數", info.budget.limit > 0 ? `${info.budget.used_today} / ${info.budget.limit}` : String(info.budget.used_today)],
     info?.version && ["版本", info.version],
     info?.torch && ["torch", info.torch],
     info?.cuda != null && ["cuda", String(info.cuda)],
@@ -76,7 +93,8 @@ export function EngineCard({ name, info }: { name: EngineName; info: EngineInfo 
         <div className="min-w-0">
           <h3 className="font-mono text-[14px] font-semibold">{name}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {about.what} · {about.gpu ? "GPU" : "CPU"}
+            {about.what}
+            {isVlm ? (info?.backend === "openai" ? (info.local_endpoint ? " · 本機端點" : " · 遠端") : "") : ` · ${about.gpu ? "GPU" : "CPU"}`}
           </p>
         </div>
         {installing ? (
@@ -97,27 +115,39 @@ export function EngineCard({ name, info }: { name: EngineName; info: EngineInfo 
           ))
         ) : (
           <dd className="col-span-2 text-muted-foreground">
-            {info?.installed ? "尚未做自我檢查。" : "安裝會建立獨立的 Python 環境並下載模型。"}
+            {isVlm
+              ? "預設不使用。選擇後端（例如本機的 Ollama／LM Studio）後，VLM 只在其他引擎都失手時才會用到；不抽取圖片。"
+              : info?.installed
+                ? "尚未做自我檢查。"
+                : "安裝會建立獨立的 Python 環境並下載模型。"}
           </dd>
         )}
       </dl>
       <div className="mt-auto flex items-center gap-2 px-4 pt-4 pb-3">
-        <Button size="sm" variant={info?.ready ? "outline" : "default"} onClick={install} disabled={installing || setup.isPending}>
-          {installing ? <Loader2 className="animate-spin" /> : <Download />}
-          {info?.ready ? "重新安裝" : "安裝"}
-        </Button>
+        {isVlm ? (
+          <Button size="sm" variant="outline" asChild>
+            <a href="#vlm-h">
+              <Settings2 /> 設定 VLM
+            </a>
+          </Button>
+        ) : (
+          <Button size="sm" variant={info?.ready ? "outline" : "default"} onClick={install} disabled={installing || setup.isPending}>
+            {installing ? <Loader2 className="animate-spin" /> : <Download />}
+            {info?.ready ? "重新安裝" : "安裝"}
+          </Button>
+        )}
         <button
           type="button"
           onClick={() => setLogOpen((o) => !o)}
           aria-expanded={logOpen}
           className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
-          安裝 log <ChevronDown className={cn("size-3.5 transition-transform", logOpen && "rotate-180")} />
+          {isVlm ? "測試 log" : "安裝 log"} <ChevronDown className={cn("size-3.5 transition-transform", logOpen && "rotate-180")} />
         </button>
       </div>
       {logOpen && (
         <div className="border-t p-3">
-          <LogPanel logKey={`setup:${name}`} className="shadow-none" empty="按「安裝」後，uv sync、模型下載與自我檢查的輸出會即時出現在這裡。" />
+          <LogPanel logKey={`setup:${name}`} className="shadow-none" empty={isVlm ? "在下方 VLM OCR 區按「測試連線」後，連線測試的輸出會出現在這裡。" : "按「安裝」後，uv sync、模型下載與自我檢查的輸出會即時出現在這裡。"} />
         </div>
       )}
     </Panel>

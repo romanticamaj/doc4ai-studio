@@ -54,3 +54,10 @@ test("a dropped file shows a row and submit stays disabled until the upload is d
   expect(screen.getByText("完成")).toBeInTheDocument();
   expect(submit()).toBeEnabled();
 });
+
+test("buildJobRequest sends vlm_remote=false only when the run opts out of the remote VLM", () => {
+  const base = { uploadIds: [], paths: ["x"], engine: "auto" as const, lang: "cht" as const, force: false, retryLow: false, allowOnlineAudio: false };
+  expect(buildJobRequest({ ...base, noVlmRemote: true }).vlm_remote).toBe(false);
+  expect(buildJobRequest(base)).not.toHaveProperty("vlm_remote");
+  expect(buildJobRequest({ ...base, engine: "vlm" }).engine).toBe("vlm");
+});

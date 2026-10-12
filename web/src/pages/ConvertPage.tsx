@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useCreateJob, useSettings } from "@/api/queries";
+import { useCreateJob, useSettings, useSystem } from "@/api/queries";
 import type { Lang } from "@/api/types";
 import { buildJobRequest, splitPaths, type EngineChoice } from "@/features/convert/buildJobRequest";
 import { fileIcon } from "@/features/convert/fileIcon";
@@ -33,6 +33,7 @@ const ENGINES: Array<{ value: EngineChoice; label: string; hint: string }> = [
   { value: "markitdown", label: "markitdown", hint: "Office、HTML、電子 PDF" },
   { value: "docling", label: "docling", hint: "掃描檔與 OCR" },
   { value: "mineru", label: "mineru", hint: "公式與複雜版面" },
+  { value: "vlm", label: "vlm", hint: "VLM OCR（不抽圖）" },
 ];
 
 const LANGS: Array<{ value: Lang; label: string }> = [
@@ -43,6 +44,7 @@ const LANGS: Array<{ value: Lang; label: string }> = [
 export default function ConvertPage() {
   const uploads = useUploads();
   const settings = useSettings();
+  const sys = useSystem();
   const createJob = useCreateJob();
   const navigate = useNavigate();
 
@@ -52,6 +54,10 @@ export default function ConvertPage() {
   const [force, setForce] = useState(false);
   const [retryLow, setRetryLow] = useState(false);
   const [audio, setAudio] = useState(false);
+  const [noVlmRemote, setNoVlmRemote] = useState(false);
+  const vlm = sys.data?.engines.vlm;
+  const vlmReady = Boolean(vlm?.ready);
+  const vlmRemote = vlmReady && vlm?.backend === "openai";
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const effectiveLang: Lang = lang ?? settings.data?.general.lang ?? "cht";
@@ -83,6 +89,7 @@ export default function ConvertPage() {
           force,
           retryLow,
           allowOnlineAudio: audio,
+          noVlmRemote: vlmRemote && noVlmRemote,
         }),
       );
       uploads.clear();
@@ -99,6 +106,7 @@ export default function ConvertPage() {
     force && "強制重轉",
     retryLow && "重轉低品質",
     audio && "線上音訊",
+    vlmRemote && noVlmRemote && "不用遠端 VLM",
   ].filter(Boolean);
 
   return (
@@ -180,7 +188,7 @@ export default function ConvertPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {ENGINES.map((e) => (
+                        {ENGINES.filter((e) => e.value !== "vlm" || vlmReady).map((e) => (
                           <SelectItem key={e.value} value={e.value}>
                             <span className={e.value === "auto" ? "" : "font-mono"}>{e.label}</span>
                             <span className="text-xs text-muted-foreground">{e.hint}</span>
@@ -216,6 +224,15 @@ export default function ConvertPage() {
                   <Toggle id="force" label="強制重轉" hint="忽略快取，已轉過的檔案也重新轉換" checked={force} onChange={setForce} />
                   <Toggle id="retry-low" label="重轉低品質" hint="快取裡品質為 low 的結果重新轉換" checked={retryLow} onChange={setRetryLow} />
                   <Toggle id="audio" label="允許線上音訊轉錄" hint="音訊檔才會用到" checked={audio} onChange={setAudio} />
+                  {vlmRemote && (
+                    <Toggle
+                      id="no-vlm-remote"
+                      label="本次不使用遠端 VLM"
+                      hint={`這次的工作不會把頁面影像送到 ${vlm?.endpoint_host ?? "VLM 端點"}`}
+                      checked={noVlmRemote}
+                      onChange={setNoVlmRemote}
+                    />
+                  )}
                   {audio && (
                     <p className="-mt-2 flex items-start gap-1.5 rounded-md bg-warn-soft px-2.5 py-2 text-xs text-warn">
                       <TriangleAlert className="mt-px size-3.5 shrink-0" />
