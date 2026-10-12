@@ -78,3 +78,35 @@ def test_vlm_repair_gets_the_remote_timeout(tmp_path, fixtures):
     norm = SimpleNamespace(markdown="<!-- page: 1 -->\nx", assets=[])
     repair_pages(ctx, {"vlm": _Vlm("vlm:local:x")}, norm, [1], "docling")
     assert seen["timeout"] == 4321.0
+
+
+def test_a_dropped_page_needs_a_real_section_to_count_as_repaired():
+    """Benchmark finding (orthopaedic book page 912): a page_dropped page "repaired" with a few characters is still
+    dropped; it must stay unrepaired (min_chars), while other pages keep the plain has-text rule."""
+    assert accept_repaired_section("Fig. 3", "docling:pypdfium_full_page_ocr", {}, 1)
+    assert not accept_repaired_section("Fig. 3", "docling:pypdfium_full_page_ocr", {}, 1, min_chars=20)
+    assert accept_repaired_section("x" * 25, "docling:pypdfium_full_page_ocr", {}, 1, min_chars=20)
+
+
+def test_check_document_asks_dropped_pages_for_a_real_section(monkeypatch):
+    from aidoc import pipeline
+    from aidoc.quality import DROPPED_SECTION_MAX
+    seen = {}
+
+    def fake_repair(ctx, engines, norm, pages, main, min_chars=None):
+        seen.update(pages=pages, min_chars=min_chars)
+        raise RuntimeError("stop")
+    monkeypatch.setattr(pipeline, "repair_pages", fake_repair)
+    monkeypatch.setattr(pipeline.pagemap, "pdf_text_layers", lambda p: ["x" * 200] * 3)
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from aidoc.models import NormalizedResult, ProbeResult
+    probe = ProbeResult(kind="pdf", ext=".pdf", size=1, pages=3)
+    ctx = SimpleNamespace(probe=probe, work_src=Path("x.pdf"), engines={"docling": object()}, log=lambda s: None)
+    md = "<!-- page: 1 -->\n\n" + "a" * 50 + "\n\n<!-- page: 2 -->\n\n\n\n<!-- page: 3 -->\n\n" + "b" * 50
+    try:
+        pipeline.check_document(ctx, "docling", NormalizedResult(markdown=md, assets=[]), "fake", last_resort=True)
+    except RuntimeError:
+        pass
+    assert seen == {"pages": [2], "min_chars": {2: DROPPED_SECTION_MAX}}

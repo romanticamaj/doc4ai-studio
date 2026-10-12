@@ -53,11 +53,12 @@ def repair_order(main_engine: str, available: dict[str, bool], *, engines: dict 
     return out
 
 
-def accept_repaired_section(section: str, label: str, failed: dict[int, str], page: int) -> bool:
-    """A repaired page section is accepted when it has text and none of the broken-text signals (spec 2026-10-01
-    §8.2 step 5); a VLM section also must not be a refusal / truncation / "blank" answer (VLM spec §6)."""
+def accept_repaired_section(section: str, label: str, failed: dict[int, str], page: int, min_chars: int = 1) -> bool:
+    """A repaired page section is accepted when it has text (at least `min_chars`: a dropped page needs a real
+    section, spec 2026-10-05 verify §2.3) and none of the broken-text signals (spec 2026-10-01 §8.2 step 5); a VLM
+    section also must not be a refusal / truncation / "blank" answer (VLM spec §6)."""
     sig = page_signals(section)
-    if sig["chars"] <= 0 or flag_page(sig, broken_font=True):
+    if sig["chars"] < max(1, min_chars) or flag_page(sig, broken_font=True):
         return False
     return not (label.startswith("vlm:") and (page in failed or "<!-- blank -->" in section))
 
@@ -82,8 +83,11 @@ def _asset_page(name: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def repair_pages(ctx, engines: dict, norm: NormalizedResult, pages: list[int], main_engine: str) -> RepairOutcome:
-    """Repair `pages` (1-based, of ctx.work_src) of `norm`. EngineCancelled propagates; everything else is logged."""
+def repair_pages(ctx, engines: dict, norm: NormalizedResult, pages: list[int], main_engine: str,
+                 min_chars: dict[int, int] | None = None) -> RepairOutcome:
+    """Repair `pages` (1-based, of ctx.work_src) of `norm`. EngineCancelled propagates; everything else is logged.
+    `min_chars`: per page, the non-space characters a repaired section needs (dropped pages)."""
+    min_chars = min_chars or {}
     remaining = sorted(set(pages))
     accepted: dict[int, tuple[str, list[tuple[Path, str]], str]] = {}
     log: list[str] = []
@@ -145,7 +149,7 @@ def repair_pages(ctx, engines: dict, norm: NormalizedResult, pages: list[int], m
         still = []
         for p in remaining:
             section = secs.get(p, "")
-            if accept_repaired_section(section, label, failed, p):
+            if accept_repaired_section(section, label, failed, p, min_chars.get(p, 1)):
                 accepted[p] = (section, [a for a in fixed.assets if _asset_page(a[1]) == p], label)
             else:
                 still.append(p)

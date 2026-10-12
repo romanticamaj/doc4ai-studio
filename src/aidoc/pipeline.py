@@ -34,7 +34,7 @@ from aidoc.normalize import normalize
 from aidoc.output import OutputWriter, build_sidecar, lookup_cached, planned_output_dir
 from aidoc.pagemap import MARKER
 from aidoc.probe import probe_file
-from aidoc.quality import FLAGGED_MAX_RATIO, assess, dropped_pages, flag_pages
+from aidoc.quality import DROPPED_SECTION_MAX, FLAGGED_MAX_RATIO, assess, dropped_pages, flag_pages
 from aidoc.repair import repair_pages
 from aidoc.retry import RetryPolicy
 from aidoc.router import route
@@ -363,7 +363,9 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     if flagged and no_repair:
         ctx.log(f"repair disabled (benchmark): {len(flagged)} flagged page(s) left as they are")
     elif flagged and (last_resort or len(flagged) <= FLAGGED_MAX_RATIO * effective) and ctx.engines:
-        outcome = repair_pages(ctx, ctx.engines, merged, [e["page"] for e in flagged], engine_name)
+        need = {e["page"]: DROPPED_SECTION_MAX for e in flagged if "page_dropped" in e["reasons"]}
+        outcome = repair_pages(ctx, ctx.engines, merged, [e["page"] for e in flagged], engine_name,
+                               min_chars=need or None)
         merged = NormalizedResult(markdown=outcome.markdown, assets=outcome.assets)
         labels = sorted(set(outcome.repaired.values()))
         ctx.log(f"repaired {len(outcome.repaired)}/{len(flagged)} pages"
