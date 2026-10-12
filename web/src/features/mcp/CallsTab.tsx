@@ -18,7 +18,7 @@ import { filtersFromParams, paramsFromFilters, RANGE_OPTIONS, METHOD_OPTIONS, ST
 
 const ALL = "all";
 const TOOLS = ["search_library", "list_documents", "get_document_info", "read_document", "get_chunks", "get_job", "convert_document",
-  "convert_path", "cancel_job", "reconvert_document"];
+  "convert_path", "cancel_job", "reconvert_document", "verify_document", "verify_markdown"];
 
 function FilterSelect({ label, value, options, onChange, allLabel }: {
   label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void; allLabel: string;

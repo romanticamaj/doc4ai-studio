@@ -205,3 +205,42 @@ class ChangedOut(BaseModel):
 
 AnyOut = BaseModel
 JsonDict = dict[str, Any]
+
+
+# ---- verify tools (spec 2026-10-05 verify §2.6)
+
+class VerifySummary(BaseModel):
+    level: str
+    score: float
+    reasons: list[str]
+    pages_flagged: int
+    pages_unrepaired: int
+    advisories: int
+
+
+class VerifyPageMap(BaseModel):
+    method: str | None = None
+    expected: int | None = None
+    found: int | None = None
+    coverage: float | None = None
+    alignment: float | None = None
+    anchored: int | None = None            # inferred maps only (index A26)
+    decidable: int | None = None
+    confidence: float | None = None
+
+
+class VerifyPage(BaseModel):
+    page: int
+    reasons: list[str] = []
+    advisories: list[str] = []
+
+
+class VerifyOut(BaseModel):
+    doc_id: str | None
+    verifiable: bool | Literal["partial"]
+    summary: VerifySummary
+    page_map: VerifyPageMap | None
+    inferred: bool
+    pages: list[VerifyPage]
+    pages_truncated: bool = False
+    hint: str | None = None

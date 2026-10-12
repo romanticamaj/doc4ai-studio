@@ -26,8 +26,8 @@ from aidoc.mcp.principal import (
 
 TOOL_SCOPES: dict[str, str] = {
     "search_library": SCOPE_READ, "list_documents": SCOPE_READ, "get_document_info": SCOPE_READ,
-    "read_document": SCOPE_READ, "get_chunks": SCOPE_READ, "get_job": SCOPE_READ,
-    "convert_document": SCOPE_CONVERT, "convert_path": SCOPE_CONVERT_LOCAL,
+    "read_document": SCOPE_READ, "get_chunks": SCOPE_READ, "get_job": SCOPE_READ, "verify_document": SCOPE_READ,
+    "convert_document": SCOPE_CONVERT, "convert_path": SCOPE_CONVERT_LOCAL, "verify_markdown": SCOPE_CONVERT,
     "cancel_job": SCOPE_MANAGE, "reconvert_document": SCOPE_MANAGE,
     # Phase 1.5: "delete_document": SCOPE_MANAGE
 }

@@ -171,10 +171,11 @@ def build_mcp(ctx) -> McpRuntime:
                     middleware=[make_middleware(ctx, recorder)],
                     cache_hints={"tools/list": CacheHint(300_000, "private"), "resources/list": CacheHint(60_000, "private"),
                                  "server/discover": CacheHint(300_000, "private")})            # keys per spike S10
-    from aidoc.mcp import resources, tools_convert, tools_manage, tools_read
+    from aidoc.mcp import resources, tools_convert, tools_manage, tools_read, tools_verify
     tools_read.register_read_tools(mcp, ctx)
     tools_convert.register_convert_tools(mcp, ctx)
     tools_manage.register_manage_tools(mcp, ctx)
+    tools_verify.register_verify_tools(mcp, ctx)
     resources.register_resources(mcp, ctx)
     from aidoc.mcp.registry import install_call_guard
     install_call_guard(mcp, ctx)
