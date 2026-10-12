@@ -51,12 +51,12 @@ def test_reading_stops_at_the_closing_boundary(compat_env):
     boundary = "edge5"
     consumed = {"n": 0}
 
-    class FakeRequest:
-        headers = {"content-type": f"multipart/form-data; boundary={boundary}"}
+    from types import SimpleNamespace
 
-        class app:                                       # noqa: N801  request.app.state.ctx
-            class state:
-                ctx = compat_env.ctx
+    class FakeRequest:
+        def __init__(self):
+            self.headers = {"content-type": f"multipart/form-data; boundary={boundary}"}
+            self.app = SimpleNamespace(state=SimpleNamespace(ctx=compat_env.ctx))
 
         async def stream(self):
             yield f"--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"a.pdf\"\r\n\r\n".encode()
