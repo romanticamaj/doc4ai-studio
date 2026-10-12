@@ -23,6 +23,9 @@ Format = Literal["auto", "aidoc", "mineru", "docling", "markitdown", "pdfmux", "
 
 def _hint(j: dict) -> str | None:
     if j["verifiable"] is False:
+        if (j.get("pdf") or {}).get("text_layer_pages"):
+            return ("unverifiable: the Markdown has no page markers and almost none of its text matches the PDF text "
+                    "layer (an empty file, or not this PDF?); only document-level checks ran")
         return ("unverifiable: the PDF has no text layer to anchor on and the Markdown has no page markers "
                 "(a scanned PDF); only document-level checks ran")
     if j["verifiable"] == "partial":
