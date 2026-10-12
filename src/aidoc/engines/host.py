@@ -60,8 +60,11 @@ def _parse(line: str) -> tuple[str | None, dict]:
 
 
 class RunnerHost:
-    def __init__(self, python: Path, script: Path, env_extra: dict[str, str], startup_timeout_s: float = 900.0):
+    def __init__(self, python: Path, script: Path, env_extra: dict[str, str], startup_timeout_s: float = 900.0,
+                 memory_limit_mb: int | None = None):
         self.python, self.script = Path(python), Path(script)
+        self.memory_limit_mb = memory_limit_mb
+        self.memory_exceeded_mb: int | None = None      # set by the watchdog when it killed the runner
         self.env_extra = dict(env_extra)
         self.startup_timeout_s = startup_timeout_s
         self.proc: subprocess.Popen | None = None
@@ -81,6 +84,35 @@ class RunnerHost:
         self.pid = self.proc.pid
         self._pump_thread = threading.Thread(target=self._pump, daemon=True)
         self._pump_thread.start()
+        if self.memory_limit_mb:
+            threading.Thread(target=self._watch_memory, name="aidoc-runner-memory", daemon=True).start()
+
+    def _watch_memory(self, interval_s: float = 0.2) -> None:
+        """Kill the runner tree when its resident memory passes memory_limit_mb (an RLIMIT_AS / Job Object cap
+        would also count the GPU engines' huge virtual reservations, so the watchdog measures what is resident)."""
+        import psutil
+        proc = self.proc
+        try:
+            root = psutil.Process(proc.pid)
+        except psutil.Error:
+            return
+        limit = self.memory_limit_mb * 1024 * 1024
+        while proc.poll() is None:
+            total = 0
+            try:
+                members = [root, *root.children(recursive=True)]
+            except psutil.Error:
+                return
+            for p in members:
+                try:
+                    total += p.memory_info().rss
+                except psutil.Error:
+                    pass
+            if total > limit:
+                self.memory_exceeded_mb = total // (1024 * 1024)
+                procs.kill_tree(proc.pid)
+                return
+            time.sleep(interval_s)
 
     def _pump(self) -> None:
         assert self.proc is not None and self.proc.stderr is not None
@@ -108,6 +140,9 @@ class RunnerHost:
                 self.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
+        if self.memory_exceeded_mb is not None:      # killed by the watchdog: not retried, the next engine runs
+            raise EngineError(ErrorKind.engine, f"memory_limit: the runner used {self.memory_exceeded_mb} MB, over the "
+                                                f"{self.memory_limit_mb} MB cap ([limits] engine_memory_mb / markitdown_memory_mb)")
         tail = "".join(self._tail)
         oom = _is_oom_text(tail)
         code = self.proc.returncode if self.proc else None

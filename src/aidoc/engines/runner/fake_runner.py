@@ -171,6 +171,12 @@ def handle(req):
         sys.exit(1)
     if b == "oom_raise":                                # OOM raised inside the engine; the runner survives
         raise OutOfMemoryError("CUDA out of memory. Tried to allocate 2.00 GiB")
+    if b == "memory_hog":                               # a decompression bomb inside the engine: grows until killed
+        hog = []
+        for _ in range(200):                            # safety stop at ~4 GB if no watchdog kills us
+            hog.append(b"\x01" * (20 * 1024 * 1024))
+            time.sleep(0.05)
+        time.sleep(3600)
     if b == "timeout":
         time.sleep(3600)
     if b == "crash":
