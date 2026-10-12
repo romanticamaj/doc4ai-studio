@@ -199,6 +199,7 @@ def document_asset(request: Request, doc_id: str, path: str,
     /api/documents/{id}/assets (nosniff, CSP sandbox, inline only for images)."""
     from pathlib import Path
 
+    from aidoc.compat.render import asset_file
     from aidoc.server.api.documents import safe_file_response
     from aidoc.server.app import safe_relative
     ctx = request.app.state.ctx
@@ -208,10 +209,11 @@ def document_asset(request: Request, doc_id: str, path: str,
     doc = ctx.store.get_document(doc_id)
     if doc is None or doc["status"] not in jobs.VISIBLE:
         raise CompatError(404, "document not found")
-    rel = safe_relative(path)
-    if rel is None:
+    if safe_relative(path) is None:
         raise CompatError(400, "bad path")
-    target = Path(doc["output_dir"]) / "assets" / rel
+    target = asset_file(Path(doc["output_dir"]) / "assets", path)    # no links out of assets/ (verifier item 3)
+    if target is None:
+        raise CompatError(400, "bad path")
     if not target.is_file():
         raise CompatError(404, "asset not found")
     return safe_file_response(target, target.name, request)

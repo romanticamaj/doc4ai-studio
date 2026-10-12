@@ -35,3 +35,47 @@ def test_referenced_mode_links_resolve(workers):
     assert "](http://doc4ai.lan:8765/v1/doc4ai/documents/" in md
     url = md.split("](http://doc4ai.lan:8765")[1].split(")")[0]
     assert workers.client.get(url, headers={"X-Api-Key": raw}).status_code == 200
+
+
+def _junction(link, target):
+    import os
+    import sys
+
+    import pytest
+    if sys.platform == "win32":
+        import _winapi
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        try:
+            os.symlink(target, link, target_is_directory=True)
+        except OSError:
+            pytest.skip("cannot create a directory link here")
+
+
+def test_asset_route_refuses_links_out_of_assets(compat_env, make_doc):
+    """Verifier item 3: a junction / symlink inside assets/ must not lead outside it."""
+    from pathlib import Path
+    doc = make_doc("linkdoc", pages=1)
+    outside = Path(doc["output_dir"]).parent / "elsewhere"
+    outside.mkdir()
+    (outside / "secret.png").write_bytes(TINY_PNG)
+    _junction(Path(doc["output_dir"]) / "assets" / "j", outside)
+    raw, _ = compat_env.issue(scopes=("doc4ai:read",))
+    r = compat_env.client.get(f"/v1/doc4ai/documents/{doc['id']}/assets/j/secret.png", headers={"X-Api-Key": raw})
+    assert r.status_code in (400, 404) and r.content != TINY_PNG
+
+
+def test_embedded_images_refuse_links_out_of_assets(tmp_path):
+    from pathlib import Path
+
+    from aidoc.compat.render import asset_file
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "x.png").write_bytes(TINY_PNG)
+    (assets / "ok.png").write_bytes(TINY_PNG)
+    _junction(assets / "j", outside)
+    assert asset_file(assets, "ok.png") == (assets / "ok.png").resolve()
+    assert asset_file(assets, "j/x.png") is None and asset_file(assets, "../outside/x.png") is None
+    assert isinstance(asset_file(assets, "nope.png"), Path)          # missing but safe: the caller reports it
