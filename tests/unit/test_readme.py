@@ -17,3 +17,11 @@ def test_positioning_sections_present():
     for heading in ("## When to use something else", "## Engines and licenses", "## Quick start", "## MCP", "## 繁體中文"):
         assert heading in README, heading
     assert "AGPL-3.0" in README and "orchestrat" in README.lower()
+
+
+def test_serve_section_passes_the_token_through_the_environment():
+    """The token must not sit on a command line (process listings show argv)."""
+    i = README.index("By default the server binds to `127.0.0.1`")
+    section = README[i:i + 1500]
+    assert "AIDOC_TOKEN" in section and "process list" in section.lower()
+    assert "--token <secret>" not in section
