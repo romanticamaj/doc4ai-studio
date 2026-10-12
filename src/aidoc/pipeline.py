@@ -133,18 +133,34 @@ class PipelineContext:
         used = self.store.vlm_usage_today("openai", eng.endpoint_host())["pages"]
         return used + max(1, int(n_pages)) <= budget
 
-    def vlm_gate(self, probe: ProbeResult) -> str | None:
-        """Why the VLM may not convert this document (routing): None, "disabled_remote", "page_cap" or "budget"."""
+    def vlm_cached_pages(self) -> int:
+        """Pages an earlier VLM attempt of this task already got answers for (the runner's per-segment page cache,
+        newest cache dir per segment): a retry does not send them again, so they cost no budget."""
+        n = 0
+        if self.work_dir is None:
+            return 0
+        for seg in self.store.list_segments(self.task_id):
+            root = segment_dir(self.work_dir, seg["idx"]) / "vlm_pages"
+            dirs = [d for d in root.iterdir() if d.is_dir()] if root.is_dir() else []
+            if dirs:
+                newest = max(dirs, key=lambda d: d.stat().st_mtime)
+                n += sum(1 for _ in newest.glob("p*.json"))
+        return n
+
+    def vlm_gate(self, probe: ProbeResult, pages: int | None = None) -> str | None:
+        """Why the VLM may not convert this document (routing): None, "disabled_remote", "page_cap" or "budget".
+        `pages` = the pages this attempt would send (default: the whole document)."""
         eng = self._vlm_engine()
         if eng is None or not eng.is_remote():
             return None
         if not eng.remote_allowed(self.opts):
             return "disabled_remote"
+        send = pages
         pages = probe.pages or 1
         cap = self.config.vlm.remote_max_pages_per_doc
         if cap > 0 and pages > cap:
             return "page_cap"
-        if not self.vlm_budget_ok(pages):
+        if not self.vlm_budget_ok(pages if send is None else send):
             return "budget"
         return None
 
@@ -729,7 +745,8 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
                     _discard_segments(ctx)
                     break
                 if name == "vlm" and engine.is_remote():
-                    veto = ctx.vlm_gate(probe)             # a retry sends pages again: it must fit the budget too
+                    # a retry sends the pages not answered yet again: those must fit the budget
+                    veto = ctx.vlm_gate(probe, pages=max(1, (probe.pages or 1) - ctx.vlm_cached_pages()))
                     if veto:
                         ctx.log(f"vlm({veto}): not retrying; the VLM may not send more pages for this document")
                         vetoed = veto

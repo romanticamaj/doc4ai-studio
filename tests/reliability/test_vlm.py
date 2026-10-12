@@ -11,6 +11,7 @@ from pathlib import Path
 
 import psutil
 import pymupdf
+import pytest
 
 from aidoc.config import load_config
 from aidoc.engines.registry import get_engines
@@ -78,6 +79,31 @@ def _pdf(dst: Path, fixtures: Path, broken: int, text_pages: int) -> Path:
         d.insert_pdf(t, from_page=i % t.page_count, to_page=i % t.page_count)
     d.save(dst)
     return dst
+
+
+def _track_runners(monkeypatch) -> list[int]:
+    """PIDs of the runner processes THIS test starts (not every vlm_runner.py on the machine)."""
+    from aidoc.engines.host import RunnerHost
+    pids: list[int] = []
+    orig = RunnerHost.start
+
+    def start(self, cwd):
+        orig(self, cwd)
+        pids.append(self.proc.pid)
+    monkeypatch.setattr(RunnerHost, "start", start)
+    return pids
+
+
+def _alive(pids: list[int]) -> list[int]:
+    out = []
+    for pid in pids:
+        try:
+            p = psutil.Process(pid)
+            if p.is_running() and p.status() != psutil.STATUS_ZOMBIE:
+                out.append(pid)
+        except psutil.Error:
+            pass
+    return out
 
 
 def _runner_procs() -> list[psutil.Process]:
@@ -158,6 +184,7 @@ def test_hanging_endpoint_times_out_and_cancel_kills_the_runner(tmp_root, monkey
     e = Env(tmp_root, monkeypatch, fixtures)
     e.real_vlm()
     e.scenario()
+    started = _track_runners(monkeypatch)
     with FakeVlmServer({"default": "hang"}) as base:
         _config(tmp_root, base, request_timeout_s=10)
         tid = e.task(e.copy("text.pdf"), engine="vlm", timeout_s=3)
@@ -166,14 +193,14 @@ def test_hanging_endpoint_times_out_and_cancel_kills_the_runner(tmp_root, monkey
         assert st in (TaskStatus.failed, TaskStatus.low) and time.time() - t0 < 90
         tried = e.store.get_task(tid)["tried"]
         assert tried and all(a["error_kind"] == "transient" for a in tried) and tried[0]["label"] == "vlm:openai:fake-vlm"
-        assert not _runner_procs()
+        assert started and not _alive(started)
         # cancel while a request hangs: the runner tree goes, the task is cancelled
         tid2 = e.task(e.copy("text.pdf", "text2.pdf"), engine="vlm", timeout_s=600)
         cancel = threading.Event()
         threading.Timer(3.0, cancel.set).start()
         assert e.run(tid2, cancel=cancel) == TaskStatus.cancelled
     time.sleep(0.5)
-    assert not _runner_procs()
+    assert len(started) >= 4 and not _alive(started)
 
 
 def _ten_text_pages(dst: Path, fixtures: Path) -> Path:
@@ -283,19 +310,25 @@ def test_usage_counts_pages_sent_before_a_cancel(tmp_root, monkeypatch, fixtures
     assert used["pages"] == used["requests"]
 
 
-def test_retries_of_a_timed_out_vlm_run_respect_the_budget(tmp_root, monkeypatch, fixtures):
+@pytest.mark.parametrize("budget,retried", [(10, False), (12, True)])
+def test_retries_of_a_timed_out_vlm_run_respect_the_budget(tmp_root, monkeypatch, fixtures, budget, retried):
+    """Attempt 1 sends pages 1-5 (page 5 hangs; 1-4 are cached). A retry needs the 6 uncached pages:
+    5 used + 6 > 10 -> no retry; 5 + 6 <= 12 -> retried (verifier follow-up 2: only uncached pages are charged)."""
     e = Env(tmp_root, monkeypatch, fixtures)
     e.real_vlm()
     e.scenario()
     log = tmp_root / "vlm_calls.jsonl"
     with FakeVlmServer({"default": "ok", "rules": [{"match": {"page": 5}, "behavior": "hang"}], "call_log": str(log)}) as base:
-        _config(tmp_root, base, max_concurrent=1, request_timeout_s=10, remote_daily_page_budget=12)
+        _config(tmp_root, base, max_concurrent=1, request_timeout_s=10, remote_daily_page_budget=budget)
         tid = e.task(_ten_text_pages(tmp_root / "ten.pdf", fixtures), engine="vlm", timeout_s=4)
         assert e.run(tid) == TaskStatus.failed
     t = e.store.get_task(tid)
-    assert "vlm(budget)" in (t["error_msg"] or "") and len(t["tried"]) == 1     # no retry past the budget
     host = base.split("//", 1)[1].split("/", 1)[0]
-    assert e.store.vlm_usage_today("openai", host)["pages"] <= 12
+    if retried:
+        assert len(t["tried"]) >= 2 and "vlm(budget)" not in (t["error_msg"] or "")
+    else:
+        assert "vlm(budget)" in (t["error_msg"] or "") and len(t["tried"]) == 1
+    assert e.store.vlm_usage_today("openai", host)["pages"] <= budget
 
 
 def test_a_forced_vlm_refused_by_the_gate_ends_with_the_reason(tmp_root, monkeypatch, fixtures):

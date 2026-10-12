@@ -193,6 +193,31 @@ def test_loopback_rules_are_one_table_for_server_and_web():
         assert is_loopback_url(url) is (bool(expected) if expected is not None else False), url
 
 
+REFUSAL_TABLE = [
+    # (answer, is a refusal) — one table for both directions (verifier follow-up 1)
+    ("I'm sorry, I can't help with that.", True),
+    ("抱歉，我無法辨識這張圖片。", True),
+    ("I'm not able to help with that.", True),
+    ("Unfortunately I can't transcribe this image.", True),
+    ("很抱歉，我無法協助處理這個請求。", True),
+    ("I'm sorry, I can't do that.", True),
+    ("I cannot comply.", True),
+    ("As an AI language model, I cannot do this.", True),
+    ("無法處理。", True),
+    ("很抱歉，我不能提供這個內容。", True),
+    ("無法忘記的那個夏天，我們在海邊。", False),
+    ("抱歉，我遲到了。她說。", False),
+    ("Unfortunately, the war began in 1914.", False),
+    ("I cannot tell a lie, said George.", False),
+    ("Sorry, we're closed", False),
+]
+
+
+@pytest.mark.parametrize("text,refused", REFUSAL_TABLE)
+def test_refusal_table(text, refused):
+    assert R.clean_markdown(text) == (("", "refused") if refused else (text, None))
+
+
 @pytest.mark.parametrize("text", ["無法忘記的那個夏天，我們在海邊。", "抱歉，我遲到了。她說。", "Unfortunately, the war began in 1914.",
                                   "I cannot tell a lie, said George.", "Sorry, we're closed"])
 def test_ordinary_sentences_are_not_refusals(text):
@@ -250,3 +275,12 @@ def test_request_counter_is_exact_under_concurrency(tmp_path, monkeypatch):
     with FakeVlmServer(sc) as base:
         res = R.handle(_req(tmp_path, base, src=FIX / "big.pdf", max_concurrent=8, max_image_px=600))
     assert res["vlm"]["usage"]["requests"] == len((tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()) == 45
+
+
+def test_page_cache_key_is_the_whole_endpoint_not_just_host_port(tmp_path):
+    req = {"src": str(FIX / "text.pdf"), "out_dir": str(tmp_path / "raw")}
+    eo = {"model": "m", "dpi": 150}
+    keys = {R._cache_dir(req, {**eo, "base_url": u}, "h:1", 3)
+            for u in ("http://h:1/v1", "http://h:1/v2", "https://h:1/v1", "http://h:2/v1")}
+    assert len(keys) == 4
+    assert R._cache_dir(req, {**eo, "base_url": "http://h:1/v1/"}, "h:1", 3) == R._cache_dir(req, {**eo, "base_url": "http://H:1/v1"}, "h:1", 3)

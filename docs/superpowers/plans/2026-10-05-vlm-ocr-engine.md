@@ -1332,4 +1332,11 @@ lines of a killed runner; (c) three reliability tests compare the table with the
 timeout, a cancel and a budget-limited retry, which is the invariant that matters (`requests` ≥ what the endpoint saw,
 at most one in flight more).
 
+**Re-verification follow-ups (2026-10-12):** (1) short refusals without a task word ("I cannot comply.", 無法處理。,
+"As an AI…", 我不能提供…) are refusals again via a fixed-phrase list, while the five ordinary sentences stay text — one
+parametrized table `test_refusal_table`; (2) a VLM retry is charged only for pages not answered yet (newest page cache of
+each segment): budget 12 with 5 used and 6 uncached is allowed, budget 10 is not (`test_retries_of_a_timed_out_vlm_run_respect_the_budget[10|12]`);
+(3) the page-cache key uses scheme + host + port + path of `base_url` (`test_page_cache_key_is_the_whole_endpoint_not_just_host_port`);
+(4) the hang/cancel reliability test checks only the runner processes it started.
+
 **Measured (2026-10-12)** — see the spec's §15 acceptance record and the spike write-up.
