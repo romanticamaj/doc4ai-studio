@@ -200,3 +200,37 @@ class Attempt:                         # one entry of tasks.tried_json
 
 
 ProgressCb = Callable[[float, str], None]   # (fraction 0..1 within the segment, log line)
+
+
+# ---- aidoc verify (spec 2026-10-05 verify §2.4–§2.5; index A24, A26)
+
+EXIT_OK, EXIT_FAILED, EXIT_UNVERIFIABLE, EXIT_USAGE = 0, 1, 3, 4
+
+
+@dataclass
+class VerifyReport:
+    verify_version: int
+    aidoc_version: str
+    generated_at: str                      # ISO 8601 with offset
+    input: dict                            # {markdown, sha256, bytes, newline, format_detected, format_forced?, markers_found}
+    pdf: dict | None                       # {path, sha256, pages, text_layer_pages, broken_fonts, broken_font_pages_count,
+                                           #  blank_pages}
+    verifiable: bool | str                 # True | False | "partial"
+    page_map: dict | None
+    summary: dict                          # {level, score, reasons, pages_flagged, pages_unrepaired, advisories}
+    metrics: dict
+    pages: list[dict]                      # entries with reasons and/or advisories
+    previous: dict | None = None
+    timing_s: dict = field(default_factory=dict)
+
+    @property
+    def level(self) -> str:
+        return self.summary["level"]
+
+    def to_json(self) -> dict:
+        return {"verify_version": self.verify_version, "aidoc_version": self.aidoc_version,
+                "generated_at": self.generated_at, "input": dict(self.input),
+                "pdf": dict(self.pdf) if self.pdf is not None else None, "verifiable": self.verifiable,
+                "page_map": dict(self.page_map) if self.page_map is not None else None,
+                "summary": dict(self.summary), "metrics": dict(self.metrics), "pages": [dict(p) for p in self.pages],
+                "previous": self.previous, "timing_s": dict(self.timing_s)}

@@ -94,3 +94,21 @@ def test_convert_options_vlm_remote_round_trip():
 def test_raw_result_extra_default():
     from aidoc.models import RawResult
     assert RawResult(markdown="", image_paths=[], raw_dir=Path("."), has_page_markers=True).extra == {}
+
+
+def test_verify_report_shape():
+    from aidoc.models import EXIT_FAILED, EXIT_OK, EXIT_UNVERIFIABLE, EXIT_USAGE, VerifyReport
+    r = VerifyReport(verify_version=1, aidoc_version="0.1.0", generated_at="2026-10-05T10:00:00+08:00",
+                     input={"markdown": "a.md", "sha256": "x", "bytes": 1, "newline": "lf", "format_detected": "aidoc",
+                            "markers_found": 3},
+                     pdf=None, verifiable="partial",
+                     page_map={"expected": 3, "found": 3, "coverage": 1.0, "method": "aidoc"},
+                     summary={"level": "ok", "score": 1.0, "reasons": [], "pages_flagged": 0, "pages_unrepaired": 0,
+                              "advisories": 0},
+                     metrics={}, pages=[])
+    j = r.to_json()
+    assert j["verify_version"] == 1 and j["verifiable"] == "partial" and j["summary"]["level"] == "ok"
+    assert r.level == "ok"
+    assert (EXIT_OK, EXIT_FAILED, EXIT_UNVERIFIABLE, EXIT_USAGE) == (0, 1, 3, 4)
+    import json
+    assert json.loads(json.dumps(j)) == j                      # plain JSON, no dataclass leftovers
