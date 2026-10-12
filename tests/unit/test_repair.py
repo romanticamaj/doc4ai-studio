@@ -80,33 +80,46 @@ def test_vlm_repair_gets_the_remote_timeout(tmp_path, fixtures):
     assert seen["timeout"] == 4321.0
 
 
-def test_a_dropped_page_needs_a_real_section_to_count_as_repaired():
-    """Benchmark finding (orthopaedic book page 912): a page_dropped page "repaired" with a few characters is still
-    dropped; it must stay unrepaired (min_chars), while other pages keep the plain has-text rule."""
-    assert accept_repaired_section("Fig. 3", "docling:pypdfium_full_page_ocr", {}, 1)
-    assert not accept_repaired_section("Fig. 3", "docling:pypdfium_full_page_ocr", {}, 1, min_chars=20)
-    assert accept_repaired_section("x" * 25, "docling:pypdfium_full_page_ocr", {}, 1, min_chars=20)
 
 
-def test_check_document_asks_dropped_pages_for_a_real_section(monkeypatch):
-    from aidoc import pipeline
-    from aidoc.quality import DROPPED_SECTION_MAX
-    seen = {}
+def test_a_dropped_page_repair_must_cover_its_text_layer():
+    """Verifier finding (orthopaedic pages 281/401/911/912/1076): a "repair" holding a heading and images covers
+    <= 0.09 of the page's text layer and is not a repair. Accepted only at PARTIAL_COVERAGE_MIN coverage."""
+    layer = "thequickbrownfoxjumpsoverthelazydog" * 20
+    heading = "## The quick brown fox\n\n![](assets/p1_1.jpg)\n\n![](assets/p1_2.jpg)"
+    assert accept_repaired_section(heading, "docling:pypdfium_full_page_ocr", {}, 1)            # no layer: old rule
+    assert not accept_repaired_section(heading, "docling:pypdfium_full_page_ocr", {}, 1, layer=layer)
+    full = "The quick brown fox jumps over the lazy dog. " * 20
+    assert accept_repaired_section(full, "docling:pypdfium_full_page_ocr", {}, 1, layer=layer)
 
-    def fake_repair(ctx, engines, norm, pages, main, min_chars=None):
-        seen.update(pages=pages, min_chars=min_chars)
-        raise RuntimeError("stop")
-    monkeypatch.setattr(pipeline, "repair_pages", fake_repair)
-    monkeypatch.setattr(pipeline.pagemap, "pdf_text_layers", lambda p: ["x" * 200] * 3)
+
+def test_check_document_repairs_dropped_and_partial_pages_against_their_layer(monkeypatch):
+    """Dropped / partial pages go to repair with their content layer; a page whose text sits in another section is
+    page_misaligned and is NOT repaired (an OCR copy would duplicate the text)."""
     from pathlib import Path
     from types import SimpleNamespace
 
+    from aidoc import pipeline
     from aidoc.models import NormalizedResult, ProbeResult
-    probe = ProbeResult(kind="pdf", ext=".pdf", size=1, pages=3)
+    from aidoc.pagemap import squash
+    seen = {}
+
+    def fake_repair(ctx, engines, norm, pages, main, layers=None):
+        seen.update(pages=pages, layers=layers)
+        raise RuntimeError("stop")
+    monkeypatch.setattr(pipeline, "repair_pages", fake_repair)
+    def words(tag):                                          # unique text: probes must be unique in the PDF
+        return " ".join(f"{tag}{i}word" for i in range(40))
+    p1, p2, p3, p4 = words("alpha"), words("bravo"), words("charlie"), words("delta")
+    layers = [squash(x) for x in (p1, p2, p3, p4)]
+    monkeypatch.setattr(pipeline.pagemap, "pdf_layers", lambda p: (layers, layers))
+    probe = ProbeResult(kind="pdf", ext=".pdf", size=1, pages=4)
     ctx = SimpleNamespace(probe=probe, work_src=Path("x.pdf"), engines={"docling": object()}, log=lambda s: None)
-    md = "<!-- page: 1 -->\n\n" + "a" * 50 + "\n\n<!-- page: 2 -->\n\n\n\n<!-- page: 3 -->\n\n" + "b" * 50
+    # page 2 dropped, page 3 cut to a few words, page 4's text under page 1 (page 4 empty)
+    md = (f"<!-- page: 1 -->\n\n{p1}\n\n{p4}\n\n<!-- page: 2 -->\n\n\n\n<!-- page: 3 -->\n\nquebec romeo sierra "
+          f"tango uniform\n\n<!-- page: 4 -->\n\n\n\n")
     try:
         pipeline.check_document(ctx, "docling", NormalizedResult(markdown=md, assets=[]), "fake", last_resort=True)
     except RuntimeError:
         pass
-    assert seen == {"pages": [2], "min_chars": {2: DROPPED_SECTION_MAX}}
+    assert seen["pages"] == [2, 3] and set(seen["layers"]) == {2, 3} and seen["layers"][2] == layers[1]

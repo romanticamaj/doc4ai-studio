@@ -90,7 +90,7 @@ def _vlm_block(req, n, refused=(), truncated=()):
 
 
 def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, failing=False, vlm_flag=None,
-              silent=False):
+              silent=False, misplace=False):
     out = Path(req["out_dir"])
     (out / "images").mkdir(parents=True, exist_ok=True)
     pages = req.get("pages")
@@ -127,11 +127,24 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
             parts.append(f"<!-- page: {i + shift} -->")
         if (i in failed and vlm_flag != "truncated") or i in dropped:   # the engine lost this page: empty section
             continue
-        excerpt = ""
-        if texts is not None and len(texts) == n:
-            excerpt = " ".join(texts[i - 1][:400].split())
-        elif texts is not None and pages and len(texts) >= pages[1]:
-            excerpt = " ".join(texts[pages[0] - 1 + i - 1][:400].split())
+        # misplace: scenario {"misplaced": {"7": 5}} puts page 7's text under page 5 (page 7 stays empty);
+        # absolute page numbers (a segment of pages first..last sees texts of the whole document)
+        moved = {int(k): int(v) for k, v in (sc.get("misplaced") or {}).items()} if misplace else {}
+        first_abs = pages[0] if pages else 1
+        a = first_abs - 1 + i
+        if a in moved:
+            continue
+
+        def page_text(r):                               # r: page within this request (1..n)
+            if not 1 <= r <= n or texts is None:
+                return ""
+            if len(texts) == n:
+                return " ".join(texts[r - 1].split())
+            if pages and len(texts) >= pages[1]:
+                return " ".join(texts[pages[0] - 1 + r - 1].split())
+            return ""
+        excerpt = " ".join([page_text(i)] + [page_text(src - first_abs + 1)
+                                             for src, dst in sorted(moved.items()) if dst == a]).strip()
         parts.append(f"# 第 {i} 頁 Heading {i}\n\n" + ("假引擎產生的內容 fake engine content. " * 4) + "\n"
                      + (excerpt + "\n" if excerpt else "")
                      + (GARBLE + "\n" if i in garbled_pages else ""))
@@ -181,6 +194,8 @@ def handle(req):
         return _write_ok(req, sc, vlm_flag="refused" if b == "refuse" else "truncated")
     if b == "partial":                                  # PARTIAL_SUCCESS: scenario failed_pages come out empty
         return _write_ok(req, sc, failing=True)
+    if b == "misplace":                                 # a page's text under another page's marker
+        return _write_ok(req, sc, misplace=True)
     if b == "silent_drop":                              # scenario dropped_pages come out empty, unreported
         return _write_ok(req, sc, silent=True)
     if b == "silent_drop_sticky":                       # ... and the repair runs drop them too

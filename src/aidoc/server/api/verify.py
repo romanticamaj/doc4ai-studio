@@ -53,7 +53,7 @@ def _run(md: str, pdf: Path | None, *, pages, fmt, marker_regex, sample, previou
     from aidoc.verify import verify_markdown
     try:
         report = verify_markdown(md, pdf, pages=pages, fmt=fmt or "auto", marker_regex=marker_regex or None,
-                                 sample=30 if sample is None else sample, previous=previous, input_name=name)
+                                 sample=0 if sample is None else sample, previous=previous, input_name=name)
     except ValueError as e:                       # includes NeedsPagesError (no PDF, no pages)
         raise ApiError(422, "invalid_input", detail=str(e)) from None
     out = report.to_json()
@@ -91,7 +91,7 @@ async def _multipart(request: Request) -> dict:
             pdf_name = Path(pdf_part.filename or "source.pdf").name if pdf is not None else None
             return await run_in_threadpool(
                 _run, md, pdf, pages=_int(form.get("pages"), "pages", None), fmt=form.get("format"),
-                marker_regex=form.get("marker_regex"), sample=_int(form.get("sample"), "sample", 30),
+                marker_regex=form.get("marker_regex"), sample=_int(form.get("sample"), "sample", 0),
                 previous=None, name=md_name, pdf_name=pdf_name)
         finally:
             await form.close()
@@ -112,7 +112,7 @@ async def _json_body(request: Request) -> dict:
         raise ApiError(422, "invalid_input", detail="send a JSON object")
     ctx = request.app.state.ctx
     opts = {"pages": _int(body.get("pages"), "pages", None), "fmt": body.get("format"),
-            "marker_regex": body.get("marker_regex"), "sample": _int(body.get("sample"), "sample", 30)}
+            "marker_regex": body.get("marker_regex"), "sample": _int(body.get("sample"), "sample", 0)}
     has_doc, has_path = "doc_id" in body, "markdown_path" in body
     if has_doc == has_path:
         raise ApiError(422, "invalid_input", detail="send exactly one of doc_id or markdown_path (+ pdf_path)")

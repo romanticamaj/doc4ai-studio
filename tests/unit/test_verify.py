@@ -161,3 +161,25 @@ def test_unverifiable_says_why_when_the_pdf_has_text():
     assert "scanned" not in en and "matches" in en
     scan = summary_text(verify_markdown("沒有頁碼", FIX / "scanned_cht.pdf"), "en")
     assert "scanned" in scan
+
+
+def test_verify_checks_every_page_and_reports_page_level_reasons():
+    """Verifier round: swapped content under valid markers, a cut page — verify checks every page by default
+    (alignment over all decidable pages) and reports page_misaligned / page_partial."""
+    _, secs = split_pages(_own_output(FIX / "paged_furniture.pdf"))
+    secs = dict(secs)
+    secs[3], secs[6] = secs[6], secs[3]
+    secs[5] = secs[5][: int(len(secs[5]) * 0.15)]
+    md = "".join(f"<!-- page: {p} -->\n\n{secs[p]}\n\n" for p in sorted(secs))
+    r = verify_markdown(md, FIX / "paged_furniture.pdf")
+    reasons = {p["page"]: p.get("reasons") for p in r.pages if p.get("reasons")}
+    assert reasons[3] == ["page_misaligned"] and reasons[6] == ["page_misaligned"] and reasons[5] == ["page_partial"]
+    assert r.page_map["alignment"]["sampled"] == 7                     # every page with text, not a sample of 30
+
+
+def test_every_page_is_the_default_in_the_function_and_the_cli():
+    import inspect
+
+    from aidoc.cli import build_parser
+    assert inspect.signature(verify_markdown).parameters["sample"].default == 0
+    assert build_parser().parse_args(["verify", "x.md"]).sample == 0

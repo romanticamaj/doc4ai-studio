@@ -31,3 +31,19 @@ test("dropped and failed pages are named, repaired or not", () => {
   expect(w.get(4)).toEqual({ text: "第 4 頁：引擎轉換這頁失敗，內容可能缺漏", tone: "warn" });
   expect(w.get(6)).toEqual({ text: "第 6 頁：引擎轉換這頁失敗，已用 VLM OCR 修復（gemma4:12b）", tone: "info" });
 });
+
+test("partial, misaligned and oversized pages are named", () => {
+  const w = pageWarnings({
+    score: 1, level: "warn", reasons: [],
+    pages: [
+      { page: 2, reasons: ["page_partial"], metrics: { coverage: 0.15 } },
+      { page: 3, reasons: ["page_misaligned"], metrics: { found_in: [5] } },
+      { page: 5, reasons: ["page_oversized"], metrics: { foreign_pages: [3] } },
+      { page: 7, reasons: ["page_partial"], repaired_by: "docling:pypdfium_full_page_ocr" },
+    ],
+  } as never);
+  expect(w.get(2)).toEqual({ text: "第 2 頁：只轉出這頁約 15% 的文字", tone: "warn" });
+  expect(w.get(3)).toEqual({ text: "第 3 頁：這頁的文字出現在第 5 頁底下（頁碼對錯）", tone: "warn" });
+  expect(w.get(5)).toEqual({ text: "第 5 頁：含有其他頁（第 3 頁）的文字", tone: "warn" });
+  expect(w.get(7)).toEqual({ text: "第 7 頁：只轉出部分文字，已用 OCR 修復", tone: "info" });
+});

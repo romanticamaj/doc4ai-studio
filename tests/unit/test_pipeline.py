@@ -333,3 +333,22 @@ def test_reported_failed_page_is_not_also_dropped(env):
     run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"])
     q = _sidecar(env, "big")["quality"]
     assert [p["reasons"] for p in q["pages"] if p["page"] == 3] == [["page_conversion_failed"]]
+
+
+def test_misplaced_page_is_flagged_never_copied_twice(env):
+    """Verifier round: Docling put page 7's text under page 5 (blank page 6 between). Page 7 is page_misaligned and
+    is not OCR-repaired, so its text appears once in the Markdown; page 5 is page_oversized."""
+    write_scenario(env["sc"], default="misplace", misplaced={"7": 5})
+    tid = env["make"]("paged_furniture.pdf", engine="docling")
+    # 2 flagged pages of 7 with a forced engine: over 20 % unrepaired -> low (nothing hidden, nothing duplicated)
+    assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.low
+    q = _sidecar(env, "paged_furniture")["quality"]
+    by = {p["page"]: p for p in q["pages"]}
+    assert by[7]["reasons"] == ["page_misaligned"] and not by[7].get("repaired_by")
+    assert by[5]["reasons"] == ["page_oversized"] and q["level"] == "low"
+    md = (env["root"] / "out" / "paged_furniture" / "paged_furniture.md").read_text(encoding="utf-8")
+    import pymupdf
+    with pymupdf.open(env["root"] / "paged_furniture.pdf") as d:
+        words = d[6].get_text().split()
+    probe = " ".join(words[12:20])                       # body text of page 7, not the running header
+    assert md.count(probe) == 1

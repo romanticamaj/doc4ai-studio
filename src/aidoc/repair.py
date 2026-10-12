@@ -17,7 +17,7 @@ from aidoc.engines.host import compute_timeout
 from aidoc.models import NormalizedResult
 from aidoc.normalize import normalize
 from aidoc.pagemap import splice_pages, split_pages
-from aidoc.quality import flag_page, page_signals
+from aidoc.quality import PARTIAL_COVERAGE_MIN, coverage, flag_page, page_signals
 from aidoc.segment import extract_pages
 
 REPAIR_SEG_IDX = 900
@@ -53,13 +53,19 @@ def repair_order(main_engine: str, available: dict[str, bool], *, engines: dict 
     return out
 
 
-def accept_repaired_section(section: str, label: str, failed: dict[int, str], page: int, min_chars: int = 1) -> bool:
-    """A repaired page section is accepted when it has text (at least `min_chars`: a dropped page needs a real
-    section, spec 2026-10-05 verify §2.3) and none of the broken-text signals (spec 2026-10-01 §8.2 step 5); a VLM
-    section also must not be a refusal / truncation / "blank" answer (VLM spec §6)."""
+def accept_repaired_section(section: str, label: str, failed: dict[int, str], page: int,
+                            layer: str | None = None) -> bool:
+    """A repaired page section is accepted when it has text and none of the broken-text signals (spec 2026-10-01
+    §8.2 step 5); for a dropped / partial page (`layer` = its content layer) it must also cover at least
+    PARTIAL_COVERAGE_MIN of that layer — a heading and pictures are not a repair (verifier round on spec 2026-10-05
+    verify §2.3). A VLM section also must not be a refusal / truncation / "blank" answer (VLM spec §6)."""
     sig = page_signals(section)
-    if sig["chars"] < max(1, min_chars) or flag_page(sig, broken_font=True):
+    if sig["chars"] < 1 or flag_page(sig, broken_font=True):
         return False
+    if layer:
+        cov = coverage(section, layer)
+        if cov is not None and cov < PARTIAL_COVERAGE_MIN:
+            return False
     return not (label.startswith("vlm:") and (page in failed or "<!-- blank -->" in section))
 
 
@@ -84,10 +90,10 @@ def _asset_page(name: str) -> int | None:
 
 
 def repair_pages(ctx, engines: dict, norm: NormalizedResult, pages: list[int], main_engine: str,
-                 min_chars: dict[int, int] | None = None) -> RepairOutcome:
+                 layers: dict[int, str] | None = None) -> RepairOutcome:
     """Repair `pages` (1-based, of ctx.work_src) of `norm`. EngineCancelled propagates; everything else is logged.
-    `min_chars`: per page, the non-space characters a repaired section needs (dropped pages)."""
-    min_chars = min_chars or {}
+    `layers`: per dropped / partial page, the content layer a repaired section must cover."""
+    layers = layers or {}
     remaining = sorted(set(pages))
     accepted: dict[int, tuple[str, list[tuple[Path, str]], str]] = {}
     log: list[str] = []
@@ -149,7 +155,7 @@ def repair_pages(ctx, engines: dict, norm: NormalizedResult, pages: list[int], m
         still = []
         for p in remaining:
             section = secs.get(p, "")
-            if accept_repaired_section(section, label, failed, p, min_chars.get(p, 1)):
+            if accept_repaired_section(section, label, failed, p, layers.get(p)):
                 accepted[p] = (section, [a for a in fixed.assets if _asset_page(a[1]) == p], label)
             else:
                 still.append(p)
