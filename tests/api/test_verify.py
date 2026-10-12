@@ -93,3 +93,10 @@ def test_too_large(client):
     files = {"markdown": ("a.md", io.BytesIO(b"x" * 100), "text/markdown")}
     r = client.post("/api/verify", files=files, data={"pages": "1"})
     assert r.status_code == 413 and r.json()["error"] == "too_large"
+
+
+def test_dangerous_marker_regex_is_422_never_500(client):
+    files = {"markdown": ("a.md", b"[[p 1]]\nx"), "pdf": ("p.pdf", (FIX / "text.pdf").read_bytes())}
+    for rx in (r"\[\[p (\d+)?\]\]", r"((a+)+\d)", "x" * 500):
+        r = client.post("/api/verify", files=files, data={"marker_regex": rx})
+        assert r.status_code == 422 and r.json()["error"] == "invalid_input", rx

@@ -46,15 +46,75 @@ def detect(md: str) -> str:
     return "none"
 
 
+MARKER_REGEX_MAX = 200
+
+
+def _regex_problem(pattern: str) -> str | None:
+    """Why a user regex is unsafe: its capture group may be absent or empty (optional, in an alternation, under a
+    0-minimum repeat, or able to match nothing), or it nests unbounded quantifiers (catastrophic backtracking; Python's
+    `re` has no timeout)."""
+    try:
+        import re._constants as C
+        import re._parser as sre_parse
+    except ImportError:            # Python 3.10
+        import sre_constants as C
+        import sre_parse
+    repeats = {C.MAX_REPEAT, C.MIN_REPEAT} | ({C.POSSESSIVE_REPEAT} if hasattr(C, "POSSESSIVE_REPEAT") else set())
+
+    def has_unbounded_repeat(items) -> bool:
+        for op, av in items:
+            if op in repeats and (av[1] == C.MAXREPEAT or av[1] > 1):
+                return True
+            subs = []
+            if op == C.SUBPATTERN:
+                subs = [av[-1]]
+            elif op in repeats:
+                subs = [av[2]]
+            elif op == C.BRANCH:
+                subs = list(av[1])
+            if any(has_unbounded_repeat(s) for s in subs):
+                return True
+        return False
+
+    def walk(items, optional: bool) -> str | None:
+        for op, av in items:
+            if op == C.SUBPATTERN:
+                group, sub = av[0], av[-1]
+                if group is not None:
+                    if optional:
+                        return "the capture group must always take part in a match (not optional)"
+                    if sub.getwidth()[0] == 0:
+                        return "the capture group must not be able to match an empty string"
+                why = walk(sub, optional)
+            elif op in repeats:
+                mn, mx, sub = av
+                if (mx == C.MAXREPEAT or mx > 1) and has_unbounded_repeat(sub):
+                    return "nested unbounded quantifiers (catastrophic backtracking)"
+                why = walk(sub, optional or mn == 0)
+            elif op == C.BRANCH:
+                why = next((w for w in (walk(b, True) for b in av[1]) if w), None)
+            else:
+                why = None
+            if why:
+                return why
+        return None
+    return walk(sre_parse.parse(pattern), False)
+
+
 def _compile_custom(marker_regex: str | None) -> re.Pattern:
     if not marker_regex:
         raise ValueError("custom format needs --page-marker-regex")
+    if len(marker_regex) > MARKER_REGEX_MAX:
+        raise ValueError(f"page marker regex longer than {MARKER_REGEX_MAX} characters")
     try:
         pat = re.compile(marker_regex)
     except re.error as e:
         raise ValueError(f"invalid page marker regex: {e}") from None
     if pat.groups != 1:
         raise ValueError("page marker regex must have exactly one group (the 1-based page number)")
+    why = _regex_problem(marker_regex)
+    if why:
+        raise ValueError(f"unsafe page marker regex: {why}")
     return pat
 
 
