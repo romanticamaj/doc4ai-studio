@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).parent))
 import _proto
+import _vlm_net
 import _vlm_prompt
 
 REMOTE_RETRY_BACKOFF = (2, 8, 30, 60)
@@ -41,6 +42,24 @@ MAX_IMAGE_BYTES = 15 * 1024 * 1024
 MODELS_TIMEOUT_S = 10
 
 _sleep = time.sleep                     # tests replace it
+_SECRETS: list[str] = []                # the resolved API key of the current request: never logged or raised
+_STATS_LOCK = threading.Lock()
+
+
+def _redact(text) -> str:
+    return _vlm_net.redact(str(text), _SECRETS)
+
+
+def _log(msg: str) -> None:
+    _proto.log(_redact(msg))
+
+
+def _usage_event(client, *, pages: int = 0, requests: int = 0, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+    """AIDOC_VLM_USAGE: emitted BEFORE a request leaves (pages / requests) and after its answer (tokens), so the host
+    counts every page image that left this process even when the runner is later killed (verifier finding 1)."""
+    _proto._emit("AIDOC_VLM_USAGE", {"backend": getattr(client, "backend", "openai"),
+                                     "endpoint_host": _host_of(client), "pages": pages, "requests": requests,
+                                     "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens})
 
 
 def _now() -> float:
@@ -97,7 +116,21 @@ _REFUSAL_RE = re.compile(
     r"^\s*(?:I['\u2019]m sorry|I am sorry|Sorry,|I cannot|I can['\u2019]t|I can not|I['\u2019]m unable|I am unable|"
     r"I['\u2019]m not able|I am not able|I won['\u2019]t|I will not|Unfortunately|As an AI|"
     r"無法|抱歉|很抱歉|對不起|对不起|无法)", re.IGNORECASE)
-REFUSAL_MAX_CHARS = 200
+# a refusal talks about the task (the image, recognising, transcribing, helping); an ordinary sentence that merely
+# starts with "Sorry" / 抱歉 / 無法 does not (verifier finding 4)
+_REFUSAL_CUE = re.compile(
+    r"圖片|圖像|影像|图片|图像|辨識|识别|辨认|轉錄|转录|轉換|转换|協助|协助|幫忙|帮忙|請求|请求|處理這|处理这|"
+    r"\b(?:image|picture|photo|scan|page|document|transcrib\w*|OCR|assist\w*|help(?:ing)? with|request|"
+    r"process (?:this|that)|read (?:this|that|the))\b", re.IGNORECASE)
+REFUSAL_MAX_WIDTH = 200                 # display width: a CJK character counts as two
+
+
+def _width(s: str) -> int:
+    return sum(2 if ord(c) >= 0x2E80 else 1 for c in s)
+
+
+def is_refusal(s: str) -> bool:
+    return _width(s) < REFUSAL_MAX_WIDTH and bool(_REFUSAL_RE.match(s)) and bool(_REFUSAL_CUE.search(s))
 
 
 def clean_markdown(text: str) -> tuple[str, str | None]:
@@ -113,7 +146,7 @@ def clean_markdown(text: str) -> tuple[str, str | None]:
         s = t
     if s in ("<!-- blank -->", ""):
         return "", "blank"
-    if len(s) < REFUSAL_MAX_CHARS and _REFUSAL_RE.match(s):
+    if is_refusal(s):
         return "", "refused"
     s = re.sub(r"\\\[(.+?)\\\]", lambda mm: f"$${mm.group(1).strip()}$$", s, flags=re.DOTALL)
     s = re.sub(r"\\\((.+?)\\\)", lambda mm: f"${mm.group(1).strip()}$", s, flags=re.DOTALL)
@@ -192,6 +225,7 @@ class Client:
         self.base_url = base_url.rstrip("/")
         self.model, self.api_key, self.timeout_s = model, api_key, timeout_s
         self.detail, self.max_output_tokens = detail, max_output_tokens
+        self.backend = "openai"
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
@@ -251,14 +285,27 @@ def _host_of(client: Client) -> str:
     return urlsplit(client.base_url).netloc
 
 
-def request_with_retries(client: Client, messages: list[dict], max_tokens: int, stats: dict) -> dict:
+def request_with_retries(client: Client, messages: list[dict], max_tokens: int, stats: dict,
+                         charge: dict | None = None) -> dict:
     """One chat request with the spec §4.4 retry schedule. Raises HttpStatus(400) for the caller to re-render,
     RunnerError("engine") for 401/403/404, RunnerError("transient") when the retries are used up."""
     last = ""
     for attempt in range(REMOTE_MAX_RETRIES + 1):
-        stats["requests"] = stats.get("requests", 0) + 1
+        first = charge is not None and not charge.get("sent")
+        if charge is not None:
+            charge["sent"] = True
+        with _STATS_LOCK:
+            stats["requests"] = stats.get("requests", 0) + 1
+            if first:
+                stats["pages_sent"] = stats.get("pages_sent", 0) + 1
+        _usage_event(client, pages=1 if first else 0, requests=1)          # counted before it leaves
         try:
-            return client.chat(messages, max_tokens)
+            out = client.chat(messages, max_tokens)
+            u = out.get("usage") if isinstance(out, dict) else None
+            if isinstance(u, dict):
+                _usage_event(client, prompt_tokens=int(u.get("prompt_tokens") or 0),
+                             completion_tokens=int(u.get("completion_tokens") or 0))
+            return out
         except HttpStatus as e:
             if e.code in (401, 403, 404):
                 raise _proto.RunnerError(
@@ -278,19 +325,19 @@ def request_with_retries(client: Client, messages: list[dict], max_tokens: int, 
             delay = REMOTE_RETRY_BACKOFF[min(attempt, len(REMOTE_RETRY_BACKOFF) - 1)]
         if attempt == REMOTE_MAX_RETRIES:
             break
-        _proto.log(f"vlm: {last}; retry {attempt + 1}/{REMOTE_MAX_RETRIES} in {delay:g}s")
+        _log(f"vlm: {last}; retry {attempt + 1}/{REMOTE_MAX_RETRIES} in {delay:g}s")
         _sleep(delay)
     raise _proto.RunnerError("transient", f"vlm: {_host_of(client)} failed after {REMOTE_MAX_RETRIES} retries: {last}")
 
 
-def _error_message(body: str) -> str:
+def _error_message(body: str, secrets=()) -> str:
+    """The endpoint's error text, short and without keys (some providers echo the Authorization header)."""
     try:
         err = json.loads(body).get("error")
-        if isinstance(err, dict):
-            return str(err.get("message") or err.get("code") or "")[:300]
-        return str(err)[:300]
+        msg = str(err.get("message") or err.get("code") or "") if isinstance(err, dict) else str(err)
     except (ValueError, AttributeError):
-        return body[:300]
+        msg = body
+    return _vlm_net.redact(msg[:300], [*_SECRETS, *secrets])
 
 
 def _content(out: dict) -> tuple[str, str | None]:
@@ -298,7 +345,8 @@ def _content(out: dict) -> tuple[str, str | None]:
         ch = out["choices"][0]
         return str(ch["message"].get("content") or ""), ch.get("finish_reason")
     except (KeyError, IndexError, TypeError, AttributeError):
-        raise _proto.RunnerError("transient", f"vlm: malformed response: {str(out)[:200]}") from None
+        keys = sorted(out)[:8] if isinstance(out, dict) else type(out).__name__
+        raise _proto.RunnerError("transient", f"vlm: malformed response (keys: {keys})") from None   # no page text
 
 
 def send_page(client: Client, render, k: int, n: int, opts: dict, stats: dict) -> PageOut:
@@ -309,25 +357,27 @@ def send_page(client: Client, render, k: int, n: int, opts: dict, stats: dict) -
     max_tokens = int(opts.get("max_output_tokens", 4096))
     res = PageOut(dpi_used=dpi)
     rerendered = False
+    charge: dict = {}                       # this page's first request charges one page image
     while True:
         data, _size, mime = render(dpi)
         uri = f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
         msgs = _vlm_prompt.messages(style, lang, uri, k, n, client.detail)
         try:
-            out = request_with_retries(client, msgs, max_tokens, stats)
+            out = request_with_retries(client, msgs, max_tokens, stats, charge)
         except HttpStatus as e:                 # 400: often "image too large" -> one re-render at a lower dpi
             res.attempts += 1
             if rerendered or dpi - BAD_REQUEST_DPI_STEP < MIN_DPI:
                 res.flag = "bad_request"
-                _proto.log(f"vlm: page {k}: HTTP 400 ({_error_message(e.body)}); page skipped")
+                _log(f"vlm: page {k}: HTTP 400 ({_error_message(e.body)}); page skipped")
                 return res
             dpi, rerendered, res.dpi_used = dpi - BAD_REQUEST_DPI_STEP, True, dpi - BAD_REQUEST_DPI_STEP
-            _proto.log(f"vlm: page {k}: HTTP 400; retrying at {dpi} dpi")
+            _log(f"vlm: page {k}: HTTP 400; retrying at {dpi} dpi")
             continue
         res.attempts += 1
         res.usage = _add_usage(res.usage, out.get("usage"))
         if out.get("usage"):
-            stats["has_usage"] = True
+            with _STATS_LOCK:
+                stats["has_usage"] = True
         text, finish = _content(out)
         res.finish_reason = finish
         if finish not in (None, "stop", "length", "eos", "end_turn"):   # content_filter & co: the model declined
@@ -336,7 +386,7 @@ def send_page(client: Client, render, k: int, n: int, opts: dict, stats: dict) -
         if finish == "length" and max_tokens < MAX_OUTPUT_TOKENS_CAP and not res.flag:
             max_tokens = min(MAX_OUTPUT_TOKENS_CAP, max_tokens * TRUNCATION_RETRY_FACTOR)
             res.flag = "retrying_length"
-            _proto.log(f"vlm: page {k}: output truncated; retrying with max_tokens={max_tokens}")
+            _log(f"vlm: page {k}: output truncated; retrying with max_tokens={max_tokens}")
             continue
         md, flag = clean_markdown(text)
         if finish == "length":
@@ -356,7 +406,7 @@ def _with_table(client, data, mime, md, k, n, opts, stats, res) -> str:
     uri = f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
     msgs = _vlm_prompt.messages("paddle_tasks", opts.get("lang") or "cht", uri, k, n, client.detail, task="table")
     try:
-        out = request_with_retries(client, msgs, int(opts.get("max_output_tokens", 4096)), stats)
+        out = request_with_retries(client, msgs, int(opts.get("max_output_tokens", 4096)), stats, {"sent": True})
     except HttpStatus:
         return md
     res.usage = _add_usage(res.usage, out.get("usage"))
@@ -379,19 +429,36 @@ def resolve_key(eo: dict) -> str | None:
 
 
 def _is_loopback(host: str) -> bool:
-    """`host[:port]` names this computer: localhost or a loopback IP (not merely a name starting with "127.")."""
-    import ipaddress
-    h = host.rsplit(":", 1)[0] if host.count(":") == 1 or host.startswith("[") else host
-    h = h.strip("[]").lower()
-    if h == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(h).is_loopback
-    except ValueError:
-        return False
+    """`host[:port]` names this computer (one rule with aidoc.engines.vlm: _vlm_net.is_loopback_url)."""
+    return _vlm_net.is_loopback_url(f"http://{host}/")
 
 
 def handle(req: dict) -> dict:
+    try:
+        return _handle(req)
+    except _proto.RunnerError as e:
+        raise _proto.RunnerError(e.kind, _redact(str(e))) from None
+    finally:
+        _SECRETS.clear()
+
+
+def _cache_dir(req: dict, eo: dict, host: str, n: int) -> Path:
+    """Answered pages of this request kept next to its output: a retried / resumed run (same source, endpoint, model,
+    rendering and prompt) does not send them again (verifier finding 1). Segment dirs are removed on fallback."""
+    src = Path(req["src"])
+    try:
+        st = src.stat()
+        ident = [src.name, st.st_size, int(st.st_mtime)]
+    except OSError:
+        ident = [src.name]
+    key = json.dumps([ident, n, host, eo.get("model"), eo.get("preset"), eo.get("dpi"), eo.get("max_image_px"),
+                      eo.get("prompt_style"), eo.get("prompt_version"), eo.get("lang"), eo.get("table_pages")],
+                     sort_keys=True, default=str)
+    import hashlib
+    return Path(req["out_dir"]).parent / "vlm_pages" / hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _handle(req: dict) -> dict:
     eo = dict(req.get("engine_opts") or {})
     backend = eo.get("backend", "openai")
     if backend == "local":
@@ -407,17 +474,20 @@ def handle(req: dict) -> dict:
                                                f"{eo.get('api_key_env') or 'AIDOC_VLM_API_KEY'} (or allow_no_key)")
     else:
         raise _proto.RunnerError("engine", f"vlm: backend {backend!r} is not configured")
+    if key:
+        _SECRETS.append(key)
     client = Client(base_url, model, key, float(eo.get("request_timeout_s", 120)), eo.get("detail"),
                     int(eo.get("max_output_tokens", 4096)))
+    client.backend = backend
     host = urlsplit(client.base_url).netloc
     if backend == "openai" and base_url not in _MODELS_CHECKED:
         _MODELS_CHECKED.add(base_url)
         try:
             ids = client.models()
             if model not in ids:
-                _proto.log(f"vlm: model {model!r} is not in {host}/models ({len(ids)} listed); trying anyway")
+                _log(f"vlm: model {model!r} is not in {host}/models ({len(ids)} listed); trying anyway")
         except Exception as e:  # noqa: BLE001 - informational only (spec §4.7)
-            _proto.log(f"vlm: GET {host}/models failed ({type(e).__name__}); trying the first page anyway")
+            _log(f"vlm: GET {host}/models failed ({type(e).__name__}); trying the first page anyway")
 
     out_dir = Path(req["out_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -425,9 +495,20 @@ def handle(req: dict) -> dict:
     render_lock = threading.Lock()
     n = doc.page_count
     max_px = int(eo.get("max_image_px", 2000))
-    stats: dict = {"requests": 0}
+    stats: dict = {"requests": 0, "pages_sent": 0}
     results: list[PageOut | None] = [None] * n
     done = [0]
+    cache = _cache_dir(req, eo, host, n)
+    for i in range(n):
+        f = cache / f"p{i + 1}.json"
+        try:
+            c = json.loads(f.read_text(encoding="utf-8"))
+            results[i] = PageOut(markdown=str(c.get("markdown") or ""), flag=c.get("flag"),
+                                 finish_reason=c.get("finish_reason"))
+        except (OSError, ValueError, AttributeError):
+            pass
+    if any(results):
+        _log(f"vlm: {sum(1 for r in results if r)} of {n} page(s) already answered by an earlier attempt; not sent again")
 
     def run_one(i: int) -> None:
         base_dpi = int(eo.get("dpi", 150))
@@ -442,8 +523,17 @@ def handle(req: dict) -> dict:
         except _proto.RunnerError as e:
             if e.kind != "transient":
                 raise                           # 401/403/404: a configuration error, the whole run fails
-            _proto.log(f"vlm: page {i + 1}: {e}")
+            _log(f"vlm: page {i + 1}: {e}")
             results[i] = PageOut(flag="unreachable")   # retries used up: this page only (spec §4.4 page level)
+        r = results[i]
+        if r is not None and r.flag in (None, "blank"):
+            try:
+                cache.mkdir(parents=True, exist_ok=True)
+                (cache / f"p{i + 1}.json").write_text(json.dumps(
+                    {"markdown": r.markdown, "flag": r.flag, "finish_reason": r.finish_reason}, ensure_ascii=False),
+                    encoding="utf-8")
+            except OSError:
+                pass
         with render_lock:
             done[0] += 1
             _proto.progress(done[0], n)
@@ -452,10 +542,11 @@ def handle(req: dict) -> dict:
     try:
         if workers == 1:
             for i in range(n):
-                run_one(i)
+                if results[i] is None:
+                    run_one(i)
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = [pool.submit(run_one, i) for i in range(n)]
+                futures = [pool.submit(run_one, i) for i in range(n) if results[i] is None]
                 try:
                     for f in futures:
                         f.result()
@@ -489,7 +580,7 @@ def handle(req: dict) -> dict:
     md_path = out_dir / "out.md"
     md_path.write_text("".join(parts), encoding="utf-8")
     vlm = {"backend": backend, "model": model, "endpoint_host": "local" if backend == "local" else host,
-           "local_endpoint": backend == "local" or _is_loopback(host), "pages_sent": n,
+           "local_endpoint": backend == "local" or _is_loopback(host), "pages_sent": stats["pages_sent"],
            "usage": {"requests": stats["requests"],
                      "prompt_tokens": usage["prompt_tokens"] if usage else None,
                      "completion_tokens": usage["completion_tokens"] if usage else None},

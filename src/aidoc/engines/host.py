@@ -175,6 +175,30 @@ class RunnerHost:
 
     def run(self, request: dict, workdir: Path, timeout_s: float, on_progress: ProgressCb,
             cancel: threading.Event | None = None) -> dict:
+        try:
+            return self._run(request, workdir, timeout_s, on_progress, cancel)
+        except (EngineError, EngineCancelled):
+            self._drain(on_progress)
+            raise
+
+    def _drain(self, on_progress: ProgressCb) -> None:
+        """After a kill / timeout / crash: hand the runner's last lines (e.g. AIDOC_VLM_USAGE accounting) to the
+        caller instead of dropping them with the queue (verifier finding 1)."""
+        if self._pump_thread is not None:
+            self._pump_thread.join(timeout=3)
+        while True:
+            try:
+                line = self._lines.get_nowait()
+            except queue.Empty:
+                return
+            if line and _parse(line)[0] is None:
+                try:
+                    on_progress(-1.0, line.rstrip("\r\n"))
+                except Exception:  # noqa: BLE001, S110 - best effort while failing
+                    pass
+
+    def _run(self, request: dict, workdir: Path, timeout_s: float, on_progress: ProgressCb,
+             cancel: threading.Event | None = None) -> dict:
         """Send one request and wait for its result. `cancel` is polled every 0.25 s (set -> kill, EngineCancelled)."""
         if self.proc is None:
             raise RuntimeError("RunnerHost.start() not called")

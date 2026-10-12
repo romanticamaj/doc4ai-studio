@@ -1307,4 +1307,29 @@ counter is not locked; `options_key` lacks host/prompt_version and also applies 
 is accepted by config/API while unsupported; short real pages starting with 無法/抱歉 can read as refusals; provider error
 bodies are logged verbatim.
 
+**Independent verifier round (2026-10-12) — fixed, each with a test that failed first**
+
+| # | Finding | Fix | Pinning tests |
+|---|---|---|---|
+| 1 | Budget bypass: pages sent by a run that was killed (timeout, cancel, crash) were never counted — usage was written only from the runner's end-of-run `result.json`; host retries re-sent every page | The runner emits `AIDOC_VLM_USAGE {pages, requests, tokens}` **before** each request leaves (pages: the first request of a page; tokens after the answer); the host hands the runner's last lines to the caller even after a kill (`RunnerHost._drain`); the pipeline and repair record the table from these events only (the end block feeds the sidecar). Answered pages are cached next to the segment (`vlm_pages/<key>`: source, endpoint, model, dpi, prompt), so a retried or resumed run does not send them again. Before a VLM retry the gate (budget, cap, `--no-vlm-remote`) runs again | `test_usage_counts_every_sent_page_when_the_run_times_out`, `test_usage_counts_pages_sent_before_a_cancel`, `test_retries_of_a_timed_out_vlm_run_respect_the_budget`, `test_every_request_is_reported_as_it_leaves`, `test_answered_pages_are_not_sent_again_on_a_retry` |
+| 2 | VLM repair used plain `compute_timeout` | `engine.timeout_factor()` applied as in the main conversion | `test_vlm_repair_gets_the_remote_timeout` |
+| 3 | A 401 body echoing the Authorization header put the key into `tried_json` and the task log; a malformed answer logged page text | Every runner message and raised error goes through `_vlm_net.redact` (the resolved key, `Bearer …`, `sk-…`); `check_vlm` too; a malformed answer reports only its keys | `test_errors_never_carry_the_key_or_document_text`, `test_an_endpoint_echoing_the_key_never_puts_it_in_the_task` |
+| 4 | Refusal false positives (無法忘記…, 抱歉，我遲到了…, "Unfortunately, the war…", "I cannot tell a lie…", "Sorry, we're closed") | A refusal needs a task cue (圖片／辨識／轉錄／協助／image／transcribe／OCR／help with…) and a display width < 200 (CJK = 2) | `test_ordinary_sentences_are_not_refusals` (5), `test_refusals_name_the_task` (5) |
+| 5 | Request counter updated from worker threads without a lock | `_STATS_LOCK` | `test_request_counter_is_exact_under_concurrency` (45 pages, 8 workers) |
+| 7 | `backend = "local"` accepted by `PUT /api/settings` | 422 with the "not supported on this platform yet" message | `test_local_backend_is_refused_while_unsupported` |
+| 8 | Runner loopback check mis-parsed `http://[::1]/v1` | one stdlib helper `runner/_vlm_net.py` (`urlsplit().hostname`, `ipaddress`, IPv4-mapped) used by the runner, the engine and setup | `test_loopback_rules_are_one_table_for_server_and_web` |
+| 9 | Web `isLoopbackUrl` disagreed (0.0.0.0 local; `[::ffff:127.0.0.1]` remote) | same rules; both sides test one table `web/src/features/settings/__tests__/loopbackCases.json` | Vitest `isLoopbackUrl matches the server's table` (14 cases) |
+| 11 | A forced VLM run refused by the gate ended "all engines failed" | ends `vlm(budget|page_cap|disabled_remote): <reason>` | `test_a_forced_vlm_refused_by_the_gate_ends_with_the_reason` |
+
+Deferred (documented, not fixed): **6** — `options_key` lacks the endpoint host / `prompt_version` and its VLM fields also apply to non-VLM segments (the page cache key above does include host, model, dpi and prompt version); **10** — the verifier's tenth item stays deferred as agreed.
+
+**Why item 1 slipped through, and what prevents it now.** Every usage test exercised runs that *finished*: the
+reliability budget test used the fake runner's normal result, and the unit tests read `result.json`. Accounting was
+designed as "add the result's usage block", so a run killed by the host's timeout or a cancel — the exact cases where
+the most pages are re-sent — left no trace, and nothing asserted usage on an abnormal end. Now (a) the counter is fed
+by events emitted *before* each request leaves, so there is no "end of run" to miss; (b) the host forwards the last
+lines of a killed runner; (c) three reliability tests compare the table with the fake endpoint's own call log on a
+timeout, a cancel and a budget-limited retry, which is the invariant that matters (`requests` ≥ what the endpoint saw,
+at most one in flight more).
+
 **Measured (2026-10-12)** — see the spec's §15 acceptance record and the spike write-up.

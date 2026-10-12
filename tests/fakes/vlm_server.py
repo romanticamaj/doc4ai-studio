@@ -6,7 +6,7 @@
 Scenario keys: default (behaviour), model, delay_s, pages ({k: text}), with_table, require_key, call_log (path of a
 calls.jsonl), rules ([{match: {page, request_no, model}, behavior}]); request_no counts requests for that page.
 Behaviours: ok, ok_fenced, blank, refuse, length, rate_limit, server_error, unauthorized, model_missing, bad_request,
-slow, hang, no_usage.
+slow, hang, no_usage, unauthorized_echo, malformed.
 """
 from __future__ import annotations
 
@@ -116,6 +116,11 @@ def handle_chat(state: ScenarioState, body: dict, headers) -> tuple[int, dict, d
     if key and auth != f"Bearer {key}":
         return _error("unauthorized")
     beh, _n = state.behaviour(info["page"], model)
+    if beh == "unauthorized_echo":              # some providers echo what they got (verifier finding 3)
+        return 401, {"error": {"message": f"Incorrect API key provided: {auth}", "type": "invalid_request_error",
+                               "code": "invalid_api_key"}}, {}
+    if beh == "malformed":                      # not an OpenAI shape; carries page text
+        return 200, {"choices": "CONFIDENTIAL PAGE TEXT " * 20}, {}
     if beh == "hang":
         state.stopping.wait()
         return _error("server_error")

@@ -150,6 +150,9 @@ def _validate_vlm(changes: dict, cfg) -> None:
     problem = vlm_problem(v)
     if problem:
         raise ApiError(422, "invalid_settings", detail=problem)
+    from aidoc.engines.vlm import LOCAL_SUPPORTED, LOCAL_UNSUPPORTED_MSG
+    if v.backend == "local" and not LOCAL_SUPPORTED and changes.get("backend") == "local":
+        raise ApiError(422, "invalid_settings", detail=LOCAL_UNSUPPORTED_MSG)
     if v.remote_enabled and v.backend != "openai":
         raise ApiError(422, "invalid_settings", detail="vlm.remote_enabled requires vlm.backend = \"openai\"")
     if v.backend == "local" and v.local_preset == "custom":

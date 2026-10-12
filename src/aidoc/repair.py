@@ -114,10 +114,15 @@ def repair_pages(ctx, engines: dict, norm: NormalizedResult, pages: list[int], m
             pdf = extract_pages(ctx.work_src, remaining, wd / "pages.pdf")
             eo = {**engine.engine_opts(ctx.opts, ctx.probe), **override}
             timeout = compute_timeout(len(remaining), pdf.stat().st_size, ctx.opts, ctx.config.limits)
+            if hasattr(engine, "timeout_factor") and not ctx.opts.timeout_s:   # like the main conversion
+                timeout = engine.timeout_factor(len(remaining), timeout)
             session = engine.open_session(ctx.opts, ctx.probe, engine_opts=eo)
             ctx.log(f"repair: {label} on {len(remaining)} page(s) pid={session.pid}")
             try:
-                raw = session.convert(pdf, wd, None, lambda f, line: ctx.log(line) if line else None,
+                def on_line(_f, line, _ctx=ctx):
+                    if line and not (hasattr(_ctx, "vlm_usage_line") and _ctx.vlm_usage_line(line)):
+                        _ctx.log(line)
+                raw = session.convert(pdf, wd, None, on_line,
                                       timeout_s=timeout, segment_idx=REPAIR_SEG_IDX, cancel=ctx.cancel)
             finally:
                 session.close()

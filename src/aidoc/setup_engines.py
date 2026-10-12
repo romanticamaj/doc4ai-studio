@@ -117,10 +117,11 @@ def check_vlm(config: AidocConfig, log: Callable[[str], None]) -> bool:
         out = client.chat(_vlm_prompt.messages("generic", "cht", uri, 1, 1, None), 256)
         text = vlm_runner.clean_markdown(str(out["choices"][0]["message"].get("content") or ""))[0]
     except vlm_runner.HttpStatus as e:
-        log(f"[vlm] check failed: HTTP {e.code} from {host}: {vlm_runner._error_message(e.body)}")
+        log(f"[vlm] check failed: HTTP {e.code} from {host}: {vlm_runner._error_message(e.body, [key or ''])}")
         return False
     except Exception as e:  # noqa: BLE001 - connection refused, timeout, malformed answer
-        log(f"[vlm] check failed: {type(e).__name__}: {getattr(e, 'reason', e)}")
+        from aidoc.engines.runner import _vlm_net
+        log(_vlm_net.redact(f"[vlm] check failed: {type(e).__name__}: {getattr(e, 'reason', e)}", [key or ""]))
         return False
     flat = _squash_ci(text)
     if "aidoc" not in flat or "繁體" not in flat:

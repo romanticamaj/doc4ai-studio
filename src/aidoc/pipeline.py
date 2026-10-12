@@ -43,6 +43,7 @@ from aidoc.store import Store
 from aidoc.tasklock import TaskLock, lock_path
 
 Emit = Callable[[str, dict], None]
+VLM_USAGE_PREFIX = "AIDOC_VLM_USAGE "
 SEGMENT_FILES = ("normalized.md", "assets.json", "edges.json")
 RETRY_POLICY = RetryPolicy()
 
@@ -148,19 +149,26 @@ class PipelineContext:
         return None
 
     def record_vlm_usage(self, block: dict) -> None:
-        """One VLM runner result (a segment or a repair run) into the vlm_usage table (VLM spec §8.2)."""
-        if not block:
-            return
-        self.vlm_all = merge_vlm_blocks(self.vlm_all, block)
-        u = block.get("usage") or {}
-        backend = block.get("backend") or "openai"
-        host = "local" if backend == "local" else (block.get("endpoint_host") or "")
+        """One VLM runner result (a segment or a repair run): kept for the sidecar. The usage TABLE is written from
+        the runner's AIDOC_VLM_USAGE lines as each request leaves (vlm_usage_line), never from this end-of-run
+        block — a killed, timed-out or cancelled run has no block but did send pages (verifier finding 1)."""
+        if block:
+            self.vlm_all = merge_vlm_blocks(self.vlm_all, block)
+
+    def vlm_usage_line(self, line: str) -> bool:
+        """True when `line` is a runner AIDOC_VLM_USAGE event (recorded into vlm_usage, not logged)."""
+        if not line.startswith(VLM_USAGE_PREFIX):
+            return False
         try:
-            self.store.add_vlm_usage(time.strftime("%Y-%m-%d"), backend, host, int(block.get("pages_sent") or 0),
-                                     int(u.get("requests") or 0), int(u.get("prompt_tokens") or 0),
-                                     int(u.get("completion_tokens") or 0))
-        except sqlite3.Error as e:                   # accounting never fails a conversion
+            ev = json.loads(line[len(VLM_USAGE_PREFIX):])
+            backend = ev.get("backend") or "openai"
+            host = "local" if backend == "local" else str(ev.get("endpoint_host") or "")
+            self.store.add_vlm_usage(time.strftime("%Y-%m-%d"), backend, host, int(ev.get("pages") or 0),
+                                     int(ev.get("requests") or 0), int(ev.get("prompt_tokens") or 0),
+                                     int(ev.get("completion_tokens") or 0))
+        except (ValueError, TypeError, AttributeError, sqlite3.Error) as e:   # accounting never fails a conversion
             self.log(f"vlm usage not recorded: {e}")
+        return True
 
     def set(self, **fields) -> dict:
         self.store.update_task(self.task_id, **fields)
@@ -397,7 +405,7 @@ def run_engine_attempt(ctx: PipelineContext, engine, engine_opts: dict, *,
                 timeout = engine.timeout_factor(seg_pages or probe.pages or 1, timeout)
 
             def on_progress(frac: float, line: str) -> None:
-                if line:
+                if line and not ctx.vlm_usage_line(line):
                     ctx.log(line)
             try:
                 raw = session.convert(seg_src, sd, pages, on_progress, timeout_s=timeout, segment_idx=seg["idx"],
@@ -677,6 +685,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
 
     # 4. engines in order
     best: _Candidate | None = None
+    vetoed: str | None = None                          # why the VLM was not (or no longer) allowed to send pages
     for i, name in enumerate(order):
         if ctx.cancelled():
             return _cancel(ctx)
@@ -687,6 +696,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
             veto = ctx.vlm_gate(probe)                 # again right before sending: budget, cap, --no-vlm-remote
             if veto:                                   # (a forced vlm never went through the routing gate)
                 ctx.log(f"vlm({veto}): the VLM is not used for this document")
+                vetoed = veto
                 continue
             ctx.log(f"vlm(openai): sending {probe.pages or 1} page image(s) to {engine.endpoint_host()} "
                     f"model={engine.model_name()}")
@@ -718,6 +728,12 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
                 if d.action == "fallback":
                     _discard_segments(ctx)
                     break
+                if name == "vlm" and engine.is_remote():
+                    veto = ctx.vlm_gate(probe)             # a retry sends pages again: it must fit the budget too
+                    if veto:
+                        ctx.log(f"vlm({veto}): not retrying; the VLM may not send more pages for this document")
+                        vetoed = veto
+                        break
                 if d.note != "oom_downgrade":
                     transient_used += 1
                 eo = d.engine_opts if d.engine_opts is not None else eo
@@ -754,4 +770,8 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
         return _write_output(ctx, task, best, output_dir)
     for seg in store.list_segments(task_id):
         store.update_segment(seg["id"], status=SegmentStatus.failed)
+    if vetoed:
+        why = {"budget": "the daily VLM page budget is used up", "page_cap": "more pages than vlm.remote_max_pages_per_doc",
+               "disabled_remote": "the remote VLM is switched off for this run"}.get(vetoed, vetoed)
+        return _fail(ctx, ErrorKind.engine, f"vlm({vetoed}): {why}")
     return _fail(ctx, ErrorKind.engine, "all engines failed")

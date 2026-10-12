@@ -17,7 +17,6 @@ from aidoc.models import ConvertOptions, ProbeResult
 LOCAL_SUPPORTED = False
 LOCAL_UNSUPPORTED_MSG = ("vlm: the local backend is not supported on this platform yet "
                          "(see docs/superpowers/spikes/2026-10-vlm-ocr.md); use backend = \"openai\"")
-_LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
 def sanitize_model(model: str) -> str:
@@ -30,14 +29,9 @@ def endpoint_host(base_url: str) -> str:
 
 
 def is_loopback_url(base_url: str) -> bool:
-    import ipaddress
-    host = (urlsplit(base_url).hostname or "").lower()
-    if host in _LOOPBACK:
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+    """One rule for the engine, the runner and (by its shared test table) the web: runner/_vlm_net.py."""
+    from aidoc.engines.runner import _vlm_net
+    return _vlm_net.is_loopback_url(base_url)
 
 
 class VlmEngine(RunnerEngine):

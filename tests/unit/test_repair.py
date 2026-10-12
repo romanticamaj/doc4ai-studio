@@ -44,3 +44,37 @@ def test_repair_only_test_hook_keeps_the_named_engines(monkeypatch):
     assert [o[0] for o in repair_order("docling", AV, engines=ENG)] == ["vlm"]
     monkeypatch.setenv("AIDOC_REPAIR_ONLY", "mineru, vlm")
     assert [o[0] for o in repair_order("docling", AV, engines=ENG)] == ["mineru", "vlm"]
+
+
+def test_vlm_repair_gets_the_remote_timeout(tmp_path, fixtures):
+    """verifier finding 2: repair uses engine.timeout_factor like the main conversion."""
+    from types import SimpleNamespace
+
+    from aidoc.config import AidocConfig
+    from aidoc.models import ConvertOptions, ProbeResult
+    from aidoc.repair import repair_pages
+    seen = {}
+
+    class _Sess:
+        pid = 1
+
+        def convert(self, src, wd, pages, cb, *, timeout_s, segment_idx, cancel):
+            seen["timeout"] = timeout_s
+            raise RuntimeError("stop here")
+
+        def close(self):
+            pass
+
+    class _Vlm(_E):
+        def available(self): return True
+        def is_remote(self): return False
+        def engine_opts(self, opts, probe): return {}
+        def open_session(self, opts, probe, engine_opts): return _Sess()
+        def timeout_factor(self, pages, timeout): return 4321.0
+
+    ctx = SimpleNamespace(work_dir=tmp_path, work_src=fixtures / "text.pdf", opts=ConvertOptions(output_dir=tmp_path),
+                          probe=ProbeResult(kind="pdf", ext=".pdf", size=1, pages=3), config=AidocConfig(), cancel=None,
+                          cancelled=lambda: False, log=lambda s: None)
+    norm = SimpleNamespace(markdown="<!-- page: 1 -->\nx", assets=[])
+    repair_pages(ctx, {"vlm": _Vlm("vlm:local:x")}, norm, [1], "docling")
+    assert seen["timeout"] == 4321.0

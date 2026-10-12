@@ -180,3 +180,73 @@ def test_loopback_is_an_address_not_a_prefix():
     from aidoc.engines.vlm import is_loopback_url
     assert is_loopback_url("http://127.0.0.1:1/v1") and is_loopback_url("http://[::1]:1/v1") and is_loopback_url("http://localhost/v1")
     assert not is_loopback_url("http://127.evil.com/v1") and not R._is_loopback("127.evil.com:80")
+
+
+LOOPBACK_TABLE = Path(__file__).resolve().parents[2] / "web" / "src" / "features" / "settings" / "__tests__" / "loopbackCases.json"
+
+
+def test_loopback_rules_are_one_table_for_server_and_web():
+    from aidoc.engines.runner import _vlm_net
+    from aidoc.engines.vlm import is_loopback_url
+    for url, expected in json.loads(LOOPBACK_TABLE.read_text(encoding="utf-8"))["cases"]:
+        assert _vlm_net.is_loopback_url(url) is (bool(expected) if expected is not None else False), url
+        assert is_loopback_url(url) is (bool(expected) if expected is not None else False), url
+
+
+@pytest.mark.parametrize("text", ["無法忘記的那個夏天，我們在海邊。", "抱歉，我遲到了。她說。", "Unfortunately, the war began in 1914.",
+                                  "I cannot tell a lie, said George.", "Sorry, we're closed"])
+def test_ordinary_sentences_are_not_refusals(text):
+    assert R.clean_markdown(text) == (text, None)
+
+
+@pytest.mark.parametrize("text", ["I'm sorry, I can't help with that.", "抱歉，我無法辨識這張圖片。", "I'm not able to help with that.",
+                                  "Unfortunately I can't transcribe this image.", "很抱歉，我無法協助處理這個請求。"])
+def test_refusals_name_the_task(text):
+    assert R.clean_markdown(text) == ("", "refused")
+
+
+def test_errors_never_carry_the_key_or_document_text(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "sk-live-SECRET123456")
+    with FakeVlmServer({"default": "unauthorized_echo"}) as base, pytest.raises(R._proto.RunnerError) as e:
+        R.handle(_req(tmp_path, base))
+    err = capsys.readouterr().err
+    assert "sk-live-SECRET123456" not in str(e.value) + err and "Bearer sk" not in str(e.value) + err
+    assert "***" in str(e.value)
+    monkeypatch.setattr(R, "_sleep", lambda s: None)
+    with FakeVlmServer({"default": "malformed"}) as base, pytest.raises(R._proto.RunnerError) as e:
+        R.handle(_req(tmp_path, base, max_concurrent=1))
+    assert "CONFIDENTIAL PAGE TEXT" not in str(e.value) + capsys.readouterr().err
+
+
+def test_every_request_is_reported_as_it_leaves(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setattr(R, "_sleep", lambda s: None)
+    sc = {"default": "ok", "rules": [{"match": {"page": 2, "request_no": 1}, "behavior": "server_error"}],
+          "call_log": str(tmp_path / "c.jsonl")}
+    with FakeVlmServer(sc) as base:
+        R.handle(_req(tmp_path, base, max_concurrent=1))
+    events = [json.loads(line.split(" ", 1)[1]) for line in capsys.readouterr().err.splitlines()
+              if line.startswith("AIDOC_VLM_USAGE ")]
+    calls = (tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()
+    assert sum(ev.get("requests", 0) for ev in events) == len(calls) == 4
+    assert sum(ev.get("pages", 0) for ev in events) == 3 and all(ev["endpoint_host"].startswith("127.0.0.1:") for ev in events)
+
+
+def test_answered_pages_are_not_sent_again_on_a_retry(tmp_path, monkeypatch):
+    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    sc = {"default": "ok", "call_log": str(tmp_path / "c.jsonl")}
+    with FakeVlmServer(sc) as base:
+        first = R.handle(_req(tmp_path, base))
+        second = R.handle(_req(tmp_path, base))
+        other_model = R.handle(_req(tmp_path, base, model="other"))
+    assert len((tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()) == 6     # 3 + 0 + 3
+    assert Path(first["markdown_path"]).read_text(encoding="utf-8") == Path(second["markdown_path"]).read_text(encoding="utf-8")
+    assert second["vlm"]["pages_sent"] == 0 and other_model["vlm"]["pages_sent"] == 3
+
+
+def test_request_counter_is_exact_under_concurrency(tmp_path, monkeypatch):
+    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    sc = {"default": "ok", "call_log": str(tmp_path / "c.jsonl")}
+    with FakeVlmServer(sc) as base:
+        res = R.handle(_req(tmp_path, base, src=FIX / "big.pdf", max_concurrent=8, max_image_px=600))
+    assert res["vlm"]["usage"]["requests"] == len((tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()) == 45
