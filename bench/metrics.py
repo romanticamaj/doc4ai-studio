@@ -17,12 +17,14 @@ from aidoc.quality import strip_markup
 
 DROPPED_SECTION_MAX = 20
 RECOVERED_NED = 0.90
+_TAG = re.compile(r"</?[A-Za-z][^>]*>")
 _MATH = re.compile(r"\$\$.+?\$\$|\$[^$\n]+?\$|\\\[.+?\\\]|\\\(.+?\\\)", re.DOTALL)
 
 
 def plain(md: str) -> str:
-    """Markdown -> comparable text: math removed (scored separately), markup stripped."""
-    return strip_markup(_MATH.sub(" ", md))
+    """Markdown -> comparable text: math removed (scored separately), HTML tags (engines emit tables as HTML) and
+    markup stripped."""
+    return strip_markup(_TAG.sub(" ", _MATH.sub(" ", md)))
 
 
 def ned(gt: str, pred: str) -> float:

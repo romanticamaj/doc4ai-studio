@@ -12,6 +12,12 @@ def test_ned_and_cer_basics():
     assert M.ned("The quick-\nbrown", "the quick brown") == 1.0              # squash: case, hyphenation, spaces
 
 
+def test_plain_strips_html_tables_like_gfm():
+    gfm = "| A | B |\n| --- | --- |\n| 1 | 2 |"
+    html = "<table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table>"
+    assert M.ned("A B 1 2", M.plain(gfm)) == 1.0 and M.ned("A B 1 2", M.plain(html)) == 1.0
+
+
 def test_plain_strips_markup_and_math():
     assert M.ned("Title body", M.plain("## Title\n\n<!-- page: 1 -->\nbody $x^2$ ![](a.png)")) == 1.0
 
