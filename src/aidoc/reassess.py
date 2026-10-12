@@ -8,8 +8,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from aidoc.models import ProbeResult
 from aidoc.names import file_sha256
+from aidoc.output import read_sidecar
 from aidoc.quality import PAGE_CHECK_VERSION, assess
 
 FLAGS = ("page_map_incomplete", "page_quality", "unassessed")
@@ -51,6 +51,31 @@ def _source_pdf(doc: dict) -> Path | None:
     return None
 
 
+def _history(old: dict, sidecar: dict | None) -> tuple[list[dict], dict[int, str], str]:
+    """Per-page history of a document's conversion — repaired pages (`repaired_by`), pages the engine reported as
+    failed, the page-map method — from the stored quality and the sidecar (written by the conversion, never by a
+    re-grade: it still holds what an earlier re-grade wiped from the database)."""
+    sources = [(sidecar or {}).get("quality") or {}, old or {}]
+    repaired: dict[int, dict] = {}
+    failed: dict[int, str] = {}
+    for q in sources:
+        for e in q.get("pages") or []:
+            p = e.get("page")
+            if not isinstance(p, int):
+                continue
+            if e.get("repaired_by") and p not in repaired:
+                repaired[p] = {k: v for k, v in e.items() if k in ("page", "reasons", "repaired_by", "metrics")}
+            elif "page_conversion_failed" in (e.get("reasons") or []) and p not in repaired:
+                failed.setdefault(p, e.get("error") or "page conversion failed")
+    method = "legacy"
+    for q in sources:
+        m = ((q.get("page_map") or {}).get("method"))
+        if m and m != "legacy":
+            method = m
+            break
+    return [repaired[p] for p in sorted(repaired)], {p: m for p, m in failed.items() if p not in repaired}, method
+
+
 def _markdown_path(doc: dict) -> Path:
     out = Path(doc["output_dir"])
     return out / f"{out.name}.md"
@@ -72,16 +97,17 @@ def reassess_document(store, doc: dict, *, force: bool = False) -> dict | None:
         return None
     md = md_path.read_text(encoding="utf-8")
     pdf = _source_pdf(doc)
-    if pdf is not None:
-        from aidoc.probe import probe_file
-        probe = probe_file(pdf)
-        if probe.error or probe.pages != doc["pages"]:
-            probe, pdf = ProbeResult(kind="pdf", ext=".pdf", size=0, pages=doc["pages"]), None
-    else:
-        probe = ProbeResult(kind="pdf", ext=".pdf", size=0, pages=doc["pages"])
-    q = assess(md, probe, doc["pages"], pdf=pdf, page_map_method="legacy")
-    if q.page_map is not None and pdf is None:
-        q.page_map["alignment"] = None
+    if pdf is None:
+        # no original and no work copy: the page checks cannot run. Keep the old result (and its page_check), so the
+        # Library shows the document as "unassessed" instead of a fresh "ok" (verifier round)
+        return None
+    from aidoc.probe import probe_file
+    probe = probe_file(pdf)
+    if probe.error or probe.pages != doc["pages"]:
+        return None
+    repaired, failed, method = _history(old, read_sidecar(Path(doc["output_dir"])))
+    q = assess(md, probe, doc["pages"], pdf=pdf, page_map_method=method, repaired=repaired, failed_pages=failed,
+               last_resort=True)
     q.metrics = {**(old.get("metrics") or {}), **q.metrics}
     out = q.to_json()
     now = store.get_document(doc["id"])
