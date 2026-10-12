@@ -6,6 +6,13 @@
    2
   ],
   "marker_shift": 1,
+  "partial_pages": [
+   3
+  ],
+  "swapped_content_pages": [
+   2,
+   3
+  ],
   "swapped_pages": [
    2,
    3
@@ -20,6 +27,9 @@
    "exit_fail_on_warn": 1,
    "level": "warn"
   },
+  "partial.md": {
+   "exit_fail_on_warn": 1
+  },
   "shifted.md": {
    "exit": 1,
    "level": "low"
@@ -27,18 +37,23 @@
   "swapped.md": {
    "exit": 1,
    "level": "low"
+  },
+  "swapped_content.md": {
+   "exit_fail_on_warn": 1
   }
  },
  "files": [
   "control.md",
   "dropped.md",
+  "partial.md",
   "shifted.md",
-  "swapped.md"
+  "swapped.md",
+  "swapped_content.md"
  ],
  "generator": {
   "script": "make_synthetic.py",
   "seed": 98461129176015,
-  "version": 1
+  "version": 2
  },
  "gt_level": "L1",
  "kind": "verify-negative",

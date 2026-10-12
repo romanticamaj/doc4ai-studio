@@ -16,7 +16,7 @@
   "scan_degradation": "pillow+numpy (seeded)",
   "script": "make_synthetic.py",
   "seed": 196614744948518,
-  "version": 1
+  "version": 2
  },
  "gt_level": "L1",
  "kind": "text",
