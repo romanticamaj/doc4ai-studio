@@ -14,9 +14,13 @@ from tests.manual import MANIFEST, manual_sample, require_engine
 pytestmark = pytest.mark.slow
 
 MANUAL = Path(__file__).parent.parent / "fixtures" / "manual"
-LISTED = [s["name"] for s in json.loads(MANIFEST.read_text(encoding="utf-8"))]
+_SAMPLES = json.loads(MANIFEST.read_text(encoding="utf-8"))
+# "role": "labels" samples exist for the hand-judged page set (tests/integration/test_page_labels_real.py checks
+# them against their judged Markdown); they are not conversion-acceptance documents
+LISTED = [s["name"] for s in _SAMPLES if s.get("role") != "labels"]
+LABEL_SAMPLES = {s["name"] for s in _SAMPLES if s.get("role") == "labels"}
 EXTRA = sorted(p for p in MANUAL.iterdir() if p.is_file() and not p.name.startswith(".")
-               and p.name not in LISTED) if MANUAL.is_dir() else []
+               and p.name not in LISTED and p.name not in LABEL_SAMPLES) if MANUAL.is_dir() else []
 
 
 def _convert_ok(tmp_root, path: Path) -> None:
