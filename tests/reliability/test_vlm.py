@@ -165,10 +165,11 @@ def test_page_cap_and_daily_budget(tmp_root, monkeypatch, fixtures):
     tid = e.task(e.copy("span_margin.pdf"))                         # 45 pages > the 10-page cap
     assert e.run(tid) == TaskStatus.low
     assert any("vlm(page_cap)" in line for line in e.logs) and e.store.get_task(tid)["engine"] != "vlm"
-    # the "low" fake output of each 40-page segment is a 5-character page; the one whose PDF page has a prose text
-    # layer is page_dropped, the other engines' repairs give 5 characters again, so the VLM gets it: 1 budget page
+    # the "low" fake output of each segment (pages 1-40, 41-45) is one 5-character page; both PDF pages hold text, so
+    # both are page_dropped under the round-2 checks (before: only one), the other engines' repairs give 5 characters
+    # again, so the VLM gets them: 2 budget pages
     used = e.store.vlm_usage_today("openai", "127.0.0.1:9")["pages"]
-    assert used == 1
+    assert used == 2
     # per-page repair is not capped per document, only by the daily budget: 3 pages fit into the 3 left, 3 more do not
     e.scenario(default="ok", garbled_pages=[1, 2, 3], rules=STICKY)
     a = e.task(_pdf(tmp_root / "r1.pdf", fixtures, broken=3, text_pages=12), engine="docling")

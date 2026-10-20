@@ -169,7 +169,7 @@ def test_verify_checks_every_page_and_reports_page_level_reasons():
     _, secs = split_pages(_own_output(FIX / "paged_furniture.pdf"))
     secs = dict(secs)
     secs[3], secs[6] = secs[6], secs[3]
-    secs[5] = secs[5][: int(len(secs[5]) * 0.15)]
+    secs[5] = secs[5][: int(len(secs[5]) * 0.3)]          # round 2: 15 % of a short page in < 150 chars is "dropped"
     md = "".join(f"<!-- page: {p} -->\n\n{secs[p]}\n\n" for p in sorted(secs))
     r = verify_markdown(md, FIX / "paged_furniture.pdf")
     reasons = {p["page"]: p.get("reasons") for p in r.pages if p.get("reasons")}

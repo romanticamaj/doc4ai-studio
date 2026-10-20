@@ -23,9 +23,9 @@ def _md(secs: dict[int, str]) -> str:
 
 
 def _checks(md, pdf=PF):
-    layers, content = pdf_layers(pdf)
+    layers, content, body, untrusted = pdf_layers(pdf)
     pr = probe_file(pdf)
-    return {e["page"]: e for e in page_checks(md, layers, content, pr.blank_pages, pr.broken_font_pages)}
+    return {e["page"]: e for e in page_checks(md, layers, content, pr.blank_pages, untrusted, body=body)}
 
 
 def test_clean_output_has_no_page_flags():
@@ -34,7 +34,7 @@ def test_clean_output_has_no_page_flags():
 
 
 def test_running_header_and_page_number_are_not_page_content():
-    layers, content = pdf_layers(PF)
+    layers, content, _, _ = pdf_layers(PF)
     assert all("chapter2testingpages" not in c for c in content)          # the running header is gone
     assert all(len(c) < len(raw) for c, raw in zip(content, layers, strict=True) if raw)
     pages = [["Chapter 2", str(n), f"Body text of page {w} goes here", f"and {w} continues on this line"]
@@ -85,7 +85,7 @@ def test_swapped_content_under_valid_markers_is_misaligned():
 def test_partial_page_is_flagged_with_its_coverage():
     _, secs = split_pages(_own(PF))
     secs = dict(secs)
-    secs[5] = secs[5][: int(len(secs[5]) * 0.15)]
+    secs[5] = secs[5][: int(len(secs[5]) * 0.3)]
     got = _checks(_md(secs))
     assert got[5]["reasons"] == ["page_partial"] and got[5]["metrics"]["coverage"] < 0.5
     assert set(got) == {5}

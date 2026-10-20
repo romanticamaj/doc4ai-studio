@@ -112,7 +112,7 @@ def test_check_document_repairs_dropped_and_partial_pages_against_their_layer(mo
         return " ".join(f"{tag}{i}word" for i in range(40))
     p1, p2, p3, p4 = words("alpha"), words("bravo"), words("charlie"), words("delta")
     layers = [squash(x) for x in (p1, p2, p3, p4)]
-    monkeypatch.setattr(pipeline.pagemap, "pdf_layers", lambda p: (layers, layers))
+    monkeypatch.setattr(pipeline.pagemap, "pdf_layers", lambda p: (layers, layers, layers, []))
     probe = ProbeResult(kind="pdf", ext=".pdf", size=1, pages=4)
     ctx = SimpleNamespace(probe=probe, work_src=Path("x.pdf"), engines={"docling": object()}, log=lambda s: None)
     # page 2 dropped, page 3 cut to a few words, page 4's text under page 1 (page 4 empty)

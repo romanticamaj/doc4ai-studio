@@ -319,6 +319,9 @@ def test_dropped_pages_helper(fixtures):
     md = _own_md(pdf).replace("Body text of page 5", "")
     layers = pdf_text_layers(pdf)
     assert dropped_pages(md, layers, blank_pages=[4]) == []
-    empty6 = "".join(f"<!-- page: {i} -->\n\n{'' if i == 6 else 'x' * 30}\n\n" for i in range(1, 9))
+    # round 2: a section of 30 unrelated characters is dropped too (it holds none of its page's text)
+    from aidoc.pagemap import split_pages
+    _, secs = split_pages(_own_md(pdf))
+    empty6 = "".join(f"<!-- page: {i} -->\n\n{'' if i == 6 else secs[i]}\n\n" for i in sorted(secs))
     got = dropped_pages(empty6, layers, blank_pages=[4])
     assert [e["page"] for e in got] == [6] and got[0]["metrics"]["layer_chars"] == len(layers[5])

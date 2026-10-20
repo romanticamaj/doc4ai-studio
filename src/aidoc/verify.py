@@ -57,19 +57,15 @@ def _sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
-def _pdf_pass(pdf: Path) -> tuple[list[str], list[str], list[dict]]:
-    """One pass over the PDF: squashed text layers, prose layers (`pagemap.pdf_layers`) and `probe.page_features`."""
+def _pdf_pass(pdf: Path) -> tuple[pagemap.PageLayers, list[dict]]:
+    """One pass over the PDF: the page layers (`pagemap.pdf_layers`) and `probe.page_features`."""
     import pymupdf
 
     from aidoc.probe import page_features
-    layers, lines, feats = [], [], []
     with pymupdf.open(pdf) as doc:
-        for i in range(doc.page_count):
-            text = doc[i].get_text()
-            layers.append(pagemap.squash(text))
-            lines.append(text.split("\n"))
-            feats.append(page_features(doc, i, text))
-    return layers, pagemap.content_layers(lines, prose_only=True), feats
+        pl = pagemap.layers_from_lines(*pagemap.page_lines(doc))
+        feats = [page_features(doc, i, doc[i].get_text()) for i in range(doc.page_count)]
+    return pl, feats
 
 
 def _merge(entries: dict[int, dict], page: int, *, reason: str | None = None, advisory: str | None = None,
@@ -101,6 +97,8 @@ def verify_markdown(md: str, pdf: Path | None, *, pages: int | None = None, fmt:
     probe: ProbeResult
     layers: list[str] | None = None
     content: list[str] | None = None
+    body: list[str] | None = None
+    untrusted: list[int] | None = None
     pdf_info: dict | None = None
     if pdf is not None:
         pdf = Path(pdf)
@@ -113,7 +111,7 @@ def verify_markdown(md: str, pdf: Path | None, *, pages: int | None = None, fmt:
         if probe.error or not probe.pages:
             raise ValueError(f"pdf_unreadable: {probe.error or 'no pages'}")
         t = time.perf_counter()
-        layers, content, feats = _pdf_pass(pdf)
+        (layers, content, body, untrusted), feats = _pdf_pass(pdf)
         timing["layers"] = round(time.perf_counter() - t, 3)
         n = probe.pages
         pdf_info = {"path": str(pdf), "sha256": _sha256_file(pdf), "pages": n,
@@ -158,13 +156,16 @@ def verify_markdown(md: str, pdf: Path | None, *, pages: int | None = None, fmt:
                 verifiable = False
         elif pdf is not None:
             verifiable = False                  # scanned PDF, no markers: nothing to anchor on (spec §2.2)
+    elif pdf is not None and not has_layers:
+        verifiable = "partial"                  # scanned PDF with markers: marker coverage only, no page checks
 
     # ---- quality: the same model as our own conversions (no repair info: every flagged page is unrepaired)
     t = time.perf_counter()
     page_level = minfo["applied"] or (inferred is not None and verifiable is True)
     if page_level:
         q = quality.assess(md_marked, probe, n, pdf=pdf, page_map_method=fmt_eff if inferred is None else "inferred",
-                           layers=layers, content_layers=content, last_resort=True,
+                           layers=layers, content_layers=content, body_layers=body, untrusted_pages=untrusted,
+                           last_resort=True,
                            align_sample=sample if sample > 0 else n,
                            skip_page_map_reasons=inferred is not None)
         pm = dict(q.page_map or {})

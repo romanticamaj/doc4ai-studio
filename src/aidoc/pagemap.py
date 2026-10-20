@@ -14,6 +14,7 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from pathlib import Path
+from typing import NamedTuple
 
 MARKER = re.compile(r"<!-- page: (\d+) -->")
 MISSING_LIST_MAX = 200
@@ -87,6 +88,21 @@ def squash_with_map(s: str) -> tuple[str, list[int]]:
     return "".join(out), pos
 
 
+# HTML that engines write into Markdown (tables, line breaks, sub/superscripts, emphasis, links, images) — only these:
+# `<LinearLayout ...>` in an XML code listing is page text (verifier round 2: a generic tag pattern ate code pages)
+_HTML_TAG = re.compile(r"</?(?:table|thead|tbody|tfoot|tr|td|th|caption|colgroup|col|br|hr|p|div|span|sub|sup|b|i|u|"
+                       r"em|strong|s|del|ins|mark|small|big|code|pre|a|img|ul|ol|li|dl|dt|dd|h[1-6]|font|center|"
+                       r"figure|figcaption|blockquote|details|summary)(?:\s[^<>]*)?/?>", re.IGNORECASE)
+_LINK_URL = re.compile(r"\]\([^)\s]*(?:\s+\"[^\"]*\")?\)")
+
+
+def strip_tags(s: str) -> str:
+    """HTML tags engines emit (`<td>a</td><td>b</td>` -> ` a  b `), character entities (`&lt;` -> `<`) and Markdown
+    link targets (`[t](url)` -> `[t]`) removed: none of them is page text."""
+    import html
+    return html.unescape(_HTML_TAG.sub(" ", _LINK_URL.sub("]", s)))
+
+
 def squash(s: str) -> str:
     """NFKC, drop soft hyphens and line-break hyphenation, lower-case, keep only alphanumerics (any script)."""
     s = unicodedata.normalize("NFKC", s).replace("\u00ad", "").replace("-\n", "")
@@ -128,13 +144,17 @@ def content_layers(pages_lines: list[list[str]], prose_only: bool = False) -> li
             counts[k] = counts.get(k, 0) + 1
     need = max(3, FURNITURE_MIN_SHARE * len(pages_lines))
     furniture = {k for k, c in counts.items() if c >= need and k}
+    drops = [{i for i in _edges(lines) if (k := _furniture_key(lines[i])) in furniture or k == "#"}
+             for lines in pages_lines]
+    total = sum(len(squash(ln)) for lines in pages_lines for ln in lines)
+    removed = sum(len(squash(lines[i])) for lines, d in zip(pages_lines, drops, strict=True) for i in d)
+    if total and removed > FURNITURE_MAX_SHARE * total:
+        # a document that repeats its whole text (synthetic / boilerplate pages): no furniture. Judged on the whole
+        # document, not per page — a page holding only its header and footer has no content (verifier round 2: the
+        # per-page cap made header/footer-only and caption-only pages look full of text)
+        drops = [set() for _ in pages_lines]
     out = []
-    for lines in pages_lines:
-        edge = set(_edges(lines))
-        drop = {i for i in edge if (k := _furniture_key(lines[i])) in furniture or k == "#"}
-        total = sum(len(squash(ln)) for ln in lines)
-        if total and sum(len(squash(lines[i])) for i in drop) > FURNITURE_MAX_SHARE * total:
-            drop = set()          # a page repeating its whole text (synthetic / boilerplate pages): not furniture
+    for lines, drop in zip(pages_lines, drops, strict=True):
         keep = []
         for i, ln in enumerate(lines):
             if i in drop:
@@ -147,16 +167,57 @@ def content_layers(pages_lines: list[list[str]], prose_only: bool = False) -> li
     return out
 
 
-def pdf_layers(pdf: Path) -> tuple[list[str], list[str]]:
-    """(squashed text layers, squashed prose layers) in one pass. The prose layer drops the running header / footer /
-    page number and every line shorter than PROSE_LINE_MIN (labels inside drawn figures, table cells): an engine that
-    keeps a diagram as a picture has not lost the page's text."""
+TRUSTED_LAYER_MIN = 120           # squashed chars of healthy-font text a broken-font page needs to be checked
+
+
+class PageLayers(NamedTuple):
+    full: list[str]                # squashed text layer per page
+    prose: list[str]               # ... without furniture and short lines
+    body: list[str]                # ... without furniture
+    untrusted: list[int]           # pages whose layer is not their text (broken fonts, too little healthy text)
+
+
+def _is_bad(span_font: str, bad: set[str]) -> bool:
+    """PyMuPDF cuts span font names (`Droid Sans Fallback Regu` for `Droid Sans Fallback Regular`): prefix match."""
+    return bool(span_font) and any(n.startswith(span_font) or span_font.startswith(n) for n in bad)
+
+
+def page_lines(doc) -> tuple[list[list[str]], list[int]]:
+    """(text lines per page, untrusted pages). A page that uses a font without a Unicode mapping (`probe.broken_fonts`)
+    keeps only the lines of its healthy fonts: Head First marks 339 of 532 pages "broken" because of handwriting
+    annotation fonts, while its body text and code extract fine (verifier round 2). With less than
+    TRUSTED_LAYER_MIN chars of healthy text the raw text is kept and the page is untrusted."""
+    from aidoc.probe import _base_name, broken_fonts_by_page
+    broken = broken_fonts_by_page(doc)          # per page: a font name can be broken on one page, healthy on another
+    out: list[list[str]] = []
+    untrusted: list[int] = []
+    for i in range(doc.page_count):
+        lines = doc[i].get_text().split("\n")
+        if i + 1 in broken:
+            bad = broken[i + 1]
+            healthy = ["".join(sp["text"] for sp in ln["spans"] if not _is_bad(_base_name(sp["font"]), bad))
+                       for blk in doc[i].get_text("dict")["blocks"] for ln in blk.get("lines", [])]
+            if len(squash("\n".join(healthy))) >= TRUSTED_LAYER_MIN:
+                lines = healthy
+            else:
+                untrusted.append(i + 1)
+        out.append(lines)
+    return out, untrusted
+
+
+def layers_from_lines(lines: list[list[str]], untrusted: list[int]) -> PageLayers:
+    return PageLayers([squash("\n".join(ln)) for ln in lines], content_layers(lines, prose_only=True),
+                      content_layers(lines), untrusted)
+
+
+def pdf_layers(pdf: Path) -> PageLayers:
+    """(text layers, prose layers, body layers, untrusted pages) in one pass. The body layer drops the running header /
+    footer / page number; the prose layer also drops every line shorter than PROSE_LINE_MIN (labels inside drawn
+    figures, table cells): an engine that keeps a diagram as a picture has not cut the page's prose — but a full-page
+    table it kept as a picture is still a dropped page (verifier round 2, finding A: dropped uses the body layer)."""
     import pymupdf
-    texts = []
     with pymupdf.open(pdf) as doc:
-        for page in doc:
-            texts.append(page.get_text())
-    return [squash(t) for t in texts], content_layers([t.split("\n") for t in texts], prose_only=True)
+        return layers_from_lines(*page_lines(doc))
 
 
 def page_homes(md: str, layers: list[str], *, exclude: Iterable[int] = (), win: int = 24, k: int = 3,
@@ -168,10 +229,10 @@ def page_homes(md: str, layers: list[str], *, exclude: Iterable[int] = (), win: 
     excl = set(exclude)
     whole = "\0".join(layers)
     pre, chunks = _chunks(md)
-    parts, starts, owners = [squash(pre)], [0], [None]
+    parts, starts, owners = [squash(strip_tags(pre))], [0], [None]
     pos = len(parts[0])
     for page, a, b in chunks:
-        sq = squash(md[a:b])
+        sq = squash(strip_tags(md[a:b]))         # probes never matched across <td> cells (verifier round 2, B)
         starts.append(pos)
         owners.append(page)
         parts.append(sq)
