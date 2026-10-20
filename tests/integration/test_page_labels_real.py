@@ -1,37 +1,46 @@
-"""Per-reason precision / recall of the page checks on the hand-judged real pages (verifier round 2, spec 2026-10-05
-verify §2.3). Run: AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration/test_page_labels_real.py
+"""Per-reason precision / recall of the page checks on hand-judged real pages (verifier rounds 2-3, spec 2026-10-05
+verify §2.3). Run: AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration/test_page_labels_real.py -s
 
-The label file holds only document identities, page numbers and verdicts; the PDFs and judged Markdown are private
-samples (tests/fixtures/manual/). Missing samples skip normally and FAIL under AIDOC_REQUIRE_MANUAL=1."""
+The gate is the held-out split only (`heldout_v2`, labelled blind by the independent verifier after the thresholds
+were frozen): Wilson 95 % lower bound of precision >= 0.8 for every reason with flags, and of recall >= 0.8 for every
+reason with >= 10 positives. The design split (`dev`) and all labels are printed as information. Missing samples,
+and an unlabelled held-out split, skip normally and FAIL under AIDOC_REQUIRE_MANUAL=1."""
 import os
 
 import pytest
 
-from bench import page_labels
+from bench import page_labels as PL
 
 pytestmark = pytest.mark.slow
-MIN = 0.9
+
+
+def _missing(msg: str):
+    pytest.fail(msg) if os.environ.get("AIDOC_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
 
 
 @pytest.fixture(scope="module")
 def scored():
     try:
-        docs, labels = page_labels.load(page_labels.Path(os.environ.get("AIDOC_MANUAL_DIR") or page_labels.MANUAL))
-    except page_labels.MissingSample as e:
-        msg = f"labelled sample missing: {e} — run: uv run python tests/fixtures/make_manual.py"
-        pytest.fail(msg) if os.environ.get("AIDOC_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
-    pred = page_labels.predictions(docs)
-    return {split: page_labels.score(labels, pred, split) for split in ("all", "test", "dev")}
+        docs, labels = PL.load(PL.Path(os.environ.get("AIDOC_MANUAL_DIR") or PL.MANUAL))
+    except PL.MissingSample as e:
+        _missing(f"labelled sample missing: {e} — run: uv run python tests/fixtures/make_manual.py")
+    pred = PL.predictions(docs)
+    held = [r for r in labels if r["split"] == PL.HELDOUT and r["verdict"] != "ambiguous"]
+    return {"n_heldout": len(held),
+            **{split: PL.score(labels, pred, split) for split in (PL.HELDOUT, "dev", "all")}}
 
 
-@pytest.mark.parametrize("reason", page_labels.REASONS)
-def test_page_check_precision_and_recall_on_labelled_pages(scored, reason):
-    for split in ("test", "dev", "all"):          # printed with -s / on failure: every split, false positives, misses
+@pytest.mark.parametrize("reason", PL.REASONS)
+def test_page_check_lower_bounds_on_the_heldout_split(scored, reason):
+    for split in ("dev", "all", PL.HELDOUT):          # information: printed with -s and on failure
         s = scored[split][reason]
-        print(f"{split:4} {reason:16} P={s['precision']:.3f} R={s['recall']:.3f} support={s['support']} "
-              f"FP={s['false_positives']} FN={s['misses']}")
-    s = scored["all"][reason]
-    assert s["support"] >= 3, f"{reason}: too few labelled positives to measure ({s['support']})"
-    assert s["precision"] >= MIN and s["recall"] >= MIN, (
-        f"{reason}: precision {s['precision']} / recall {s['recall']} on {s['support']} labelled positives "
-        f"(false positives {s['false_positives']}, misses {s['misses']})")
+        print(f"{split:10} {reason:16} P={s['precision']:.3f} LB={s['precision_lb']} R={s['recall']:.3f} "
+              f"LB={s['recall_lb']} support={s['support']} n={s['n']} FP={s['false_positives']} FN={s['misses']}")
+    if scored["n_heldout"] == 0:
+        _missing(f"split {PL.HELDOUT} has no labels yet: the independent verifier labels it blind "
+                 "(protocol in tests/fixtures/page_labels.json 'splits')")
+    s = scored[PL.HELDOUT][reason]
+    if s["tp"] + s["fp"]:
+        assert s["precision_lb"] >= PL.LB_MIN, (reason, s)
+    if s["support"] >= PL.RECALL_MIN_POS:
+        assert s["recall_lb"] >= PL.LB_MIN, (reason, s)

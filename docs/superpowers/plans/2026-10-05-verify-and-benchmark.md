@@ -1206,3 +1206,10 @@ the spec acceptance record §10.3.
   Markdown by `test_page_labels_real.py`).
 - Final matrix: not-slow 1246 passed, 1 skipped (symlink privilege); slow 68 passed, 2 failed (the label gate:
   page_partial precision, page_oversized recall), 0 skipped; web 211 passed; build ok; e2e 11 passed.
+
+**Decision (2026-10-20, approved by the user; recorded before any re-run): calibration gate redefined** (spec §3.4).
+Computed only on rows and pages verify can judge (rows with a text layer: `verifiable is True` and not a scan; pages
+with ≥ 20 squashed text-layer chars); ρ ≥ 0.6 unchanged; page recall ≥ 0.9 and page precision ≥ 0.9 over every
+page-level reason, advisory `page_partial` excluded; scans reported separately, not gating; validated once on a
+fresh Tier A seed (never generated before) plus Tier B (L3 only: no page GT, flag counts as information); no tuning
+after the result. The `syn-dropped-pages` negatives still have to pass. Routing unchanged (user, 2026-10-20).

@@ -257,6 +257,15 @@ JSON／HTML 在 0、1、3 都會寫出；4 不寫。
 - 所有指標都在**正規化後**比較，不比 Markdown 語法；標題符號、表格管線、圖片連結、HTML 註解一律由 `quality.strip_markup()` 去掉。
 - 不加總成單一「總分」。每個類別一欄，讀者自己看。
 
+**校準閘門重新定義（2026-10-20，使用者核准；在任何重跑之前寫入）**——取代 §7 #9 的舊定義：
+
+1. 只在 `verify` 能判斷的列與頁上計算：有文字層的列（排除 `verifiable` 不為 `true` 的列與掃描檔），頁則排除沒有文字層的頁（PDF 文字層 < 20 個 squash 字元，`verify.TEXT_LAYER_MIN`）。
+2. ρ（verify 分數 vs GT 平均 NED，Spearman）≥ 0.6 不變。
+3. 頁級 recall ≥ 0.9 **且** precision ≥ 0.9；被標頁 = 每一個頁層級理由（`page_dropped`、`page_misaligned`、`page_oversized`、`broken_text_layer`、`garbage`、缺標記、失敗頁），**不含**提示性質的 `page_partial`；壞頁 = GT 頁 NED < 0.5 或 GT 缺陷頁（未修好者），與舊定義相同。
+4. 掃描檔另列報告，不參與閘門。
+5. 在沒有用來調整的資料上驗證：全新種子（從未產生過）的 Tier A，加上 Tier B。Tier B 只有 L3 正解（沒有逐頁文字），無法算 ρ 與頁級 P／R，只列旗標數供參考。
+6. 只跑一次、照實回報；看到結果後不再調整任何東西。`syn-dropped-pages` 的四個負樣本照舊報告並仍須通過。
+
 ### 3.5 Runner（`bench/run.py`，不屬於 `aidoc` 套件、不進 wheel）
 
 ```

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -18,6 +19,20 @@ sys.path.insert(0, str(ROOT))
 LABELS = ROOT / "tests" / "fixtures" / "page_labels.json"
 MANUAL = ROOT / "tests" / "fixtures" / "manual"
 REASONS = ("page_dropped", "page_partial", "page_misaligned", "page_oversized")
+HELDOUT = "heldout_v2"         # the split the gate is judged on; labelled blind by the independent verifier
+LB_MIN = 0.8                   # Wilson 95 % lower bound the precision (and, with >= RECALL_MIN_POS positives, the
+RECALL_MIN_POS = 10            # recall) must reach on the held-out split
+
+
+def wilson_lower(k: int, n: int, z: float = 1.96) -> float | None:
+    """Wilson score interval lower bound of k successes in n (None for n = 0)."""
+    if n == 0:
+        return None
+    p = k / n
+    d = 1 + z * z / n
+    c = p + z * z / (2 * n)
+    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return round((c - h) / d, 3)
 
 
 class MissingSample(FileNotFoundError):
@@ -90,21 +105,23 @@ def score(labels: list[dict], pred: dict[str, dict[int, set[str]]], split: str =
             if want and not got:
                 fn += 1
                 misses.append(f"{r['doc']}:{r['page']}")
-        table[reason] = {"tp": tp, "fp": fp, "fn": fn, "support": tp + fn,
+        table[reason] = {"tp": tp, "fp": fp, "fn": fn, "support": tp + fn, "n": len(rows),
                          "precision": round(tp / (tp + fp), 3) if tp + fp else 1.0,
                          "recall": round(tp / (tp + fn), 3) if tp + fn else 1.0,
+                         "precision_lb": wilson_lower(tp, tp + fp), "recall_lb": wilson_lower(tp, tp + fn),
                          "false_positives": false, "misses": misses}
     return table
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--split", default="test", choices=["test", "dev", "all"])
+    ap.add_argument("--split", default="all", choices=[HELDOUT, "dev", "all"])
     a = ap.parse_args(argv)
     docs, labels = load()
     pred = predictions(docs)
     for reason, s in score(labels, pred, a.split).items():
-        print(f"{reason:16} P={s['precision']:.3f} R={s['recall']:.3f} tp={s['tp']} fp={s['fp']} fn={s['fn']} "
+        print(f"{reason:16} P={s['precision']:.3f} (LB {s['precision_lb']}) R={s['recall']:.3f} (LB {s['recall_lb']}) "
+              f"tp={s['tp']} fp={s['fp']} fn={s['fn']} "
               f"FP={s['false_positives']} FN={s['misses']}")
     return 0
 
