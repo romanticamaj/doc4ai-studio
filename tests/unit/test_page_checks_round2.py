@@ -292,3 +292,20 @@ def test_check_document_does_not_repair_an_advisory_page(monkeypatch, tmp_path):
                           vlm_repair=None)
     _, q = pipeline.check_document(ctx, "docling", NormalizedResult(markdown=md, assets=[]), "fake", last_resort=True)
     assert called == [] and q.level == "ok"
+
+
+def test_code_over_a_background_picture_stays_page_text(tmp_path):
+    """Head First draws its code listings in Courier over a background picture: code counts as page text (round-3
+    policy), so monospaced lines are never figure lines."""
+    doc = pymupdf.open()
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
+    pix.clear_with(230)
+    p = doc.new_page(width=595, height=842)
+    p.insert_image(pymupdf.Rect(40, 100, 555, 600), pixmap=pix)
+    for k in range(12):
+        p.insert_text((60, 130 + 30 * k), f"public void handlerNumber{k}(View view) {{ refreshFromFeed({k}); }}",
+                      fontname="cour", fontsize=10)
+    pdf = tmp_path / "code.pdf"
+    doc.save(pdf)
+    _, prose, _, _ = pdf_layers(pdf)
+    assert "handlernumber3" in prose[0]

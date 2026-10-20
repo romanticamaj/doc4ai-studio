@@ -1,5 +1,10 @@
 {
- "about": "Hand-judged page labels for the per-page structural checks (verifier round 2, 2026-10-20). Only document identity (sha256 of the original PDF, or for a sample built from it by tests/fixtures/make_manual.py the sha256 of its text layers, and the sha256 of the judged Markdown), page numbers, expected reasons and verdicts; no document text. The PDFs and Markdown live in tests/fixtures/manual/ (never committed). Policy: page_dropped = the section holds essentially none of the page's text (at most a heading or a caption; a text-heavy diagram kept as a picture counts as its text); page_partial = it holds some, but clearly less than half of the page's prose (labels inside a figure kept as a picture are not prose); page_misaligned = most of the page's text sits under another page's marker; page_oversized = the section holds another page's text (most of that page's own text, or a whole block of it such as table rows or a paragraph that is not the continuation of a sentence across the page break); ambiguous = no clear verdict, excluded from the scores. split 'dev' = pages the checks were designed or corrected on (it includes the first and second test splits, each measured once and then seen); 'test' = pages sampled after the checks were frozen for the last time. 'note' records a relabelling and its reason.",
+ "about": "Hand-judged page labels for the per-page structural checks (verifier rounds 2-3, 2026-10-20). Only document identity (sha256 of the original PDF, or for a sample built from it by tests/fixtures/make_manual.py the sha256 of its text layers, and the sha256 of the judged Markdown), page numbers, expected reasons and verdicts; no document text. The PDFs and Markdown live in tests/fixtures/manual/ (never committed). split 'dev' = pages the checks were designed or corrected on (all three earlier test splits: each was measured once and then seen). 'note' records a relabelling and its reason.",
+ "policy": "page_dropped = the section holds essentially none of the page's text (at most a heading or a caption; a text-heavy diagram kept as a picture counts as its text). page_partial = it holds some, but clearly less than half of the page's text, where code listings, tables and body text count as page text and callouts and labels inside a figure kept as a picture do not (user decision 2026-10-20). page_misaligned = most of the page's text sits under another page's marker. page_oversized = the section holds another page's text: most of that page's own text, or a whole block of it such as table rows or a paragraph that is not the continuation of a sentence across the page break. ambiguous = no clear verdict, excluded from the scores.",
+ "splits": {
+  "dev": "design data",
+  "heldout_v2": "heldout_v2 (empty until labelled): labelled by the independent verifier, blind, after the thresholds were frozen (plan: Verifier round 3, frozen thresholds). Pages: drawn with a seed the verifier chooses, from pages not labelled here - every page the checks flag or advise on in the two books' latest Library conversions plus at least twice as many unflagged pages at random, and every page of at least two new seeded 6-page-run samples (tests/fixtures/manual_samples.json, role labels) converted with a raw engine (AIDOC_BENCH_NO_REPAIR=1). Judging: PDF text and Markdown section only, never the checker's output, by the policy above. Recording: docs by identity as above, labels with split heldout_v2. Target: >= 60 pages and >= 10 positives per reason where the data has them. Scored once, by tests/integration/test_page_labels_real.py (Wilson 95 % lower bounds)."
+ },
  "docs": {
   "ortho": {
    "pdf_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
@@ -954,84 +959,84 @@
    "page": 524,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 790,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 760,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 1151,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 440,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 674,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 857,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 445,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 875,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 50,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 574,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
    "page": 169,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",
@@ -1040,7 +1045,7 @@
     "page_oversized"
    ],
    "verdict": "misplaced",
-   "split": "test",
+   "split": "dev",
    "note": "relabelled 2026-10-20 after the check flagged it: the section also holds page 1130's whole table (verbatim rows; the judging view had been cut at 1,600 characters)"
   },
   {
@@ -1050,7 +1055,7 @@
     "page_partial"
    ],
    "verdict": "loss",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
@@ -1059,7 +1064,7 @@
     "page_partial"
    ],
    "verdict": "loss",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
@@ -1068,315 +1073,315 @@
     "page_partial"
    ],
    "verdict": "loss",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 338,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 520,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 13,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 355,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 239,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 225,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 90,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 507,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 478,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 25,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 92,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 268,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 201,
    "expected": [],
    "verdict": "ambiguous",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hf",
    "page": 328,
    "expected": [],
    "verdict": "ambiguous",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 1,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 2,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 3,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 4,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 5,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 6,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 7,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 8,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 9,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 10,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 11,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 12,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 13,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 14,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 15,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 16,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 17,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 18,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 19,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 20,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 21,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 22,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 23,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 24,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 25,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 26,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 27,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 28,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 29,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "orthomix3",
    "page": 30,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
@@ -1385,7 +1390,7 @@
     "page_dropped"
    ],
    "verdict": "loss",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
@@ -1394,7 +1399,7 @@
     "page_dropped"
    ],
    "verdict": "loss",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
@@ -1403,16 +1408,15 @@
     "page_dropped"
    ],
    "verdict": "loss",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 26,
-   "expected": [
-    "page_partial"
-   ],
-   "verdict": "loss",
-   "split": "test"
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev",
+   "note": "relabelled 2026-10-20 (round-3 policy): judged partial counting the callouts as page text; without them the section holds about half of the code and body text"
   },
   {
    "doc": "hfmix3",
@@ -1421,182 +1425,182 @@
     "page_oversized"
    ],
    "verdict": "misplaced",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 4,
    "expected": [],
    "verdict": "ambiguous",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 29,
    "expected": [],
    "verdict": "ambiguous",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 1,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 2,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 3,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 5,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 6,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 7,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 8,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 9,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 10,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 11,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 13,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 15,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 16,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 17,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 18,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 19,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 21,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 22,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 23,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 24,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 25,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 27,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "hfmix3",
    "page": 30,
    "expected": [],
    "verdict": "clean",
-   "split": "test"
+   "split": "dev"
   },
   {
    "doc": "ortho",

@@ -14,9 +14,10 @@ def test_label_file_has_identities_and_verdicts_only():
     for r in data["labels"]:
         assert set(r) <= {"doc", "page", "expected", "verdict", "split", "note"} and r["doc"] in data["docs"]
         assert set(r["expected"]) <= set(REASONS) and r["verdict"] in ("loss", "clean", "misplaced", "ambiguous")
-        assert r["split"] in ("dev", "test") and (r["doc"], r["page"]) not in keys
+        assert r["split"] in ("dev", "heldout_v2") and (r["doc"], r["page"]) not in keys
         keys.add((r["doc"], r["page"]))
     assert len(keys) >= 60
+    assert "heldout_v2" in data["splits"] and "callouts" in data["policy"]
 
 
 def test_score_counts_precision_recall_and_skips_ambiguous():
@@ -28,3 +29,9 @@ def test_score_counts_precision_recall_and_skips_ambiguous():
     s = score(labels, pred, "test")["page_dropped"]
     assert (s["tp"], s["fp"], s["fn"], s["precision"], s["recall"]) == (1, 1, 0, 0.5, 1.0)
     assert score(labels, pred, "all")["page_dropped"]["misses"] == ["a:4"]
+
+
+def test_wilson_lower_bound():
+    from bench.page_labels import wilson_lower
+    assert wilson_lower(0, 0) is None and wilson_lower(10, 10) == 0.722 and wilson_lower(50, 50) > 0.92
+    assert wilson_lower(8, 10) < 0.5

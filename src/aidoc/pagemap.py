@@ -187,6 +187,15 @@ class PageText(NamedTuple):
     figure: list[set[int]]         # per page: indices of the lines inside a picture
 
 
+_MONO_FONT = re.compile(r"(?i)courier|mono|consol|menlo|inconsolata|code|typewriter")
+
+
+def _is_mono(span: dict) -> bool:
+    """A monospaced span: code. Code listings count as page text even over a background picture (Head First draws
+    them so; round-3 policy)."""
+    return bool(span.get("flags", 0) & 8) or bool(_MONO_FONT.search(span.get("font", "")))
+
+
 def _in_rects(bbox, rects) -> bool:
     x, y = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
     return any(r[0] <= x <= r[2] and r[1] <= y <= r[3] for r in rects)
@@ -216,7 +225,7 @@ def page_lines(doc) -> PageText:
         for blk in page.get_text("dict", flags=pymupdf.TEXTFLAGS_TEXT)["blocks"]:
             for ln in blk.get("lines", []):
                 raw.append("".join(sp["text"] for sp in ln["spans"]))
-                if rects and _in_rects(ln["bbox"], rects):
+                if rects and _in_rects(ln["bbox"], rects) and not any(_is_mono(sp) for sp in ln["spans"]):
                     fig.add(len(raw) - 1)
                 healthy.append("".join(sp["text"] for sp in ln["spans"] if not span_is_broken(sp, bad, mixed)))
         lines = raw
