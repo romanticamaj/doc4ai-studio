@@ -27,6 +27,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
+from aidoc.quality import PAGE_REASONS
 from bench import metrics as M
 from bench.gpu_sampler import Sampler
 
@@ -37,7 +38,9 @@ BOOK = "syn-book-1200"
 BOOK_CONFIGS = {"auto", "mineru"}              # spec §3.5: the 1,200-page book runs only these
 TIER_C_CONFIGS = {"auto"}
 WARMUP_SAMPLE = ROOT / "bench" / "corpus" / "small" / "syn-text-en" / "syn-text-en.pdf"
-FLAG_REASONS = {"page_dropped", "broken_text_layer", "garbage", "page_map_missing", "page_conversion_failed"}
+# every page-level reason verify can give (verifier round 2: the set was not updated when page_partial,
+# page_misaligned and page_oversized joined the page checks, so the gate missed them; corrected, not re-defined)
+FLAG_REASONS = {"broken_text_layer", "garbage", "page_map_missing", "page_conversion_failed", *PAGE_REASONS}
 
 
 @dataclass
