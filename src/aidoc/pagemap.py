@@ -133,11 +133,13 @@ def _edges(lines: list[str]) -> list[int]:
     return sorted(set(idx[:FURNITURE_EDGE_LINES] + idx[-FURNITURE_EDGE_LINES:]))
 
 
-def content_layers(pages_lines: list[list[str]], prose_only: bool = False) -> list[str]:
+def content_layers(pages_lines: list[list[str]], prose_only: bool = False,
+                   skip: list[set[int]] | None = None) -> list[str]:
     """Squashed page text without its running header / footer and page number: lines among the first / last
     FURNITURE_EDGE_LINES of a page whose digit-normalised form recurs at those positions on many pages, plus edge
     lines that are only a number. A figure page whose text is just the header, the page number and a caption must
-    not look like a page full of text."""
+    not look like a page full of text. `prose_only` also leaves out lines shorter than PROSE_LINE_MIN and the lines
+    in `skip` (per page: lines inside a picture - labels and callouts on a screenshot or figure)."""
     counts: dict[str, int] = {}
     for lines in pages_lines:
         for k in {_furniture_key(lines[i]) for i in _edges(lines)}:
@@ -154,10 +156,11 @@ def content_layers(pages_lines: list[list[str]], prose_only: bool = False) -> li
         # per-page cap made header/footer-only and caption-only pages look full of text)
         drops = [set() for _ in pages_lines]
     out = []
-    for lines, drop in zip(pages_lines, drops, strict=True):
+    for n, (lines, drop) in enumerate(zip(pages_lines, drops, strict=True)):
+        fig = skip[n] if skip is not None and n < len(skip) else set()
         keep = []
         for i, ln in enumerate(lines):
-            if i in drop:
+            if i in drop or (prose_only and i in fig):
                 continue
             sq = squash(ln)
             if prose_only and len(sq) < PROSE_LINE_MIN:
@@ -168,53 +171,76 @@ def content_layers(pages_lines: list[list[str]], prose_only: bool = False) -> li
 
 
 TRUSTED_LAYER_MIN = 120           # squashed chars of healthy-font text a broken-font page needs to be checked
+FIGURE_AREA_MIN = 0.02            # a picture covering at least this share of the page is a figure region
 
 
 class PageLayers(NamedTuple):
     full: list[str]                # squashed text layer per page
-    prose: list[str]               # ... without furniture and short lines
+    prose: list[str]               # ... without furniture, short lines and lines inside pictures
     body: list[str]                # ... without furniture
     untrusted: list[int]           # pages whose layer is not their text (broken fonts, too little healthy text)
 
 
-def _is_bad(span_font: str, bad: set[str]) -> bool:
-    """PyMuPDF cuts span font names (`Droid Sans Fallback Regu` for `Droid Sans Fallback Regular`): prefix match."""
-    return bool(span_font) and any(n.startswith(span_font) or span_font.startswith(n) for n in bad)
+class PageText(NamedTuple):
+    lines: list[list[str]]
+    untrusted: list[int]
+    figure: list[set[int]]         # per page: indices of the lines inside a picture
 
 
-def page_lines(doc) -> tuple[list[list[str]], list[int]]:
-    """(text lines per page, untrusted pages). A page that uses a font without a Unicode mapping (`probe.broken_fonts`)
-    keeps only the lines of its healthy fonts: Head First marks 339 of 532 pages "broken" because of handwriting
-    annotation fonts, while its body text and code extract fine (verifier round 2). With less than
-    TRUSTED_LAYER_MIN chars of healthy text the raw text is kept and the page is untrusted."""
-    from aidoc.probe import _base_name, broken_fonts_by_page
-    broken = broken_fonts_by_page(doc)          # per page: a font name can be broken on one page, healthy on another
+def _in_rects(bbox, rects) -> bool:
+    x, y = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
+    return any(r[0] <= x <= r[2] and r[1] <= y <= r[3] for r in rects)
+
+
+def page_lines(doc) -> PageText:
+    """Text lines per page, untrusted pages, figure lines. A page that uses a font without a Unicode mapping
+    (`probe.font_status`) keeps only its healthy-font text: Head First marks hundreds of pages "broken" because of
+    handwriting annotation fonts, while its body text and code extract fine (verifier round 2). With less than
+    TRUSTED_LAYER_MIN chars of healthy text the raw text is kept and the page is untrusted. Lines whose centre lies
+    in a picture of at least FIGURE_AREA_MIN of the page are figure lines: labels and callouts on a figure kept as a
+    picture are not page prose (verifier round 3 policy); text drawn as vectors cannot be told apart that cheaply."""
+    import pymupdf
+
+    from aidoc.probe import font_status, span_is_broken
+    broken = font_status(doc)                   # per page: a font name can be broken on one page, healthy on another
     out: list[list[str]] = []
     untrusted: list[int] = []
+    figure: list[set[int]] = []
     for i in range(doc.page_count):
-        lines = doc[i].get_text().split("\n")
-        if i + 1 in broken:
-            bad = broken[i + 1]
-            healthy = ["".join(sp["text"] for sp in ln["spans"] if not _is_bad(_base_name(sp["font"]), bad))
-                       for blk in doc[i].get_text("dict")["blocks"] for ln in blk.get("lines", [])]
+        page = doc[i]
+        area = abs(page.rect.width * page.rect.height) or 1.0
+        rects = [im["bbox"] for im in page.get_image_info()
+                 if abs((im["bbox"][2] - im["bbox"][0]) * (im["bbox"][3] - im["bbox"][1])) >= FIGURE_AREA_MIN * area]
+        bad, mixed = broken.get(i + 1, (set(), set()))
+        raw, healthy, fig = [], [], set()
+        for blk in page.get_text("dict", flags=pymupdf.TEXTFLAGS_TEXT)["blocks"]:
+            for ln in blk.get("lines", []):
+                raw.append("".join(sp["text"] for sp in ln["spans"]))
+                if rects and _in_rects(ln["bbox"], rects):
+                    fig.add(len(raw) - 1)
+                healthy.append("".join(sp["text"] for sp in ln["spans"] if not span_is_broken(sp, bad, mixed)))
+        lines = raw
+        if bad:
             if len(squash("\n".join(healthy))) >= TRUSTED_LAYER_MIN:
                 lines = healthy
             else:
                 untrusted.append(i + 1)
         out.append(lines)
-    return out, untrusted
+        figure.append(fig)
+    return PageText(out, untrusted, figure)
 
 
-def layers_from_lines(lines: list[list[str]], untrusted: list[int]) -> PageLayers:
-    return PageLayers([squash("\n".join(ln)) for ln in lines], content_layers(lines, prose_only=True),
+def layers_from_lines(lines: list[list[str]], untrusted: list[int], figure: list[set[int]] | None = None) -> PageLayers:
+    return PageLayers([squash("\n".join(ln)) for ln in lines], content_layers(lines, prose_only=True, skip=figure),
                       content_layers(lines), untrusted)
 
 
 def pdf_layers(pdf: Path) -> PageLayers:
     """(text layers, prose layers, body layers, untrusted pages) in one pass. The body layer drops the running header /
     footer / page number; the prose layer also drops every line shorter than PROSE_LINE_MIN (labels inside drawn
-    figures, table cells): an engine that keeps a diagram as a picture has not cut the page's prose — but a full-page
-    table it kept as a picture is still a dropped page (verifier round 2, finding A: dropped uses the body layer)."""
+    figures, table cells) and the lines inside pictures: an engine that keeps a diagram as a picture has not cut the
+    page's prose — but a full-page table it kept as a picture is still a dropped page (verifier round 2, finding A:
+    dropped uses the body layer)."""
     import pymupdf
     with pymupdf.open(pdf) as doc:
         return layers_from_lines(*page_lines(doc))

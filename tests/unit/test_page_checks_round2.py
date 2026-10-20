@@ -198,7 +198,63 @@ def test_broken_font_spans_are_left_out_of_the_layer():
     round 2). The fixture's broken Type0 lines (shift-cipher garbage) are gone, its Helvetica lines stay."""
     from aidoc.pagemap import page_lines
     with pymupdf.open(Path(__file__).resolve().parents[1] / "fixtures" / "broken_tounicode.pdf") as d:
-        lines, untrusted = page_lines(d)
+        lines, untrusted, _ = page_lines(d)
         raw = d[0].get_text()
     assert "8PVMEO" in raw and not any("8PVMEO" in ln for ln in lines[0])
     assert any("Normal Helvetica line 1" in ln for ln in lines[0]) and untrusted == []
+
+
+def _shift(s: str, k: int = 29) -> str:
+    return "".join(chr(ord(c) - k) if c.isalpha() and ord(c) - k > 32 else c for c in s)
+
+
+def test_shifted_cipher_text_layer_is_untrusted_not_partial(tmp_path):
+    """Verifier round 3: a text layer drawn through a wrong Unicode map (a shifted cipher of the real text) gave
+    coverage 0.0 and 34 false page_partial flags on the synthetic broken-font samples while the Markdown was right.
+    A page whose layer reads far less like the document's language than its own section is untrusted: no coverage
+    checks there."""
+    from aidoc.quality import language_gap, untrusted_layers
+    pages = [_text_page(i) for i in range(1, 7)]
+    pdf = _pdf(tmp_path, pages)
+    layers, content, body, untrusted = pdf_layers(pdf)
+    secs = _own(pages)
+    md = "".join(f"<!-- page: {p} -->\n\n{secs[p]}\n\n" for p in sorted(secs))
+    from aidoc.pagemap import squash
+    cipher = squash(_shift(" ".join(pages[2])))
+    layers2 = list(layers)
+    layers2[2] = cipher
+    content2, body2 = list(content), list(body)
+    content2[2] = body2[2] = cipher
+    assert language_gap(md, layers2)[3] > 1.5 and language_gap(md, layers)[3] < 0.5
+    assert untrusted_layers(md, layers2) == {3}
+    got = {e["page"]: e for e in page_checks(md, layers2, content2, (), untrusted, body=body2)}
+    assert got == {}
+
+
+def test_callouts_on_a_picture_are_not_page_prose(tmp_path):
+    """Verifier round 3 policy: code listings, tables and body text count as page text for page_partial; callouts
+    and labels inside a figure kept as a picture do not. Lines whose centre lies in a picture are left out of the
+    prose layer (they stay in the body layer, which page_dropped uses)."""
+    doc = pymupdf.open()
+    body = [_sentence(500 + i) for i in range(6)]
+    callouts = [f"This callout explains detail number {i} of the screenshot above it" for i in range(8)]
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
+    pix.clear_with(200)
+    for n in range(3):
+        p = doc.new_page(width=595, height=842)
+        y = 60
+        for ln in body:
+            p.insert_text((50, y), ln + f" {n}", fontsize=9)
+            y += 13
+        if n == 1:
+            p.insert_image(pymupdf.Rect(50, 200, 545, 700), pixmap=pix)
+            for k, c in enumerate(callouts):
+                p.insert_text((70, 240 + 50 * k), c, fontsize=10)
+    pdf = tmp_path / "callouts.pdf"
+    doc.save(pdf)
+    layers, prose, body_l, untrusted = pdf_layers(pdf)
+    assert "callout" not in prose[1] and "callout" in body_l[1]
+    md = "".join(f"<!-- page: {n + 1} -->\n\n" + "\n".join(ln + f" {n}" for ln in body) + "\n\n![](a.png)\n\n"
+                 for n in range(3))
+    got = {e["page"]: e for e in page_checks(md, layers, prose, (), untrusted, body=body_l)}
+    assert 2 not in got

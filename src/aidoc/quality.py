@@ -2,6 +2,7 @@
 fixtures."""
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from collections.abc import Iterable
@@ -51,6 +52,10 @@ MOVED_MIN = 0.3                # an (almost) empty section (< DROPPED_COVERAGE_M
 NEIGHBOUR_PAGES = 4            # n-gram "elsewhere" search radius; the probes (page_homes) search the whole Markdown
 DISTINCT_PAGES = 8             # "elsewhere" counts only a page's n-grams found on no other page within this radius ...
 DISTINCT_MIN = 40              # ... and decides nothing with fewer of them
+GIB_GAP = 1.5                  # bits per bigram a section may read better than its layer before the layer is untrusted
+GIB_LAYER_MIN = 120            # layer / section characters needed to compare them
+GIB_SECTION_MIN = 60
+GIB_VOCAB = 1600               # add-0.5 smoothing vocabulary of the bigram model
 MISALIGNED_MIN_PROBES = 2      # a page is page_misaligned when at least this many of its probes sit elsewhere
 PAGE_REASONS = ("page_dropped", "page_partial", "page_misaligned", "page_oversized")
 VLM_OVERLAP_MIN = 0.2          # VLM spec §7: advisory only (collect numbers; never changes level or score)
@@ -237,6 +242,50 @@ def _excess_cover(sec: dict[str, int], own: dict[str, int], layer: dict[str, int
     return round(hit / total, 4)
 
 
+def _bigram_counts(t: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for i in range(len(t) - 1):
+        g = t[i:i + 2]
+        out[g] = out.get(g, 0) + 1
+    return out
+
+
+def _lm_score(t: str, lm: dict[str, int], n: int, ex: dict[str, int], n_ex: int) -> float:
+    """Mean log2 probability of t's character bigrams under the document's bigram model minus `ex` (leave-one-out:
+    a section must not be scored by a model trained on itself)."""
+    v = GIB_VOCAB
+    return sum(math.log2((lm.get(t[i:i + 2], 0) - ex.get(t[i:i + 2], 0) + 0.5) / (n - n_ex + 0.5 * v))
+               for i in range(len(t) - 1)) / (len(t) - 1)
+
+
+def language_gap(md: str, layers: list[str]) -> dict[int, float]:
+    """{page: how many bits per character bigram the page's own section reads more like the document than its text
+    layer does} for pages with GIB_LAYER_MIN layer and GIB_SECTION_MIN section characters. The model is the
+    document's own Markdown (character bigrams, leave-one-out), so it works for any script."""
+    _, secs = pagemap.split_pages(md)
+    texts = {p: section_text(t) for p, t in secs.items()}
+    lm: dict[str, int] = {}
+    for t in texts.values():
+        for g, c in _bigram_counts(t).items():
+            lm[g] = lm.get(g, 0) + c
+    n = sum(lm.values())
+    out: dict[int, float] = {}
+    for p, lay in enumerate(layers, 1):
+        st = texts.get(p, "")
+        if len(lay) < GIB_LAYER_MIN or len(st) < GIB_SECTION_MIN:
+            continue
+        ex = _bigram_counts(st)
+        n_ex = sum(ex.values())
+        out[p] = round(_lm_score(st, lm, n, ex, n_ex) - _lm_score(lay, lm, n, ex, n_ex), 3)
+    return out
+
+
+def untrusted_layers(md: str, layers: list[str]) -> set[int]:
+    """Pages whose text layer looks like a shifted cipher or gibberish next to their own section (a wrong Unicode
+    map: verifier round 3, 34 false page_partial flags on the synthetic broken-font samples): GIB_GAP bits or more."""
+    return {p for p, g in language_gap(md, layers).items() if g >= GIB_GAP}
+
+
 def page_checks(md: str, layers: list[str], content: list[str], blank_pages: Iterable[int] = (),
                 broken_font_pages: Iterable[int] = (), *, body: list[str] | None = None) -> list[dict]:
     """Per-page structural checks against the PDF text layer (spec 2026-10-05 verify §2.3, verifier rounds 1-2).
@@ -265,6 +314,7 @@ def page_checks(md: str, layers: list[str], content: list[str], blank_pages: Ite
     n = len(layers)
     body = body if body is not None and len(body) == n else layers
     blank, broken = set(blank_pages), set(broken_font_pages)
+    broken |= untrusted_layers(md, layers)        # wrong Unicode map: the layer is not the page's text
     texts = {p: section_text(s) for p, s in secs.items()}
     sec_g = {p: _grams(t) for p, t in texts.items()}
     own_g: dict[int, dict[str, int]] = {}
