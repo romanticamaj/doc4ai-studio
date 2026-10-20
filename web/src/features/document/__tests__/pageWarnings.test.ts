@@ -47,3 +47,18 @@ test("partial, misaligned and oversized pages are named", () => {
   expect(w.get(5)).toEqual({ text: "第 5 頁：含有其他頁（第 3 頁）的文字", tone: "warn" });
   expect(w.get(7)).toEqual({ text: "第 7 頁：只轉出部分文字，已用 OCR 修復", tone: "info" });
 });
+
+test("page_partial is an advisory note: shown as info, never warn", () => {
+  const w = pageWarnings({
+    score: 1, level: "ok", reasons: [],
+    pages: [
+      { page: 4, reasons: [], advisories: ["page_partial"], metrics: { coverage: 0.3 } },
+      { page: 5, reasons: ["page_oversized"], advisories: ["page_partial"], metrics: { foreign_pages: [6], coverage: 0.4 } },
+      { page: 8, advisories: ["vlm_low_overlap"] },
+    ],
+  } as never);
+  expect(w.get(4)).toEqual({ text: "第 4 頁：可能只轉出這頁約 30% 的文字（提示，不影響品質等級）", tone: "info" });
+  expect(w.get(5)?.tone).toBe("warn");
+  expect(w.get(5)?.text).toContain("可能只轉出這頁約 40% 的文字");
+  expect(w.has(8)).toBe(false);
+});

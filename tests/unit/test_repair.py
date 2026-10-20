@@ -125,7 +125,7 @@ def test_check_document_repairs_dropped_and_partial_pages_against_their_layer(mo
     assert seen["pages"] == [2, 3] and set(seen["layers"]) == {2, 3} and seen["layers"][2] == layers[1]
 
 
-def test_a_dropped_page_is_repaired_against_its_body_layer_a_partial_one_against_its_prose(monkeypatch):
+def test_a_dropped_page_is_repaired_against_its_body_layer_a_partial_one_not_at_all(monkeypatch):
     """Verifier round 2 (Ortho p779 in the reconversion): a repair accepted against the prose layer was rejected by the
     final check, which judges page_dropped on the body layer. A dropped page's repair must cover its body layer."""
     from pathlib import Path
@@ -154,6 +154,5 @@ def test_a_dropped_page_is_repaired_against_its_body_layer_a_partial_one_against
         pipeline.check_document(ctx, "docling", NormalizedResult(markdown=md, assets=[]), "fake", last_resort=True)
     except RuntimeError:
         pass
-    assert seen["pages"] == [2, 3]
+    assert seen["pages"] == [2]                         # page 3 is partial: an advisory, never repaired (round 3)
     assert seen["layers"][2] == body[1]                 # dropped: body layer
-    assert seen["layers"][3] == full[2]                 # partial: prose layer

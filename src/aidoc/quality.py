@@ -36,7 +36,9 @@ SHIFT_HITS_MIN = 3
 # 3: page_partial / page_misaligned / page_oversized, history carried over, no stamp without a PDF
 # 4: verifier round 2 - dropped on the body layer, n-gram coverage, text found elsewhere (tags stripped), hosts need
 #    two probes, furniture judged per document, link URLs stripped, repairs re-validated
-PAGE_CHECK_VERSION = 4
+# 5: verifier round 3 - page_partial advisory, broken fonts per page by share (no symbol fonts), wrong-Unicode-map
+#    guard, figure lines out of the prose layer
+PAGE_CHECK_VERSION = 5
 DROPPED_LAYER_MIN = 120        # squashed prose-layer chars a page needs before an empty section means "dropped" ...
 DROPPED_BODY_MIN = 300         # ... or body-layer chars (full-page tables, text-heavy diagrams: short lines only)
 DROPPED_SECTION_MAX = 20       # squashed chars (markup stripped) below which a section counts as empty
@@ -57,7 +59,10 @@ GIB_LAYER_MIN = 120            # layer / section characters needed to compare th
 GIB_SECTION_MIN = 60
 GIB_VOCAB = 1600               # add-0.5 smoothing vocabulary of the bigram model
 MISALIGNED_MIN_PROBES = 2      # a page is page_misaligned when at least this many of its probes sit elsewhere
-PAGE_REASONS = ("page_dropped", "page_partial", "page_misaligned", "page_oversized")
+PAGE_REASONS = ("page_dropped", "page_misaligned", "page_oversized")   # level-raising per-page check reasons
+# page_partial is an advisory (verifier round 3: blind relabel kappa 0.29): shown per page, never raises the level,
+# never triggers repair or engine fallback, until it passes on a fresh held-out set
+PAGE_ADVISORIES = ("page_partial",)
 VLM_OVERLAP_MIN = 0.2          # VLM spec §7: advisory only (collect numbers; never changes level or score)
 VLM_OVERLAP_MIN_LAYER = 120    # squashed text-layer chars a page needs before the overlap means anything
 SHIFT = 29                     # TrueType standard Mac glyph order: glyph id = char code - 29 (glyph 3 = space)
@@ -370,6 +375,7 @@ def page_checks(md: str, layers: list[str], content: list[str], blank_pages: Ite
         chars = len(texts[p])
         hosts = sorted(foreign.get(p, ()))
         reasons: list[str] = []
+        advisories: list[str] = []
         metrics: dict = {"layer_chars": len(layer), "section_chars": chars}
         if p not in blank:
             textful = len(prose) >= DROPPED_LAYER_MIN or len(bl) >= DROPPED_BODY_MIN
@@ -382,13 +388,15 @@ def page_checks(md: str, layers: list[str], content: list[str], blank_pages: Ite
             elif p not in broken and len(prose) >= DROPPED_LAYER_MIN:
                 cov = coverage(secs[p], prose)
                 if cov is not None and cov < PARTIAL_COVERAGE_MIN:
-                    reasons.append("page_partial")
+                    advisories.append("page_partial")       # advisory (verifier round 3): shown, never level-raising
                     metrics.update(coverage=cov)
         if hosts:
             reasons.append("page_oversized")
             metrics["foreign_pages"] = hosts
-        if reasons:
+        if reasons or advisories:
             entries[p] = {"page": p, "reasons": reasons, "metrics": metrics}
+            if advisories:
+                entries[p]["advisories"] = advisories
     return [entries[p] for p in sorted(entries)]
 
 
@@ -494,8 +502,12 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
         else:
             by_page[p] = {"page": p, "reasons": ["page_conversion_failed"], "error": msg}
     # pages lost, cut, moved or swollen without the engine saying so; not in the quick segment check
+    advisory: list[dict] = []                   # advisory-only pages (page_partial): shown, never counted
     for p, e in checks.items():
         if p in repaired_pages or p > pages:
+            continue
+        if not e["reasons"]:
+            advisory.append(e)
             continue
         if p in by_page:
             if "repair_rejected" in e:
@@ -505,7 +517,7 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
             by_page[p] = e
     flagged = [by_page[p] for p in sorted(by_page)]
     missing = [{"page": p, "reasons": ["page_map_missing"]} for p in pm["missing"]]
-    entries = sorted(flagged + repaired + missing, key=lambda e: e["page"])
+    entries = sorted(flagged + repaired + missing + advisory, key=lambda e: e["page"])
     n_flagged = flagged_before if flagged_before is not None else len(flagged) + len(repaired)
     effective = max(1, pages - len(probe.blank_pages))
     # pages_flagged means "this engine is wrong for the file: use another one". With no engine left (forced engine or
@@ -513,7 +525,7 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     still_broken = sum(1 for e in flagged if not e.get("repaired_by"))
     if not quick and (still_broken if last_resort else n_flagged) > FLAGGED_MAX_RATIO * effective:
         reasons.append("pages_flagged")
-    unrepaired = sum(1 for e in entries if not e.get("repaired_by"))
+    unrepaired = sum(1 for e in entries if e.get("reasons") and not e.get("repaired_by"))
     # missing pages beyond the listed 200 still count as unrepaired
     unrepaired += max(0, (pm["expected"] - pm["found"]) - len(pm["missing"]))
     level = "low" if reasons else ("warn" if unrepaired else "ok")
