@@ -70,8 +70,20 @@ def test_blank_pages_counted_on_every_page_not_just_the_sample(tmp_path):
 
 
 def test_broken_tounicode_fonts_detected(fixtures):
+    """Page 1 has three lines in the broken font; page 2 uses it only for a one-character footer: below
+    BROKEN_SHARE_MIN, so not a broken-font page (verifier round 3: decided per page by broken-character share)."""
     p = probe_file(fixtures / "broken_tounicode.pdf")
-    assert p.broken_font_pages == [1, 2] and len(p.broken_fonts) == 1
+    assert p.broken_font_pages == [1] and len(p.broken_fonts) == 1
+
+
+def test_symbol_and_dingbat_fonts_are_not_broken_fonts():
+    """Verifier round 3: Webdings alone put 248 Head First pages on the broken-font list."""
+    from aidoc.probe import is_symbol_font
+    for name in ("Webdings", "ABCDEF+Wingdings-Regular", "Wingdings2", "Symbol", "ZapfDingbats", "ITCZapfDingbats",
+                 "MT-Extra", "Marlett"):
+        assert is_symbol_font(name), name
+    for name in ("ArialMT", "SkippySharp", "Droid Sans Fallback Regular", "CourierNewPSMT"):
+        assert not is_symbol_font(name), name
 
 
 def test_normal_pdfs_have_no_broken_fonts(fixtures):

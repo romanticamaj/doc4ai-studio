@@ -69,7 +69,8 @@ def test_broken_variant_has_glyph_id_layer_on_defect_pages(corpus):
         assert set(pr.broken_font_pages) == set(gt["defects"]["broken_text_layer_pages"]) and pr.broken_fonts, v
     gt_c = json.loads((corpus / "syn-broken-tounicode-c" / "gt.json").read_text(encoding="utf-8"))
     pr_c = probe_file(corpus / "syn-broken-tounicode-c" / "syn-broken-tounicode-c.pdf")
-    assert gt_c["defects"]["broken_text_layer_pages"] == [] and pr_c.broken_font_pages == [1, 2, 3]   # footer only
+    # the broken font only in the footers: below BROKEN_SHARE_MIN, no broken-font page (verifier round 3)
+    assert gt_c["defects"]["broken_text_layer_pages"] == [] and pr_c.broken_font_pages == []
 
 
 def test_tables_and_formulas_have_ground_truth(corpus):

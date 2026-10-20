@@ -8,6 +8,7 @@ Final thresholds (validated on tests/fixtures):
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pymupdf as fitz
@@ -162,36 +163,96 @@ def _base_name(name: str) -> str:
     return name
 
 
+# symbol / dingbat fonts draw pictures, not words: no Unicode map is expected (Head First: Webdings alone put 248 pages
+# on the list, median broken share 0.002 - verifier round 3)
+SYMBOL_FONT = re.compile(r"(?i)webdings|wingdings|dingbat|zapf|symbol|marlett|mt[ -]?extra|wp ?icons|fontawesome")
+BROKEN_SHARE_MIN = 0.02        # a page counts as broken-font when at least this share of its characters are in one
+
+
+def is_symbol_font(name: str) -> bool:
+    return bool(SYMBOL_FONT.search(name or ""))
+
+
+def span_font_matches(span_font: str, names) -> bool:
+    """Span font names differ from the font dictionary's: PyMuPDF cuts them (`Droid Sans Fallback Regu`) and some
+    PDFs spell them differently (`NotoSansCJKtc-Regular` for `Noto Sans CJK TC Regular`): compared lower-case,
+    letters and digits only, by prefix. A page embedding the same name twice (one broken, one healthy) cannot be
+    told apart by name: both count as broken."""
+    f = _font_key(_base_name(span_font or ""))
+    return bool(f) and any((k := _font_key(n)).startswith(f) or f.startswith(k) for n in names)
+
+
+def _font_key(name: str) -> str:
+    return "".join(c for c in name.lower() if c.isalnum())
+
+
 def broken_fonts(doc) -> tuple[list[str], list[int]]:
     """Fonts whose text cannot be mapped to Unicode (spec 2026-10-01 §5.5): type `Type0` or an `Identity`
-    encoding, and no `/ToUnicode` in the font dictionary. Scans every page; returns (sorted unique names,
-    sorted 1-based pages that use one). Results are cached per font xref."""
-    by_page = broken_fonts_by_page(doc)
-    return sorted(set().union(*by_page.values())) if by_page else [], sorted(by_page)
+    encoding, and no `/ToUnicode` in the font dictionary, symbol / dingbat fonts left out. Returns (sorted unique
+    names, sorted 1-based pages where at least BROKEN_SHARE_MIN of the characters are broken - decided per page,
+    verifier round 3). Results are cached per font xref."""
+    status = font_status(doc)
+    pages = [p for p, st in sorted(status.items()) if broken_share(doc[p - 1], *st) >= BROKEN_SHARE_MIN]
+    return sorted(set().union(*(status[p][0] for p in pages))) if pages else [], pages
 
 
-def broken_fonts_by_page(doc) -> dict[int, set[str]]:
-    """{1-based page: names of the broken fonts (see `broken_fonts`) that page uses}. Per xref: one book can embed a
-    font name twice, once without and once with a Unicode map (Head First: ArialMT)."""
+def _unmapped(text: str) -> int:
+    return sum(1 for c in text if c == "\ufffd" or (ord(c) < 32 and not c.isspace()) or 0xE000 <= ord(c) <= 0xF8FF)
+
+
+def span_is_broken(span: dict, names, mixed=()) -> bool:
+    """A text span drawn in one of the page's broken fonts. When the page embeds the same font name twice (one copy
+    broken, one healthy: `mixed`), only a span with >= 10 % unmapped characters (U+FFFD, controls, private use)
+    counts: the name cannot tell the two copies apart (glyph-id text carries U+0001 for spaces, real text never)."""
+    if not span_font_matches(span.get("font", ""), names):
+        return False
+    if span_font_matches(span.get("font", ""), mixed):
+        k = sum(1 for c in span["text"] if not c.isspace())
+        return bool(k) and _unmapped(span["text"]) * 10 >= k
+    return True
+
+
+def broken_share(page, names, mixed=()) -> float:
+    """Share of the page's characters (non-space) in broken spans (`span_is_broken`)."""
+    total = bad = 0
+    for blk in page.get_text("dict")["blocks"]:
+        for ln in blk.get("lines", []):
+            for sp in ln["spans"]:
+                k = sum(1 for c in sp["text"] if not c.isspace())
+                total += k
+                if span_is_broken(sp, names, mixed):
+                    bad += k
+    return bad / total if total else 0.0
+
+
+def font_status(doc) -> dict[int, tuple[set[str], set[str]]]:
+    """{1-based page: (names of the broken, non-symbol fonts it uses, those of them it also embeds as a healthy
+    copy)}, whatever their share. Per xref: one book can embed a font name twice, once without and once with a
+    Unicode map (Head First: ArialMT; the synthetic broken samples: Noto Sans CJK TC)."""
     cache: dict[int, bool] = {}
-    out: dict[int, set[str]] = {}
+    out: dict[int, tuple[set[str], set[str]]] = {}
     for i in range(doc.page_count):
-        names: set[str] = set()
+        bad: set[str] = set()
+        good: set[str] = set()
         for f in doc[i].get_fonts():
             xref, ftype, basefont, enc = f[0], str(f[2]), str(f[3]), str(f[5])
             if xref not in cache:
                 broken = False
-                if ftype == "Type0" or "Identity" in enc:
+                if (ftype == "Type0" or "Identity" in enc) and not is_symbol_font(basefont):
                     try:
                         broken = doc.xref_get_key(xref, "ToUnicode")[0] == "null"
                     except Exception:  # noqa: BLE001  a damaged font object is not our signal
                         broken = False
                 cache[xref] = broken
-            if cache[xref]:
-                names.add(_base_name(basefont))
-        if names:
-            out[i + 1] = names
+            (bad if cache[xref] else good).add(_base_name(basefont))
+        if bad:
+            out[i + 1] = (bad, {n for n in bad if _font_key(n) in {_font_key(g) for g in good}})
     return out
+
+
+def broken_fonts_by_page(doc) -> dict[int, set[str]]:
+    """{1-based page: broken font names it uses} (see `font_status`)."""
+    return {p: st[0] for p, st in font_status(doc).items()}
 
 
 def probe_file(path: Path) -> ProbeResult:
