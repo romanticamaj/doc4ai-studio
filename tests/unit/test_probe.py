@@ -120,3 +120,12 @@ def test_table_lines_need_a_ruled_grid(tmp_path):
     p = tmp_path / "callouts.pdf"
     doc.save(p)
     assert probe_file(p).has_table_lines is False
+
+
+def test_font_suspect_pages_keep_small_broken_shares_for_the_markdown_check(fixtures):
+    """Round 3: the broken-font list (alignment, reports) is decided by share, but a page with a few broken words
+    (Head First T-001: a broken heading, 0.5-1 % of the page) still needs the Markdown garbage check: every page that
+    uses a broken non-symbol font is a font-suspect page, and flag_pages looks at those."""
+    p = probe_file(fixtures / "broken_tounicode.pdf")
+    assert p.broken_font_pages == [1] and p.font_suspect_pages == [1, 2]
+    assert "font_suspect_pages" not in p.to_json() or isinstance(p.to_json()["font_suspect_pages"], list)

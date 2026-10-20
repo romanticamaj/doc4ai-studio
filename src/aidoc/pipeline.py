@@ -324,7 +324,8 @@ def _segment_probe(probe: ProbeResult, page_start: int, page_end: int) -> ProbeR
     def rel(pages):
         return [p - page_start + 1 for p in pages if page_start <= p <= page_end]
     return dataclasses.replace(probe, pages=page_end - page_start + 1, has_table_lines=False,
-                               blank_pages=rel(probe.blank_pages), broken_font_pages=rel(probe.broken_font_pages))
+                               blank_pages=rel(probe.blank_pages), broken_font_pages=rel(probe.broken_font_pages),
+                               font_suspect_pages=rel(probe.font_suspect_pages))
 
 
 def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedResult,
@@ -338,7 +339,7 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     if probe.kind != "pdf" or probe.pages is None:
         return merged, assess(merged.markdown, probe, probe.pages, page_map_method=method)
     failed = dict(failed or {})
-    flagged = flag_pages(merged.markdown, probe.broken_font_pages)
+    flagged = flag_pages(merged.markdown, sorted(set(probe.broken_font_pages) | set(probe.font_suspect_pages)))
     # pages the engine reported as failed (empty sections) are repaired like broken pages (verifier finding)
     by_page = {e["page"]: e for e in flagged}
     for p, msg in failed.items():

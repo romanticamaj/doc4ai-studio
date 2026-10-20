@@ -97,6 +97,8 @@ class ProbeResult:
     error: str | None = None           # "corrupt" | "encrypted" | None
     broken_fonts: list[str] = field(default_factory=list)        # fonts without ToUnicode (spec 2026-10-01 §5.5)
     broken_font_pages: list[int] = field(default_factory=list)   # 1-based, every page scanned
+    # pages using any broken (non-symbol) font, whatever its share: the Markdown garbage check looks at these
+    font_suspect_pages: list[int] = field(default_factory=list)
 
     def to_json(self) -> dict:
         d = asdict(self)

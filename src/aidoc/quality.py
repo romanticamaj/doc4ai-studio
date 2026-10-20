@@ -491,7 +491,8 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
             kept.append(e)
     repaired = kept
     repaired_pages = {e["page"] for e in repaired}
-    flagged = [e for e in flag_pages(markdown, probe.broken_font_pages) if e["page"] not in repaired_pages]
+    suspect = sorted(set(probe.broken_font_pages) | set(probe.font_suspect_pages))   # garbage check: any broken font
+    flagged = [e for e in flag_pages(markdown, suspect) if e["page"] not in repaired_pages]
     # pages the engine reported as failed and that were not repaired (their section is empty or partial)
     by_page = {e["page"]: e for e in flagged}
     for p, msg in sorted((failed_pages or {}).items()):
