@@ -33,13 +33,24 @@ PAGE_GARBAGE_MIN_CHARS = 50
 SHIFT_HITS_MIN = 3
 # 2: page_dropped joins the per-page reasons (spec 2026-10-05 verify §2.3): existing documents are re-graded once
 # 3: page_partial / page_misaligned / page_oversized, history carried over, no stamp without a PDF
-PAGE_CHECK_VERSION = 3
-DROPPED_LAYER_MIN = 120        # squashed text-layer chars a page needs before an empty section means "dropped"
-DROPPED_SECTION_MAX = 20       # non-space chars (markup stripped) below which a section counts as empty
-PARTIAL_COVERAGE_MIN = 0.5     # a section holding less of its page's content layer is page_partial; a repair of a
+# 4: verifier round 2 - dropped on the body layer, n-gram coverage, text found elsewhere (tags stripped), hosts need
+#    two probes, furniture judged per document, link URLs stripped, repairs re-validated
+PAGE_CHECK_VERSION = 4
+DROPPED_LAYER_MIN = 120        # squashed prose-layer chars a page needs before an empty section means "dropped" ...
+DROPPED_BODY_MIN = 300         # ... or body-layer chars (full-page tables, text-heavy diagrams: short lines only)
+DROPPED_SECTION_MAX = 20       # squashed chars (markup stripped) below which a section counts as empty
+DROPPED_COVERAGE_MAX = 0.2     # a section holding less of the body layer than this ...
+DROPPED_TEXT_MAX = 150         # ... in fewer squashed chars than this (a heading, a caption) is page_dropped too
+COVER_N = 5                    # coverage n-gram (characters of the squashed text)
+PARTIAL_COVERAGE_MIN = 0.5     # a section holding less of its page's prose layer is page_partial; a repair of a
                                # dropped / partial page must reach it to count as repaired
-OVERSIZE_RATIO = 2.0           # a section this many times its page's text layer ...
-OVERSIZE_SLACK = 300           # ... plus this many characters is page_oversized
+ELSEWHERE_MIN = 0.5            # another section holding this much of a page's body (beyond its own layer) hosts it
+SPLIT_PRESENT_MIN = 0.8        # own + elsewhere this high (own < PARTIAL_COVERAGE_MIN): the text is all there, split
+MOVED_MIN = 0.3                # an (almost) empty section (< DROPPED_COVERAGE_MAX) whose page has this much of its body
+                               # in another section: the text moved there; an OCR copy would duplicate it
+NEIGHBOUR_PAGES = 4            # n-gram "elsewhere" search radius; the probes (page_homes) search the whole Markdown
+DISTINCT_PAGES = 8             # "elsewhere" counts only a page's n-grams found on no other page within this radius ...
+DISTINCT_MIN = 40              # ... and decides nothing with fewer of them
 MISALIGNED_MIN_PROBES = 2      # a page is page_misaligned when at least this many of its probes sit elsewhere
 PAGE_REASONS = ("page_dropped", "page_partial", "page_misaligned", "page_oversized")
 VLM_OVERLAP_MIN = 0.2          # VLM spec §7: advisory only (collect numbers; never changes level or score)
@@ -54,7 +65,6 @@ _SEP_LINE = re.compile(r"(?m)^\s*\|?\s*:?-{3,}[\s|:-]*$")
 _MARKUP_CHARS = re.compile(r"[|#*_`$]")
 _TABLE_GFM = re.compile(r"(?m)^\s*\|.*\|\s*$\n\s*\|?\s*:?-{3,}")
 _TABLE_HTML = re.compile(r"<table", re.IGNORECASE)
-_TAG = re.compile(r"</?[A-Za-z][^>]*>")
 # Mojibake (UTF-8 bytes decoded as cp1252/latin-1): runs over this alphabet that contain at least one Latin-1
 # symbol/control. Letters-only runs ("ÄÖÜß") and common symbols (★ → ● … ━ ①) are never garbage.
 _MOJIBAKE_ALPHABET = (set(map(chr, range(0x80, 0x180)))
@@ -190,80 +200,151 @@ def flag_pages(md: str, broken_font_pages: Iterable[int]) -> list[dict]:
     return out
 
 
-def _bigrams(s: str) -> dict[str, int]:
+def _grams(s: str, n: int = COVER_N) -> dict[str, int]:
     out: dict[str, int] = {}
-    for i in range(len(s) - 1):
-        g = s[i:i + 2]
+    for i in range(len(s) - n + 1):
+        g = s[i:i + n]
         out[g] = out.get(g, 0) + 1
     return out
 
 
+def section_text(section: str) -> str:
+    """A page section as comparable text: comments, images, markup, HTML tags and link URLs removed, squashed."""
+    return pagemap.squash(pagemap.strip_tags(strip_markup(section)))
+
+
+def _cover(sec: dict[str, int], layer: dict[str, int]) -> float:
+    total = sum(layer.values())
+    return round(sum(min(c, sec.get(g, 0)) for g, c in layer.items()) / total, 4) if total else 0.0
+
+
 def coverage(section: str, layer: str) -> float | None:
-    """Share of the page's (squashed) text layer that the section holds: multiset coverage of character bigrams,
-    markup and HTML tags removed. None for an empty layer."""
-    if len(layer) < 2:
+    """Share of the page's (squashed) text layer that the section holds: multiset coverage of character COVER_N-grams,
+    markup, HTML tags and link URLs removed. None for a layer shorter than one n-gram. (Bigrams were too weak: any
+    English text covers most of another page's bigrams — verifier round 2.)"""
+    if len(layer) < COVER_N:
         return None
-    sec = pagemap.squash(strip_markup(_TAG.sub(" ", section)))
-    a, b = _bigrams(layer), _bigrams(sec)
-    hit = sum(min(c, b.get(g, 0)) for g, c in a.items())
-    return round(hit / max(1, len(layer) - 1), 4)
+    return _cover(_grams(section_text(section)), _grams(layer))
+
+
+def _excess_cover(sec: dict[str, int], own: dict[str, int], layer: dict[str, int]) -> float:
+    """Share of `layer` (another page's body) that `sec` holds beyond what its own page's text layer `own` accounts
+    for: a solution page repeating its exercise holds no foreign text, a section with a neighbour's table does."""
+    total = sum(layer.values())
+    if not total:
+        return 0.0
+    hit = sum(min(c, max(0, sec.get(g, 0) - own.get(g, 0))) for g, c in layer.items())
+    return round(hit / total, 4)
 
 
 def page_checks(md: str, layers: list[str], content: list[str], blank_pages: Iterable[int] = (),
-                broken_font_pages: Iterable[int] = ()) -> list[dict]:
-    """Per-page structural checks against the PDF text layer (verifier round on spec 2026-10-05 verify §2.3):
+                broken_font_pages: Iterable[int] = (), *, body: list[str] | None = None) -> list[dict]:
+    """Per-page structural checks against the PDF text layer (spec 2026-10-05 verify §2.3, verifier rounds 1-2).
+    `layers` are the squashed text layers, `content` the prose layers, `body` the furniture-free layers
+    (`pagemap.pdf_layers`; without `body` the full layers stand in).
 
-    - page_misaligned: every probe of the page that was found sits in another page's section (swapped content,
-      a page's text under a neighbour) — never treated as dropped, so it is never OCR-copied a second time;
-    - page_dropped: the content layer (running header / footer / page number removed) has DROPPED_LAYER_MIN chars,
-      the section fewer than DROPPED_SECTION_MAX;
-    - page_partial: the section covers less than PARTIAL_COVERAGE_MIN of the content layer;
-    - page_oversized: the section holds another page's text (that page's probes, misplaced or duplicated) or is
-      far larger than its own text layer.
-    Broken-font pages (their layer is not their text) only get page_dropped."""
+    - page_misaligned: most of the page's text sits in other sections — its own section covers less than
+      PARTIAL_COVERAGE_MIN of its body and another section within NEIGHBOUR_PAGES holds at least ELSEWHERE_MIN of it
+      beyond that section's own text (or the two together hold SPLIT_PRESENT_MIN: split, all there; or the section
+      is almost empty and the other holds MOVED_MIN) — "elsewhere" counts the page's distinctive n-grams only (on no
+      other page within DISTINCT_PAGES) — or at least
+      MISALIGNED_MIN_PROBES of its unique probes were found and none in its own section. Never OCR-repaired: that
+      would duplicate the text.
+    - page_dropped: the prose layer has DROPPED_LAYER_MIN chars or the body layer DROPPED_BODY_MIN, and the section
+      is empty (DROPPED_SECTION_MAX) or holds a heading / caption only (covers < DROPPED_COVERAGE_MAX of the body in
+      < DROPPED_TEXT_MAX chars).
+    - page_partial: the section covers less than PARTIAL_COVERAGE_MIN of the prose layer.
+    - page_oversized: the section holds another page's text: ELSEWHERE_MIN of that page's distinctive n-grams beyond
+      the section's own text layer (MOVED_MIN for a page that moved there) — also added to a dropped / partial page,
+      which is then not repaired. Neither a probe count nor the section's size decides it: on held-out pages, a
+      paragraph continued across the page break put two probes of the next page in the section, and the OCR of a
+      screenshot made a section three times its layer (verifier round 2).
+    Tags and link URLs are stripped everywhere. Untrusted pages (`broken_font_pages`: their layer is not their text)
+    only get page_dropped on an empty section."""
     _, secs = pagemap.split_pages(md)
+    n = len(layers)
+    body = body if body is not None and len(body) == n else layers
     blank, broken = set(blank_pages), set(broken_font_pages)
-    homes = pagemap.page_homes(md, layers, exclude=broken)
+    texts = {p: section_text(s) for p, s in secs.items()}
+    sec_g = {p: _grams(t) for p, t in texts.items()}
+    own_g: dict[int, dict[str, int]] = {}
+
+    def own(p: int) -> dict[str, int]:
+        if p not in own_g:
+            own_g[p] = _grams(layers[p - 1]) if 1 <= p <= n else {}
+        return own_g[p]
+
+    own_s: dict[int, set[str]] = {}
+
+    def own_set(p: int) -> set[str]:
+        if p not in own_s:
+            own_s[p] = set(own(p))
+        return own_s[p]
+
     entries: dict[int, dict] = {}
     foreign: dict[int, set[int]] = {}
-    for q, h in homes.items():
-        if h["found"] >= MISALIGNED_MIN_PROBES and not h["home"]:
-            entries[q] = {"page": q, "reasons": ["page_misaligned"],
-                          "metrics": {"found_in": sorted(h["hosts"]), "probes_found": h["found"]}}
-            for p in h["hosts"]:
-                foreign.setdefault(p, set()).add(q)
-        for p in h["duplicated_in"]:
+    body_g: dict[int, dict[str, int]] = {}
+    for q in range(1, n + 1):
+        if q in broken or len(body[q - 1]) < DROPPED_LAYER_MIN:
+            continue
+        bg = body_g[q] = _grams(body[q - 1])
+        mine = _cover(sec_g.get(q, {}), bg)
+        # only the page's own wording says where it went: n-grams also on a nearby page (an exercise and its
+        # solution, a code listing shown twice) cannot (verifier round 2: Head First pp. 141-144)
+        near = [own_set(p) for p in range(max(1, q - DISTINCT_PAGES), min(n, q + DISTINCT_PAGES) + 1) if p != q]
+        dist = {g: c for g, c in bg.items() if not any(g in st for st in near)}
+        if sum(dist.values()) < DISTINCT_MIN:
+            continue
+        shares = {p: _excess_cover(sec_g[p], own(p), dist)
+                  for p in range(max(1, q - NEIGHBOUR_PAGES), q + NEIGHBOUR_PAGES + 1) if p != q and p in sec_g}
+        best = max(shares.values(), default=0.0)
+        moved = mine < PARTIAL_COVERAGE_MIN and (
+            best >= ELSEWHERE_MIN or (best > 0 and mine + best >= SPLIT_PRESENT_MIN)
+            or (mine < DROPPED_COVERAGE_MAX and best >= MOVED_MIN))
+        hosts = [p for p, sh in shares.items() if sh >= (min(MOVED_MIN, best / 2) if moved else ELSEWHERE_MIN)]
+        for p in hosts:
             foreign.setdefault(p, set()).add(q)
-    for p, layer in enumerate(layers, 1):
-        if p in entries or p in blank or p not in secs:
+        if moved:
+            entries[q] = {"page": q, "reasons": ["page_misaligned"],
+                          "metrics": {"found_in": sorted(hosts), "coverage": mine, "elsewhere": best}}
+    homes = pagemap.page_homes(md, layers, exclude=broken)
+    for q, h in homes.items():
+        mine = _cover(sec_g.get(q, {}), body_g[q]) if q in body_g else 0.0
+        if q not in entries and h["found"] >= MISALIGNED_MIN_PROBES and not h["home"] and mine < PARTIAL_COVERAGE_MIN:
+            entries[q] = {"page": q, "reasons": ["page_misaligned"],
+                          "metrics": {"found_in": sorted(h["hosts"]), "probes_found": h["found"], "coverage": mine}}
+    for p in range(1, n + 1):
+        if p in entries or p not in secs:
             continue
-        cl = content[p - 1] if p - 1 < len(content) else layer
-        sec = secs[p]
-        chars = sum(1 for c in strip_markup(sec) if not c.isspace())
-        if len(cl) >= DROPPED_LAYER_MIN and chars < DROPPED_SECTION_MAX:
-            entries[p] = {"page": p, "reasons": ["page_dropped"],
-                          "metrics": {"layer_chars": len(cl), "section_chars": chars}}
-            continue
-        if p in broken:
-            continue
-        if len(cl) >= DROPPED_LAYER_MIN:
-            cov = coverage(sec, cl)
-            if cov is not None and cov < PARTIAL_COVERAGE_MIN:
-                entries[p] = {"page": p, "reasons": ["page_partial"],
-                              "metrics": {"coverage": cov, "layer_chars": len(cl), "section_chars": chars}}
-                continue
-        size = len(pagemap.squash(strip_markup(_TAG.sub(" ", sec))))
-        too_big = len(layer) >= DROPPED_SECTION_MAX and size > OVERSIZE_RATIO * len(layer) + OVERSIZE_SLACK
-        if p in foreign or too_big:
-            entries[p] = {"page": p, "reasons": ["page_oversized"],
-                          "metrics": {"foreign_pages": sorted(foreign.get(p, ())), "section_chars": size,
-                                      "layer_chars": len(layer)}}
+        layer, prose, bl = layers[p - 1], content[p - 1] if p - 1 < len(content) else layers[p - 1], body[p - 1]
+        chars = len(texts[p])
+        hosts = sorted(foreign.get(p, ()))
+        reasons: list[str] = []
+        metrics: dict = {"layer_chars": len(layer), "section_chars": chars}
+        if p not in blank:
+            textful = len(prose) >= DROPPED_LAYER_MIN or len(bl) >= DROPPED_BODY_MIN
+            cov_body = _cover(sec_g[p], body_g[p] if p in body_g else _grams(bl)) if textful else None
+            if textful and (chars < DROPPED_SECTION_MAX or (
+                    p not in broken and cov_body is not None and cov_body < DROPPED_COVERAGE_MAX
+                    and chars < DROPPED_TEXT_MAX)):
+                reasons.append("page_dropped")
+                metrics.update(body_chars=len(bl), coverage=cov_body)
+            elif p not in broken and len(prose) >= DROPPED_LAYER_MIN:
+                cov = coverage(secs[p], prose)
+                if cov is not None and cov < PARTIAL_COVERAGE_MIN:
+                    reasons.append("page_partial")
+                    metrics.update(coverage=cov)
+        if hosts:
+            reasons.append("page_oversized")
+            metrics["foreign_pages"] = hosts
+        if reasons:
+            entries[p] = {"page": p, "reasons": reasons, "metrics": metrics}
     return [entries[p] for p in sorted(entries)]
 
 
 def dropped_pages(md: str, layers: list[str], blank_pages: Iterable[int] = ()) -> list[dict]:
     """page_dropped only (kept for callers that have no content layers): see `page_checks`."""
-    return [e for e in page_checks(md, layers, layers, blank_pages) if e["reasons"] == ["page_dropped"]]
+    return [e for e in page_checks(md, layers, layers, blank_pages) if "page_dropped" in e["reasons"]]
 
 
 def vlm_overlap(section: str, layer: str) -> float | None:
@@ -303,7 +384,8 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
            repaired: list[dict] | None = None, align_sample: int | None = None, last_resort: bool = False,
            failed_pages: dict[int, str] | None = None,
            layers: list[str] | None = None, vlm_pages=None,
-           skip_page_map_reasons: bool = False, content_layers: list[str] | None = None) -> QualityResult:
+           skip_page_map_reasons: bool = False, content_layers: list[str] | None = None,
+           body_layers: list[str] | None = None, untrusted_pages: list[int] | None = None) -> QualityResult:
     """Document quality. Legacy rules for non-PDFs; PDFs add the page map, alignment spot check and flagged pages
     (spec 2026-10-01 §5.2: any document reason -> low; else unrepaired flagged pages -> warn; else ok).
     `skip_page_map_reasons`: the markers were inferred by `verify` (index A26) — the page map is not evaluated
@@ -322,7 +404,7 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     if pm["invalid_markers"] and not skip_page_map_reasons:
         reasons.append("page_map_invalid")
     if pdf is not None and (layers is None or (content_layers is None and not quick))             and (vlm_pages or not quick) and Path(pdf).is_file():
-        layers, content_layers = pagemap.pdf_layers(pdf)   # once: spot check, page checks, VLM overlap
+        layers, content_layers, body_layers, untrusted_pages = pagemap.pdf_layers(pdf)   # once, for every check
     if pdf is not None and not skip_page_map_reasons:
         # quick (segment) check: every page of the segment — a 10-page sample let one legitimately merged
         # cross-page paragraph read as 1/9 misaligned on a real book (2026-10-01 acceptance)
@@ -335,6 +417,21 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
         if low_ratio or al.get("max_misplaced_run", 0) >= ALIGN_MAX_RUN:
             reasons.append("page_map_misaligned")
     repaired = list(repaired or [])
+    # every page, repaired ones too, goes through the page checks; a repair (from this conversion or, on a re-grade,
+    # from the history) whose section still fails them no longer counts as repaired (verifier round 2)
+    untrusted = probe.broken_font_pages if untrusted_pages is None else untrusted_pages
+    checks = ({e["page"]: e for e in page_checks(markdown, layers, content_layers or layers, probe.blank_pages,
+                                                 untrusted, body=body_layers)}
+              if not quick and layers is not None else {})
+    kept = []
+    for e in repaired:
+        c = checks.get(e["page"])
+        if c is not None and set(c["reasons"]) & set(PAGE_REASONS):
+            kept_out = {**c, "repair_rejected": e.get("repaired_by")}
+            checks[e["page"]] = kept_out
+        else:
+            kept.append(e)
+    repaired = kept
     repaired_pages = {e["page"] for e in repaired}
     flagged = [e for e in flag_pages(markdown, probe.broken_font_pages) if e["page"] not in repaired_pages]
     # pages the engine reported as failed and that were not repaired (their section is empty or partial)
@@ -347,10 +444,15 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
         else:
             by_page[p] = {"page": p, "reasons": ["page_conversion_failed"], "error": msg}
     # pages lost, cut, moved or swollen without the engine saying so; not in the quick segment check
-    if not quick and layers is not None:
-        for e in page_checks(markdown, layers, content_layers or layers, probe.blank_pages, probe.broken_font_pages):
-            if e["page"] not in repaired_pages and e["page"] not in by_page and e["page"] <= pages:
-                by_page[e["page"]] = e
+    for p, e in checks.items():
+        if p in repaired_pages or p > pages:
+            continue
+        if p in by_page:
+            if "repair_rejected" in e:
+                by_page[p] = {**by_page[p], "reasons": by_page[p]["reasons"] + e["reasons"],
+                              "repair_rejected": e["repair_rejected"]}
+        else:
+            by_page[p] = e
     flagged = [by_page[p] for p in sorted(by_page)]
     missing = [{"page": p, "reasons": ["page_map_missing"]} for p in pm["missing"]]
     entries = sorted(flagged + repaired + missing, key=lambda e: e["page"])

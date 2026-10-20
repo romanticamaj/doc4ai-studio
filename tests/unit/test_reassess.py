@@ -146,5 +146,5 @@ def test_history_wiped_by_an_earlier_regrade_is_recovered_from_the_sidecar(tmp_r
     assert q["page_map"]["method"] == "docling_per_page" and q["page_check"] == PAGE_CHECK_VERSION
 
 
-def test_page_check_version_is_3():
-    assert PAGE_CHECK_VERSION == 3
+def test_page_check_version_is_4():
+    assert PAGE_CHECK_VERSION == 4

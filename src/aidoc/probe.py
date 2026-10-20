@@ -166,11 +166,17 @@ def broken_fonts(doc) -> tuple[list[str], list[int]]:
     """Fonts whose text cannot be mapped to Unicode (spec 2026-10-01 §5.5): type `Type0` or an `Identity`
     encoding, and no `/ToUnicode` in the font dictionary. Scans every page; returns (sorted unique names,
     sorted 1-based pages that use one). Results are cached per font xref."""
+    by_page = broken_fonts_by_page(doc)
+    return sorted(set().union(*by_page.values())) if by_page else [], sorted(by_page)
+
+
+def broken_fonts_by_page(doc) -> dict[int, set[str]]:
+    """{1-based page: names of the broken fonts (see `broken_fonts`) that page uses}. Per xref: one book can embed a
+    font name twice, once without and once with a Unicode map (Head First: ArialMT)."""
     cache: dict[int, bool] = {}
-    names: set[str] = set()
-    pages: list[int] = []
+    out: dict[int, set[str]] = {}
     for i in range(doc.page_count):
-        hit = False
+        names: set[str] = set()
         for f in doc[i].get_fonts():
             xref, ftype, basefont, enc = f[0], str(f[2]), str(f[3]), str(f[5])
             if xref not in cache:
@@ -182,11 +188,10 @@ def broken_fonts(doc) -> tuple[list[str], list[int]]:
                         broken = False
                 cache[xref] = broken
             if cache[xref]:
-                hit = True
                 names.add(_base_name(basefont))
-        if hit:
-            pages.append(i + 1)
-    return sorted(names), pages
+        if names:
+            out[i + 1] = names
+    return out
 
 
 def probe_file(path: Path) -> ProbeResult:
