@@ -45,8 +45,11 @@ ZH_WORDS = ["收入", "支出", "合計", "地區", "年度", "項目", "數量"
             "東部", "成長", "預算", "實績"]
 
 
+SEED_SALT = ""                  # --seed-salt: a fresh corpus nobody tuned on (calibration gate, decision 2026-10-20)
+
+
 def seed_of(name: str) -> int:
-    return int(hashlib.sha256(name.encode("utf-8")).hexdigest()[:12], 16)
+    return int(hashlib.sha256((SEED_SALT + name).encode("utf-8")).hexdigest()[:12], 16)
 
 
 # ---------------------------------------------------------------- text sources
@@ -864,7 +867,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", help="comma-separated item names")
     ap.add_argument("--out", default=str(HERE), help="corpus root (default bench/corpus)")
     ap.add_argument("--offline", action="store_true", help="never download; fail when a pinned source is missing")
+    ap.add_argument("--seed-salt", default="", help="prefix every item seed: a fresh corpus (write it to its own --out)")
     a = ap.parse_args(argv)
+    global SEED_SALT
+    SEED_SALT = a.seed_salt
     t0 = time.time()
     try:
         generate(Path(a.out), small=a.small, only=set(a.only.split(",")) if a.only else None, offline=a.offline)
