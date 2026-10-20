@@ -123,3 +123,37 @@ def test_check_document_repairs_dropped_and_partial_pages_against_their_layer(mo
     except RuntimeError:
         pass
     assert seen["pages"] == [2, 3] and set(seen["layers"]) == {2, 3} and seen["layers"][2] == layers[1]
+
+
+def test_a_dropped_page_is_repaired_against_its_body_layer_a_partial_one_against_its_prose(monkeypatch):
+    """Verifier round 2 (Ortho p779 in the reconversion): a repair accepted against the prose layer was rejected by the
+    final check, which judges page_dropped on the body layer. A dropped page's repair must cover its body layer."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from aidoc import pipeline
+    from aidoc.models import NormalizedResult, ProbeResult
+    from aidoc.pagemap import squash
+    seen = {}
+
+    def fake_repair(ctx, engines, norm, pages, main, layers=None):
+        seen.update(pages=pages, layers=layers)
+        raise RuntimeError("stop")
+    monkeypatch.setattr(pipeline, "repair_pages", fake_repair)
+
+    def words(tag):
+        return " ".join(f"{tag}{i}word" for i in range(40))
+    full = [squash(words(t)) for t in ("alpha", "bravo", "charlie")]
+    body = [f + squash(words("label" + str(i))) for i, f in enumerate(full)]   # figure labels: body only
+    monkeypatch.setattr(pipeline.pagemap, "pdf_layers", lambda p: (body, full, body, []))
+    probe = ProbeResult(kind="pdf", ext=".pdf", size=1, pages=3)
+    ctx = SimpleNamespace(probe=probe, work_src=Path("x.pdf"), engines={"docling": object()}, log=lambda s: None)
+    md = (f"<!-- page: 1 -->\n\n{words('alpha')} {words('label0')}\n\n<!-- page: 2 -->\n\n\n\n"
+          f"<!-- page: 3 -->\n\n{' '.join(words('charlie').split()[:15])}\n\n")       # a third of page 3
+    try:
+        pipeline.check_document(ctx, "docling", NormalizedResult(markdown=md, assets=[]), "fake", last_resort=True)
+    except RuntimeError:
+        pass
+    assert seen["pages"] == [2, 3]
+    assert seen["layers"][2] == body[1]                 # dropped: body layer
+    assert seen["layers"][3] == full[2]                 # partial: prose layer

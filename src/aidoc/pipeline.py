@@ -359,10 +359,15 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
             by_page.setdefault(e["page"], e)
     flagged = [by_page[p] for p in sorted(by_page)]
     to_repair = [e for e in flagged if not set(e["reasons"]) & {"page_misaligned", "page_oversized"}]
-    # a repaired dropped / partial page must cover its prose layer, or its body layer when it has no prose (a
-    # full-page table: verifier round 2, finding A)
-    repair_layers = {e["page"]: (content[e["page"] - 1] if len(content[e["page"] - 1]) >= DROPPED_LAYER_MIN
-                                 else body[e["page"] - 1]) for e in to_repair
+    # a repaired page must cover the layer its check used: the body layer for a dropped page (page_dropped is judged
+    # on it - a repair accepted on the prose layer was rejected by the final check, Ortho p779), the prose layer
+    # for a partial page, the body layer when there is no prose (verifier round 2)
+    def _repair_layer(e: dict) -> str:
+        p = e["page"] - 1
+        if "page_dropped" in e["reasons"] or len(content[p]) < DROPPED_LAYER_MIN:
+            return body[p]
+        return content[p]
+    repair_layers = {e["page"]: _repair_layer(e) for e in to_repair
                      if content is not None and set(e["reasons"]) & {"page_dropped", "page_partial"}}
     effective = max(1, probe.pages - len(probe.blank_pages))
     repaired: list[dict] = []
