@@ -58,7 +58,8 @@ def test_swapped_content_and_partial_negatives_are_caught():
     gt = json.loads((SMALL / "syn-dropped-pages" / "gt.json").read_text(encoding="utf-8"))
     sc, pa = res["swapped_content"], res["partial"]
     assert set(sc["flagged"]) >= set(gt["defects"]["swapped_content_pages"]) and sc["exit_code_fail_on_warn"] == 1
-    assert set(pa["flagged"]) >= set(gt["defects"]["partial_pages"]) and pa["exit_code_fail_on_warn"] == 1
+    # page_partial is an advisory (verifier round 3): shown on the page, level and exit code unchanged
+    assert set(pa["advised"]) >= set(gt["defects"]["partial_pages"]) and not pa["flagged"]
     assert C.extra_negatives_ok(res) is True and C.defects_ok(res)
 
 

@@ -173,7 +173,8 @@ def test_verify_checks_every_page_and_reports_page_level_reasons():
     md = "".join(f"<!-- page: {p} -->\n\n{secs[p]}\n\n" for p in sorted(secs))
     r = verify_markdown(md, FIX / "paged_furniture.pdf")
     reasons = {p["page"]: p.get("reasons") for p in r.pages if p.get("reasons")}
-    assert reasons[3] == ["page_misaligned"] and reasons[6] == ["page_misaligned"] and reasons[5] == ["page_partial"]
+    assert reasons[3] == ["page_misaligned"] and reasons[6] == ["page_misaligned"] and 5 not in reasons
+    assert next(p for p in r.pages if p["page"] == 5)["advisories"] == ["page_partial"]     # advisory (round 3)
     assert r.page_map["alignment"]["sampled"] == 7                     # every page with text, not a sample of 30
 
 

@@ -70,7 +70,7 @@ def predictions(docs: dict, manual: Path = MANUAL) -> dict[str, dict[int, set[st
         pr = probe_file(pdf)
         out[key] = {}
         for e in page_checks(md, layers, content, pr.blank_pages, untrusted, body=body):
-            out[key].setdefault(e["page"], set()).update(set(e["reasons"]) & set(REASONS))
+            out[key].setdefault(e["page"], set()).update(set(e["reasons"] + e.get("advisories", [])) & set(REASONS))
     return out
 
 

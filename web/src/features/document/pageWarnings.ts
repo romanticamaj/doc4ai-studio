@@ -59,8 +59,14 @@ export function pageWarnings(quality: Quality | undefined | null): Map<number, P
   for (const entry of quality?.pages ?? []) {
     const repaired = !!entry.repaired_by;
     const vlm = vlmModel(entry.repaired_by);
-    // advisory-only entries (no reasons, e.g. vlm_low_overlap) produce no note
-    const notes = (entry.reasons ?? []).map((r) => textFor(entry.page, r, repaired, vlm, (entry as { metrics?: Record<string, unknown> }).metrics ?? {})).filter((n): n is PageWarning => !!n);
+    const metrics = (entry as { metrics?: Record<string, unknown> }).metrics ?? {};
+    // advisories never make a page a problem page; page_partial is shown as an info note (verifier round 3),
+    // the others (e.g. vlm_low_overlap) produce no note
+    const notes = (entry.reasons ?? []).map((r) => textFor(entry.page, r, repaired, vlm, metrics)).filter((n): n is PageWarning => !!n);
+    if (((entry as { advisories?: string[] }).advisories ?? []).includes("page_partial") && !repaired) {
+      const cov = typeof metrics.coverage === "number" ? `約 ${Math.round(metrics.coverage * 100)}% 的` : "部分";
+      notes.push({ text: `第 ${entry.page} 頁：可能只轉出這頁${cov}文字（提示，不影響品質等級）`, tone: "info" });
+    }
     if (!notes.length) continue;
     const prev = out.get(entry.page);
     const all = prev ? [prev, ...notes] : notes;

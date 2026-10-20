@@ -356,7 +356,8 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
             layers = content = body = untrusted = None
     if layers is not None:
         for e in page_checks(merged.markdown, layers, content, probe.blank_pages, untrusted, body=body):
-            by_page.setdefault(e["page"], e)
+            if e["reasons"]:                    # advisory-only pages (page_partial) are never repaired or counted
+                by_page.setdefault(e["page"], e)
     flagged = [by_page[p] for p in sorted(by_page)]
     to_repair = [e for e in flagged if not set(e["reasons"]) & {"page_misaligned", "page_oversized"}]
     # a repaired page must cover the layer its check used: the body layer for a dropped page (page_dropped is judged

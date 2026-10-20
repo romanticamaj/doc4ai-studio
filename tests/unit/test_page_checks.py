@@ -87,7 +87,7 @@ def test_partial_page_is_flagged_with_its_coverage():
     secs = dict(secs)
     secs[5] = secs[5][: int(len(secs[5]) * 0.3)]
     got = _checks(_md(secs))
-    assert got[5]["reasons"] == ["page_partial"] and got[5]["metrics"]["coverage"] < 0.5
+    assert got[5]["advisories"] == ["page_partial"] and got[5]["metrics"]["coverage"] < 0.5   # advisory (round 3)
     assert set(got) == {5}
 
 

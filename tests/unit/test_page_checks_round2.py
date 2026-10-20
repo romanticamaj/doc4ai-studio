@@ -258,3 +258,37 @@ def test_callouts_on_a_picture_are_not_page_prose(tmp_path):
                  for n in range(3))
     got = {e["page"]: e for e in page_checks(md, layers, prose, (), untrusted, body=body_l)}
     assert 2 not in got
+
+
+def test_page_partial_is_an_advisory_that_never_raises_the_level(tmp_path):
+    """Verifier round 3 (blind relabel kappa 0.29 for page_partial): a cut page is shown as an advisory with its
+    coverage, but the document stays "ok", nothing counts as unrepaired, and the page is not sent to repair."""
+    pages = [_text_page(i) for i in range(1, 6)]
+    pdf = _pdf(tmp_path, pages)
+    secs = _own(pages)
+    secs[3] = "\n".join(pages[2][:3])                        # a quarter of page 3
+    md = "".join(f"<!-- page: {p} -->\n\n{secs[p]}\n\n" for p in sorted(secs))
+    got = _run(pdf, secs)
+    assert got[3]["reasons"] == [] and got[3]["advisories"] == ["page_partial"] and got[3]["metrics"]["coverage"] < 0.5
+    pr = probe_file(pdf)
+    q = assess(md, pr, pr.pages, pdf=pdf, page_map_method="x")
+    e = next(e for e in q.pages if e["page"] == 3)
+    assert q.level == "ok" and q.pages_unrepaired == 0 and q.pages_flagged == 0 and e["advisories"] == ["page_partial"]
+
+
+def test_check_document_does_not_repair_an_advisory_page(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from aidoc import pipeline
+    from aidoc.models import NormalizedResult
+    pages = [_text_page(i) for i in range(1, 6)]
+    pdf = _pdf(tmp_path, pages)
+    secs = _own(pages)
+    secs[3] = "\n".join(pages[2][:3])
+    md = "".join(f"<!-- page: {p} -->\n\n{secs[p]}\n\n" for p in sorted(secs))
+    called = []
+    monkeypatch.setattr(pipeline, "repair_pages", lambda *a, **k: called.append(a[3]))
+    ctx = SimpleNamespace(probe=probe_file(pdf), work_src=pdf, engines={"docling": object()}, log=lambda s: None,
+                          vlm_repair=None)
+    _, q = pipeline.check_document(ctx, "docling", NormalizedResult(markdown=md, assets=[]), "fake", last_resort=True)
+    assert called == [] and q.level == "ok"

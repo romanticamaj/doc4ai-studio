@@ -116,8 +116,10 @@ def judge_defect_markdowns(corpus_dir: Path) -> dict:
         expected = {"dropped": gt["defects"]["dropped_pages"], "shifted": [], "swapped": gt["defects"]["swapped_pages"],
                     "control": [], "swapped_content": gt["defects"].get("swapped_content_pages") or [],
                     "partial": gt["defects"].get("partial_pages") or []}[name]
+        advised = sorted(e["page"] for e in rep.pages if "page_partial" in (e.get("advisories") or []))
         out[name] = {"level": rep.level, "reasons": rep.summary["reasons"], "exit_code": exit_code(rep, "low"),
-                     "exit_code_fail_on_warn": exit_code(rep, "warn"), "flagged": flagged, "expected": expected}
+                     "exit_code_fail_on_warn": exit_code(rep, "warn"), "flagged": flagged, "advised": advised,
+                     "expected": expected}
     return out
 
 
@@ -125,11 +127,18 @@ EXTRA = ("swapped_content", "partial")       # verifier round; reported next to 
 
 
 def extra_negatives_ok(judged: dict) -> bool | None:
-    """Swapped content under valid markers and a cut page: every expected page flagged, exit 1 with --fail-on warn."""
-    got = [judged[x] for x in EXTRA if x in judged]
-    if not got:
+    """Swapped content under valid markers: every expected page flagged, exit 1 with --fail-on warn. The cut page:
+    shown as the page_partial advisory (verifier round 3: advisory, it never changes the level or the exit code)."""
+    if not any(x in judged for x in EXTRA):
         return None
-    return all(j["exit_code_fail_on_warn"] == 1 and set(j["expected"]) <= set(j["flagged"]) for j in got)
+    ok = True
+    if "swapped_content" in judged:
+        j = judged["swapped_content"]
+        ok &= j["exit_code_fail_on_warn"] == 1 and set(j["expected"]) <= set(j["flagged"])
+    if "partial" in judged:
+        j = judged["partial"]
+        ok &= set(j["expected"]) <= set(j.get("advised") or [])
+    return ok
 
 
 def defects_ok(judged: dict) -> bool:
