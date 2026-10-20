@@ -49,73 +49,80 @@ def detect(md: str) -> str:
 MARKER_REGEX_MAX = 200
 
 
-def _regex_problem(pattern: str) -> str | None:
-    """Why a user regex is unsafe: its capture group may be absent or empty (optional, in an alternation, under a
-    0-minimum repeat, or able to match nothing), or it nests unbounded quantifiers (catastrophic backtracking; Python's
-    `re` has no timeout)."""
-    try:
-        import re._constants as C
-        import re._parser as sre_parse
-    except ImportError:            # Python 3.10
-        import sre_constants as C
-        import sre_parse
-    repeats = {C.MAX_REPEAT, C.MIN_REPEAT} | ({C.POSSESSIVE_REPEAT} if hasattr(C, "POSSESSIVE_REPEAT") else set())
+PAGE_NUMBER = r"(\d{1,6})"
+_GROUP_FORMS = (r"(\d+)", r"([0-9]+)")
+_GROUP_BOUNDED = re.compile(r"\((?:\\d|\[0-9\])\{1,[1-9][0-9]?\}\)")
+_WS = {r"\s*": r"[ \t]*", r"\s+": r"[ \t]+", r"\s": r"[ \t]"}
+MARKER_HELP = ("a page marker is literal text around one page number: `[[p {page}]]`, or the regex form "
+               r"`\[\[p (\d+)\]\]` (escaped punctuation, \s, \s*, \s+ and one (\d+) group only)")
 
-    def has_unbounded_repeat(items) -> bool:
-        for op, av in items:
-            if op in repeats and (av[1] == C.MAXREPEAT or av[1] > 1):
-                return True
-            subs = []
-            if op == C.SUBPATTERN:
-                subs = [av[-1]]
-            elif op in repeats:
-                subs = [av[2]]
-            elif op == C.BRANCH:
-                subs = list(av[1])
-            if any(has_unbounded_repeat(s) for s in subs):
-                return True
-        return False
 
-    def walk(items, optional: bool) -> str | None:
-        for op, av in items:
-            if op == C.SUBPATTERN:
-                group, sub = av[0], av[-1]
-                if group is not None:
-                    if optional:
-                        return "the capture group must always take part in a match (not optional)"
-                    if sub.getwidth()[0] == 0:
-                        return "the capture group must not be able to match an empty string"
-                why = walk(sub, optional)
-            elif op in repeats:
-                mn, mx, sub = av
-                if (mx == C.MAXREPEAT or mx > 1) and has_unbounded_repeat(sub):
-                    return "nested unbounded quantifiers (catastrophic backtracking)"
-                why = walk(sub, optional or mn == 0)
-            elif op == C.BRANCH:
-                why = next((w for w in (walk(b, True) for b in av[1]) if w), None)
+def compile_marker(template: str, *, numbered: bool = True) -> re.Pattern:
+    r"""A custom page marker as a fixed template (verifier round 2, finding C: a structural check of a free regex was
+    bypassed five ways, each > 30 s of backtracking; Python's `re` has no timeout). Accepted: literal text with one
+    `{page}` placeholder (runs of spaces match spaces / tabs), or the regex subset of literal and backslash-escaped
+    punctuation, `\s`, `\s*`, `\s+` and exactly one `(\d+)` / `([0-9]+)` / `(\d{1,k})` group. It must start with a
+    literal character, so a match attempt only starts there; no quantifier is nested or ambiguous: linear time.
+    `numbered=False` (a separator between pages) takes no group."""
+    if not template:
+        raise ValueError("page marker template is empty")
+    if len(template) > MARKER_REGEX_MAX:
+        raise ValueError(f"page marker longer than {MARKER_REGEX_MAX} characters")
+    out: list[str] = []
+    kinds: list[str] = []                      # "lit" | "ws" | "num"
+    i, n = 0, len(template)
+    if "{page}" in template:                   # template form: everything else is literal
+        while i < n:
+            if template.startswith("{page}", i):
+                out.append(PAGE_NUMBER)
+                kinds.append("num")
+                i += 6
+            elif template[i] in " \t":
+                j = i
+                while j < n and template[j] in " \t":
+                    j += 1
+                out.append(r"[ \t]+")
+                kinds.append("ws")
+                i = j
             else:
-                why = None
-            if why:
-                return why
-        return None
-    return walk(sre_parse.parse(pattern), False)
-
-
-def _compile_custom(marker_regex: str | None) -> re.Pattern:
-    if not marker_regex:
-        raise ValueError("custom format needs --page-marker-regex")
-    if len(marker_regex) > MARKER_REGEX_MAX:
-        raise ValueError(f"page marker regex longer than {MARKER_REGEX_MAX} characters")
-    try:
-        pat = re.compile(marker_regex)
-    except re.error as e:
-        raise ValueError(f"invalid page marker regex: {e}") from None
-    if pat.groups != 1:
-        raise ValueError("page marker regex must have exactly one group (the 1-based page number)")
-    why = _regex_problem(marker_regex)
-    if why:
-        raise ValueError(f"unsafe page marker regex: {why}")
-    return pat
+                out.append(re.escape(template[i]))
+                kinds.append("lit")
+                i += 1
+    else:
+        while i < n:
+            c = template[i]
+            m = _GROUP_BOUNDED.match(template, i)
+            form = next((f for f in _GROUP_FORMS if template.startswith(f, i)), None)
+            if m or form:
+                out.append(PAGE_NUMBER)
+                kinds.append("num")
+                i += len(m.group(0)) if m else len(form)
+            elif c == "\\":
+                if i + 1 >= n:
+                    raise ValueError(f"page marker ends with a backslash; {MARKER_HELP}")
+                ws = template[i:i + 3] if template[i:i + 3] in _WS else template[i:i + 2]
+                if ws in _WS:
+                    out.append(_WS[ws])
+                    kinds.append("ws")
+                    i += len(ws)
+                elif not template[i + 1].isalnum():
+                    out.append(re.escape(template[i + 1]))
+                    kinds.append("lit")
+                    i += 2
+                else:
+                    raise ValueError(f"unsupported page marker escape {template[i:i + 2]!r}; {MARKER_HELP}")
+            elif c in ".^$*+?{}[]()|":
+                raise ValueError(f"unsupported page marker syntax {c!r} at {i}; {MARKER_HELP}")
+            else:
+                out.append(re.escape(c))
+                kinds.append("lit")
+                i += 1
+    if kinds.count("num") != (1 if numbered else 0):
+        raise ValueError("page marker must have exactly one page number" if numbered
+                         else f"page separator takes no page number; {MARKER_HELP}")
+    if kinds[0] != "lit":
+        raise ValueError(f"page marker must start with literal text; {MARKER_HELP}")
+    return re.compile("".join(out))
 
 
 def _info(fmt: str, found: int, numbered: bool, applied: bool, reason: str | None) -> dict:
@@ -129,12 +136,11 @@ def to_aidoc(md: str, fmt: str, *, expected_pages: int | None,
     if fmt == "none":
         return md, _info(fmt, 0, False, False, "forced_none")
     if fmt == "custom" or (fmt == "auto" and marker_regex):
-        pat, numbered, fmt = _compile_custom(marker_regex), True, "custom"
+        if not marker_regex:
+            raise ValueError("custom format needs --page-marker-regex (a page marker template)")
+        pat, numbered, fmt = compile_marker(marker_regex), True, "custom"
     elif fmt == "docling" and marker_regex:
-        try:
-            pat, numbered = re.compile(marker_regex), False
-        except re.error as e:
-            raise ValueError(f"invalid page marker regex: {e}") from None
+        pat, numbered = compile_marker(marker_regex, numbered=False), False
     elif fmt in DIALECTS:
         d = DIALECTS[fmt]
         pat, numbered = d.pattern, d.numbered

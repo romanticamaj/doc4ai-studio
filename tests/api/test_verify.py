@@ -100,3 +100,15 @@ def test_dangerous_marker_regex_is_422_never_500(client):
     for rx in (r"\[\[p (\d+)?\]\]", r"((a+)+\d)", "x" * 500):
         r = client.post("/api/verify", files=files, data={"marker_regex": rx})
         assert r.status_code == 422 and r.json()["error"] == "invalid_input", rx
+
+
+def test_redos_bypasses_are_422_fast(client):
+    """Verifier round 2 (finding C): the five patterns that took > 30 s each answer 422 at once."""
+    import time
+    files = {"markdown": ("a.md", b"<!-- p 1 -->\n" + b"1" * 5000 + b"x\n" + b"a" * 20000 + b"!\n"),
+             "pdf": ("p.pdf", (FIX / "text.pdf").read_bytes())}
+    for rx in (r"(\d+)\d+\d+\d+y", r"(\d+)[0-9]*[0-9]*q", r"(\d+)\s*\d*\s*\d*z", r"((?:a|aa)+)$", r"(?:a|a)*(\d)!"):
+        t = time.perf_counter()
+        r = client.post("/api/verify", files=files, data={"marker_regex": rx})
+        assert r.status_code == 422 and r.json()["error"] == "invalid_input", rx
+        assert time.perf_counter() - t < 5, rx
