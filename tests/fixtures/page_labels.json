@@ -1,0 +1,2225 @@
+{
+ "about": "Hand-judged page labels for the per-page structural checks (verifier round 2, 2026-10-20). Only document identity (sha256 of the original PDF, or for a sample built from it by tests/fixtures/make_manual.py the sha256 of its text layers, and the sha256 of the judged Markdown), page numbers, expected reasons and verdicts; no document text. The PDFs and Markdown live in tests/fixtures/manual/ (never committed). Policy: page_dropped = the section holds essentially none of the page's text (at most a heading or a caption; a text-heavy diagram kept as a picture counts as its text); page_partial = it holds some, but clearly less than half of the page's prose (labels inside a figure kept as a picture are not prose); page_misaligned = most of the page's text sits under another page's marker; page_oversized = the section holds another page's text (most of that page's own text, or a whole block of it such as table rows or a paragraph that is not the continuation of a sentence across the page break); ambiguous = no clear verdict, excluded from the scores. split 'dev' = pages the checks were designed or corrected on (it includes the first and second test splits, each measured once and then seen); 'test' = pages sampled after the checks were frozen for the last time. 'note' records a relabelling and its reason.",
+ "docs": {
+  "ortho": {
+   "pdf_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
+   "md_sha256": "902e9b8e71aa8cf389d44b3da64919db77edaca3311631f02d3457e50c0bc2f3",
+   "pdf": "originals/A System of Orthopaedic Medicine, 3rd Edition.pdf",
+   "md": "labelled/A System of Orthopaedic Medicine, 3rd Edition.md",
+   "made_by": "Library conversion 2026-10-13 (MinerU, with repairs)"
+  },
+  "hf": {
+   "pdf_sha256": "184392c5363a8026e8466358e619df977a9dd53b48e77abc2ace7818cfaf06da",
+   "md_sha256": "25e39cae10c05a74d57d37a239e40d884e0415107c86675f5b20428402e9173f",
+   "pdf": "originals/Head First Android Development.pdf",
+   "md": "labelled/Head First Android Development.md",
+   "made_by": "Library conversion 2026-10-13 (Docling, fallback MinerU, with repairs)"
+  },
+  "hfmix": {
+   "source_sha256": "184392c5363a8026e8466358e619df977a9dd53b48e77abc2ace7818cfaf06da",
+   "text_sha256": "b2d80a80c8a454489659d0bbdf2cdf53c2883e951c8cfe184807dfd5a830cb28",
+   "md_sha256": "4870d0a20d5bc71084cf17f4de612a7c55507d3e9ebe200bc3ccccdcf1363109",
+   "pdf": "hfad_docling_mix.pdf",
+   "md": "labelled/hfad_docling_mix.md",
+   "made_by": "aidoc convert --engine docling, AIDOC_BENCH_NO_REPAIR=1 (raw engine page map)"
+  },
+  "orthomix": {
+   "source_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
+   "text_sha256": "d50c9af821b45bda1527324a5ac50f6423fe478b2fc7146601b66e25ce928ecd",
+   "md_sha256": "f35841a6368cfa06f88d50b817abdd89585b7fe466e7d89a6df3108e12f77dd2",
+   "pdf": "ortho_docling_mix.pdf",
+   "md": "labelled/ortho_docling_mix.md",
+   "made_by": "aidoc convert --engine docling, AIDOC_BENCH_NO_REPAIR=1 (raw engine page map)"
+  },
+  "hfmix2": {
+   "source_sha256": "184392c5363a8026e8466358e619df977a9dd53b48e77abc2ace7818cfaf06da",
+   "text_sha256": "d562f00dcc1987e98ec25ff31370b67ede1014b4803b87c808d5339f08807e3e",
+   "md_sha256": "e2b27382530c413029999f4c928e7a3702a0bc583c050670eb2d706c2eecdbf1",
+   "pdf": "hfad_docling_mix2.pdf",
+   "md": "labelled/hfad_docling_mix2.md",
+   "made_by": "aidoc convert --engine docling, AIDOC_BENCH_NO_REPAIR=1 (raw engine page map)"
+  },
+  "orthomix3": {
+   "source_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
+   "text_sha256": "d3cd533d688dde875a583dda07b792580aaba263f6d1b9ca5c1c36902f157d75",
+   "md_sha256": "1912e50b50a4c1732ecce32ba2332c10b2666d5705cae9d2d7edd26b6651a211",
+   "pdf": "ortho_mineru_mix.pdf",
+   "md": "labelled/ortho_mineru_mix.md",
+   "made_by": "aidoc convert --engine mineru, AIDOC_BENCH_NO_REPAIR=1 (raw engine page map)"
+  },
+  "hfmix3": {
+   "source_sha256": "184392c5363a8026e8466358e619df977a9dd53b48e77abc2ace7818cfaf06da",
+   "text_sha256": "349931cbbeaddb3f95b9274402d65bab5bc20910b0b35dc309fc412bae93dec1",
+   "md_sha256": "398f7fa8d4a9a336e7c9ed3e4f929172f6ad09a36395e6946e9ad8a3ef61c0ba",
+   "pdf": "hfad_docling_mix3.pdf",
+   "md": "labelled/hfad_docling_mix3.md",
+   "made_by": "aidoc convert --engine docling, AIDOC_BENCH_NO_REPAIR=1 (raw engine page map)"
+  }
+ },
+ "labels": [
+  {
+   "doc": "ortho",
+   "page": 369,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 454,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 567,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 633,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 959,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 979,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 476,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 677,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1013,
+   "expected": [
+    "page_oversized"
+   ],
+   "verdict": "misplaced",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1051,
+   "expected": [
+    "page_oversized"
+   ],
+   "verdict": "misplaced",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1014,
+   "expected": [
+    "page_misaligned"
+   ],
+   "verdict": "misplaced",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1052,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1053,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1054,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 158,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 198,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 504,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 276,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev",
+   "note": "relabelled 2026-10-20: judged partial with an aid that stripped <XML> code as HTML tags; the section holds the page's code and text"
+  },
+  {
+   "doc": "hf",
+   "page": 512,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev",
+   "note": "relabelled 2026-10-20: judged partial with an aid that stripped <XML> code as HTML tags; the section holds the page's code and text"
+  },
+  {
+   "doc": "hf",
+   "page": 462,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 524,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 182,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 326,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 496,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 911,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 401,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1178,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1097,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 321,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 284,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 250,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 807,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 229,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 119,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 138,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 324,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 429,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 953,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 697,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 663,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 418,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 129,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1015,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 81,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 214,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 281,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 332,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 334,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 65,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 487,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 271,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 34,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 39,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 77,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 143,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 37,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 112,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 135,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 89,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 96,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 68,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 8,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 10,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 11,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 12,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 16,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 20,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 21,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 22,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 23,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 24,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 25,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 26,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 27,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 28,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 29,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "orthomix",
+   "page": 30,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 16,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 17,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 8,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 10,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 11,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 12,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 20,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 21,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 22,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 23,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 24,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 25,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 26,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 27,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 28,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 29,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix2",
+   "page": 30,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 524,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 790,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 760,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 1151,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 440,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 674,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 857,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 445,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 875,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 50,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 574,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 169,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 1129,
+   "expected": [
+    "page_oversized"
+   ],
+   "verdict": "misplaced",
+   "split": "test",
+   "note": "relabelled 2026-10-20 after the check flagged it: the section also holds page 1130's whole table (verbatim rows; the judging view had been cut at 1,600 characters)"
+  },
+  {
+   "doc": "hf",
+   "page": 343,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 454,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 299,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 338,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 520,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 355,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 239,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 225,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 90,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 507,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 478,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 25,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 92,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 268,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 201,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "test"
+  },
+  {
+   "doc": "hf",
+   "page": 328,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 8,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 10,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 11,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 12,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 16,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 20,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 21,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 22,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 23,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 24,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 25,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 26,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 27,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 28,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 29,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "orthomix3",
+   "page": 30,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 12,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 14,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 20,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 26,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 28,
+   "expected": [
+    "page_oversized"
+   ],
+   "verdict": "misplaced",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 4,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 29,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 8,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 10,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 11,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 16,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 21,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 22,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 23,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 24,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 25,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 27,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "hfmix3",
+   "page": 30,
+   "expected": [],
+   "verdict": "clean",
+   "split": "test"
+  },
+  {
+   "doc": "ortho",
+   "page": 3,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 281,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 282,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 455,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 912,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1076,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1077,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 779,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev",
+   "note": "relabelled 2026-10-20 by the written policy (at most a heading or a caption): a text-heavy diagram kept as a picture, only the caption / heading in the section, like pages 369 / 454 / 633"
+  },
+  {
+   "doc": "ortho",
+   "page": 874,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev",
+   "note": "relabelled 2026-10-20 by the written policy (at most a heading or a caption): a text-heavy diagram kept as a picture, only the caption / heading in the section, like pages 369 / 454 / 633"
+  },
+  {
+   "doc": "ortho",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 83,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 92,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 108,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 139,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 165,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 241,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 323,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 333,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 399,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 448,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 468,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 630,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 818,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "ortho",
+   "page": 1111,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 379,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 381,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 128,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 327,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 384,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 73,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev",
+   "note": "relabelled 2026-10-20: judged partial with an aid that stripped <XML> code as HTML tags; the section holds the page's code and text"
+  },
+  {
+   "doc": "hf",
+   "page": 212,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev",
+   "note": "relabelled 2026-10-20: judged partial with an aid that stripped <XML> code as HTML tags; the section holds the page's code and text"
+  },
+  {
+   "doc": "hf",
+   "page": 425,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev",
+   "note": "relabelled 2026-10-20: judged partial with an aid that stripped <XML> code as HTML tags; the section holds the page's code and text"
+  },
+  {
+   "doc": "hf",
+   "page": 48,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 53,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 55,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 134,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 148,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 164,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 250,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 261,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 323,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 331,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 346,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 380,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 394,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 423,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 477,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 35,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hf",
+   "page": 329,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 11,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 25,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 32,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 1,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 3,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 26,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 6,
+   "expected": [
+    "page_misaligned"
+   ],
+   "verdict": "misplaced",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 30,
+   "expected": [
+    "page_misaligned"
+   ],
+   "verdict": "misplaced",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 5,
+   "expected": [
+    "page_oversized"
+   ],
+   "verdict": "misplaced",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 22,
+   "expected": [
+    "page_oversized"
+   ],
+   "verdict": "misplaced",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 8,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 16,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 20,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 21,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 24,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 27,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 28,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 31,
+   "expected": [],
+   "verdict": "clean",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 10,
+   "expected": [
+    "page_oversized"
+   ],
+   "verdict": "misplaced",
+   "split": "dev",
+   "note": "relabelled 2026-10-20: the section ends with page 12's intro paragraph, verbatim"
+  },
+  {
+   "doc": "hfmix",
+   "page": 2,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 4,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 12,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 23,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  },
+  {
+   "doc": "hfmix",
+   "page": 29,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "dev"
+  }
+ ]
+}

@@ -81,3 +81,12 @@ def test_rescore_recomputes_metrics_and_records_every_page_reason(tmp_path):
     assert 2 in row["verify"]["flagged_pages"] and 2 in row["verify"]["flagged_all"]
     assert set(row["verify"]["flagged_all"]) >= set(row["verify"]["flagged_pages"])
     assert row["rescored"] is True
+
+
+def test_flag_reasons_cover_every_page_level_reason():
+    """Verifier round 2: FLAG_REASONS missed page_partial / page_misaligned / page_oversized, so the calibration gate
+    did not count pages verify flags for them (a correction of the gate's input, not of its definition)."""
+    from aidoc.quality import PAGE_REASONS
+    from bench.run import FLAG_REASONS
+    assert set(PAGE_REASONS) <= FLAG_REASONS
+    assert {"broken_text_layer", "garbage", "page_map_missing", "page_conversion_failed"} <= FLAG_REASONS
