@@ -247,7 +247,7 @@ pnpm --dir web e2e              # Playwright
 
 `aidoc verify` checks any Markdown against its source PDF, page by page — our own output or one made by MinerU, Docling,
 MarkItDown or another tool — with the same page model the converter uses. It reads `<!-- page: N -->` markers, the
-MinerU / Docling / pdfmux marker styles or a custom regex, and infers the page boundaries from the PDF text layer when
+MinerU / Docling / pdfmux marker styles or a custom marker template (`[[p {page}]]`: literal text around one page number — no free-form regex), and infers the page boundaries from the PDF text layer when
 there are no markers.
 
 ```bash

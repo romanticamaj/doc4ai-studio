@@ -83,3 +83,51 @@ def test_custom_regex_is_bounded_and_its_group_always_captures(bad):
 def test_safe_custom_regex_still_works():
     md, info = to_aidoc("[[p 1]]\na\n[[p 2]]\nb", "custom", expected_pages=2, marker_regex=r"\[\[p (\d{1,5})\]\]")
     assert info["applied"] and md.count("<!-- page: ") == 2
+
+
+# verifier round 2 (finding C): a structural regex check is bypassable; the custom marker is a fixed template now —
+# literal text around exactly one page-number group — compiled to a pattern that cannot backtrack catastrophically
+REDOS_BYPASSES = [r"(\d+)\d+\d+\d+y", r"(\d+)[0-9]*[0-9]*q", r"(\d+)\s*\d*\s*\d*z", r"((?:a|aa)+)$", r"(?:a|a)*(\d)!",
+                  r"(\d+)(?:\d+)+y", r"(\d{1,1000}){1,1000}", r"(\d+)|(\d+)", r"(.+)", r"p(\w+)"]
+
+
+@pytest.mark.parametrize("bad", REDOS_BYPASSES)
+def test_custom_marker_outside_the_template_is_refused(bad):
+    with pytest.raises(ValueError, match="page marker"):
+        to_aidoc("[[p 1]]\na", "custom", expected_pages=1, marker_regex=bad)
+
+
+@pytest.mark.parametrize("tmpl", [r"\[\[p (\d+)\]\]", r"\[\[p (\d{1,5})\]\]", r"\[\[p ([0-9]+)\]\]", "[[p {page}]]",
+                                  r"\[\[p\s+(\d+)\s*\]\]", r"\[\[p\s(\d+)\]\]"])
+def test_custom_marker_templates(tmpl):
+    md, info = to_aidoc("[[p 1]]\na\n[[p  2 ]]\nb" if r"\s+" in tmpl else "[[p 1]]\na\n[[p 2]]\nb", "custom",
+                        expected_pages=2, marker_regex=tmpl)
+    assert info["applied"] and md.count("<!-- page: ") == 2, tmpl
+
+
+def test_custom_marker_is_literal_text_around_the_number():
+    from aidoc.markers import compile_marker
+    pat = compile_marker("Page {page} of 9.")
+    assert [m.group(1) for m in pat.finditer("Page 3 of 9. Page 4 of 99 Page 5 of 9.")] == ["3", "5"]
+    assert compile_marker(r"<!--\s*pg\s*(\d+)\s*-->").findall("<!-- pg 7 --><!--pg8-->") == ["7", "8"]
+
+
+@pytest.mark.parametrize("bad", REDOS_BYPASSES[:5])
+def test_custom_marker_is_linear_on_adversarial_input(bad):
+    """Every accepted template runs in linear time; the refused ones never compile. 25 000 chars of digits and 'a'
+    (the verifier's input that took > 30 s each) finish in well under a second with a valid template."""
+    import time
+    md = "<!-- p 1 -->\n" + "1" * 5000 + "x\n<!-- p 2 -->\n" + "a" * 20000 + "!\n"
+    t = time.perf_counter()
+    with pytest.raises(ValueError):
+        to_aidoc(md, "custom", expected_pages=2, marker_regex=bad)
+    to_aidoc(md + "1" * 20000, "custom", expected_pages=2, marker_regex=r"<!-- p (\d+) -->")
+    to_aidoc("<!-- p " + " " * 20000 + "1" * 20000, "custom", expected_pages=2, marker_regex=r"<!--\s*p\s*(\d+)\s*-->")
+    assert time.perf_counter() - t < 1.0
+
+
+def test_docling_separator_override_is_a_literal_template():
+    md, info = to_aidoc("a\n<!-- pb -->\nb", "docling", expected_pages=2, marker_regex="<!-- pb -->")
+    assert info["applied"] and md.count("<!-- page: ") == 2
+    with pytest.raises(ValueError, match="page marker"):
+        to_aidoc("a", "docling", expected_pages=1, marker_regex=r"(a|aa)+$")

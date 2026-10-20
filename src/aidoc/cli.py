@@ -62,7 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     vf.add_argument("--format", default="auto",
                     choices=["auto", "aidoc", "mineru", "docling", "markitdown", "pdfmux", "none"],
                     help="page-marker dialect (none = ignore markers, infer page boundaries)")
-    vf.add_argument("--page-marker-regex", help="custom page marker with one group capturing the 1-based page")
+    vf.add_argument("--page-marker-regex", help=r"custom page marker: literal text around one page number, "
+                    r"e.g. '[[p {page}]]' or '\[\[p (\d+)\]\]' (escaped punctuation, \s, \s*, \s+ and one "
+                    r"(\d+) group; no other regex syntax)")
     vf.add_argument("--pages", type=int, help="total pages when there is no PDF (marker coverage only)")
     vf.add_argument("--json", metavar="PATH", help="write the JSON report (- = stdout)")
     vf.add_argument("--html", metavar="PATH", help="write a self-contained HTML report")
