@@ -279,10 +279,12 @@ def probe_file(path: Path) -> ProbeResult:
         image_cover = sum(m["image_cover"] for m in stats) / len(stats) if stats else 0.0
         layout = bool(non_blank) and sum(1 for m in non_blank if m["two_col"]) >= len(non_blank) / 2
         bf_names, bf_pages = broken_fonts(doc)
+        suspect = sorted(font_status(doc))
         return ProbeResult(kind="pdf", ext=ext, size=size, pages=n, text_ratio=text_ratio,
                            image_cover=image_cover, math_hint=any(m["math"] for m in stats),
                            layout_hint=layout, has_table_lines=any(m["table_lines"] for m in stats),
-                           blank_pages=blank_pages, broken_fonts=bf_names, broken_font_pages=bf_pages)
+                           blank_pages=blank_pages, broken_fonts=bf_names, broken_font_pages=bf_pages,
+                           font_suspect_pages=suspect)
     except Exception:  # noqa: BLE001  PyMuPDF raises many types for broken files
         return ProbeResult(kind="pdf", ext=ext, size=size, error="corrupt")
     finally:
