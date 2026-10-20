@@ -52,76 +52,90 @@ MARKER_REGEX_MAX = 200
 PAGE_NUMBER = r"(\d{1,6})"
 _GROUP_FORMS = (r"(\d+)", r"([0-9]+)")
 _GROUP_BOUNDED = re.compile(r"\((?:\\d|\[0-9\])\{1,[1-9][0-9]?\}\)")
-_WS = {r"\s*": r"[ \t]*", r"\s+": r"[ \t]+", r"\s": r"[ \t]"}
+_WS = {r"\s*": (0, True), r"\s+": (1, True), r"\s": (1, False)}
 MARKER_HELP = ("a page marker is literal text around one page number: `[[p {page}]]`, or the regex form "
                r"`\[\[p (\d+)\]\]` (escaped punctuation, \s, \s*, \s+ and one (\d+) group only)")
 
 
-def compile_marker(template: str, *, numbered: bool = True) -> re.Pattern:
-    r"""A custom page marker as a fixed template (verifier round 2, finding C: a structural check of a free regex was
-    bypassed five ways, each > 30 s of backtracking; Python's `re` has no timeout). Accepted: literal text with one
-    `{page}` placeholder (runs of spaces match spaces / tabs), or the regex subset of literal and backslash-escaped
-    punctuation, `\s`, `\s*`, `\s+` and exactly one `(\d+)` / `([0-9]+)` / `(\d{1,k})` group. It must start with a
-    literal character, so a match attempt only starts there; no quantifier is nested or ambiguous: linear time.
-    `numbered=False` (a separator between pages) takes no group."""
-    if not template:
-        raise ValueError("page marker template is empty")
-    if len(template) > MARKER_REGEX_MAX:
-        raise ValueError(f"page marker longer than {MARKER_REGEX_MAX} characters")
-    out: list[str] = []
-    kinds: list[str] = []                      # "lit" | "ws" | "num"
+def _tokens(template: str) -> list[tuple]:
+    """("lit", char) | ("ws", min, unbounded) | ("num",). A literal space or tab is a one-character whitespace run."""
+    toks: list[tuple] = []
     i, n = 0, len(template)
     if "{page}" in template:                   # template form: everything else is literal
         while i < n:
             if template.startswith("{page}", i):
-                out.append(PAGE_NUMBER)
-                kinds.append("num")
+                toks.append(("num",))
                 i += 6
             elif template[i] in " \t":
-                j = i
-                while j < n and template[j] in " \t":
-                    j += 1
-                out.append(r"[ \t]+")
-                kinds.append("ws")
-                i = j
+                toks.append(("ws", 1, True))   # a run of spaces in the template matches one or more spaces / tabs
+                while i < n and template[i] in " \t":
+                    i += 1
             else:
-                out.append(re.escape(template[i]))
-                kinds.append("lit")
+                toks.append(("lit", template[i]))
                 i += 1
-    else:
-        while i < n:
-            c = template[i]
-            m = _GROUP_BOUNDED.match(template, i)
-            form = next((f for f in _GROUP_FORMS if template.startswith(f, i)), None)
-            if m or form:
-                out.append(PAGE_NUMBER)
-                kinds.append("num")
-                i += len(m.group(0)) if m else len(form)
-            elif c == "\\":
-                if i + 1 >= n:
-                    raise ValueError(f"page marker ends with a backslash; {MARKER_HELP}")
-                ws = template[i:i + 3] if template[i:i + 3] in _WS else template[i:i + 2]
-                if ws in _WS:
-                    out.append(_WS[ws])
-                    kinds.append("ws")
-                    i += len(ws)
-                elif not template[i + 1].isalnum():
-                    out.append(re.escape(template[i + 1]))
-                    kinds.append("lit")
-                    i += 2
-                else:
-                    raise ValueError(f"unsupported page marker escape {template[i:i + 2]!r}; {MARKER_HELP}")
-            elif c in ".^$*+?{}[]()|":
-                raise ValueError(f"unsupported page marker syntax {c!r} at {i}; {MARKER_HELP}")
+        return toks
+    while i < n:
+        c = template[i]
+        m = _GROUP_BOUNDED.match(template, i)
+        form = next((f for f in _GROUP_FORMS if template.startswith(f, i)), None)
+        if m or form:
+            toks.append(("num",))
+            i += len(m.group(0)) if m else len(form)
+        elif c == "\\":
+            if i + 1 >= n:
+                raise ValueError(f"page marker ends with a backslash; {MARKER_HELP}")
+            ws = template[i:i + 3] if template[i:i + 3] in _WS else template[i:i + 2]
+            if ws in _WS:
+                toks.append(("ws", *_WS[ws]))
+                i += len(ws)
+            elif not template[i + 1].isalnum():
+                ch = template[i + 1]
+                toks.append(("ws", 1, False) if ch in " \t" else ("lit", ch))
+                i += 2
             else:
-                out.append(re.escape(c))
-                kinds.append("lit")
-                i += 1
-    if kinds.count("num") != (1 if numbered else 0):
+                raise ValueError(f"unsupported page marker escape {template[i:i + 2]!r}; {MARKER_HELP}")
+        elif c in ".^$*+?{}[]()|":
+            raise ValueError(f"unsupported page marker syntax {c!r} at {i}; {MARKER_HELP}")
+        elif c in " \t":
+            toks.append(("ws", 1, False))
+            i += 1
+        else:
+            toks.append(("lit", c))
+            i += 1
+    return toks
+
+
+def compile_marker(template: str, *, numbered: bool = True) -> re.Pattern:
+    r"""A custom page marker as a fixed template (verifier rounds 2-3, finding C: a structural check of a free regex
+    was bypassed five ways, and `x\s*\s*\s*(\d+)y` still backtracked for > 40 s on 3,000 spaces; Python's `re` has
+    no timeout). Accepted: literal text with one `{page}` placeholder, or the regex subset of literal and
+    backslash-escaped punctuation, `\s`, `\s*`, `\s+` and exactly one `(\d+)` / `([0-9]+)` / `(\d{1,k})` group.
+    Every run of adjacent whitespace tokens (literal spaces and `\s` forms) becomes ONE `[ \t]{m,}` / `[ \t]{m}`, so
+    no two quantifiers can split the same characters; the number is `\d{1,6}`; the pattern starts with a literal,
+    so a match attempt only starts there: linear time. `numbered=False` (a separator between pages) takes no group."""
+    if not template:
+        raise ValueError("page marker template is empty")
+    if len(template) > MARKER_REGEX_MAX:
+        raise ValueError(f"page marker longer than {MARKER_REGEX_MAX} characters")
+    merged: list[tuple] = []
+    for t in _tokens(template):
+        if t[0] == "ws" and merged and merged[-1][0] == "ws":
+            merged[-1] = ("ws", merged[-1][1] + t[1], merged[-1][2] or t[2])
+        else:
+            merged.append(t)
+    if sum(1 for t in merged if t[0] == "num") != (1 if numbered else 0):
         raise ValueError("page marker must have exactly one page number" if numbered
                          else f"page separator takes no page number; {MARKER_HELP}")
-    if kinds[0] != "lit":
+    if merged[0][0] != "lit":
         raise ValueError(f"page marker must start with literal text; {MARKER_HELP}")
+    out = []
+    for t in merged:
+        if t[0] == "lit":
+            out.append(re.escape(t[1]))
+        elif t[0] == "num":
+            out.append(PAGE_NUMBER)
+        else:
+            out.append("[ \\t]{" + str(t[1]) + (",}" if t[2] else "}"))
     return re.compile("".join(out))
 
 
