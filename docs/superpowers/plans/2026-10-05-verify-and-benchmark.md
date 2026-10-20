@@ -1213,3 +1213,43 @@ with ≥ 20 squashed text-layer chars); ρ ≥ 0.6 unchanged; page recall ≥ 0.
 page-level reason, advisory `page_partial` excluded; scans reported separately, not gating; validated once on a
 fresh Tier A seed (never generated before) plus Tier B (L3 only: no page GT, flag counts as information); no tuning
 after the result. The `syn-dropped-pages` negatives still have to pass. Routing unchanged (user, 2026-10-20).
+
+**Verifier round 3 (2026-10-20).** Each fix pinned by a test that failed first:
+- *Page-text policy* (user confirmed 2026-10-20): for page_partial, code listings, tables and body text count as page
+  text; callouts and labels inside a figure kept as a picture do not. Checker: lines whose centre lies in an
+  embedded picture (≥ 2 % of the page) leave the prose layer unless monospaced (Head First draws code over a
+  background picture) — `test_page_checks_round2.py::test_callouts_on_a_picture_are_not_page_prose`,
+  `::test_code_over_a_background_picture_stays_page_text`. Limit (documented, spec §11): vector-drawn diagram labels
+  and short lines (table cells) are not told apart. Relabelled with a note: hfmix3 26 (now ambiguous).
+- *page_partial advisory*: in `advisories`, never a reason; not counted as flagged / unrepaired, not repaired, no
+  level change, no fallback — `::test_page_partial_is_an_advisory_that_never_raises_the_level`,
+  `::test_check_document_does_not_repair_an_advisory_page`; web info note (`pageWarnings.test.ts`); the bench cut-page
+  negative checks the advisory (`tests/bench/test_calibrate.py`).
+- *Wrong-Unicode-map guard*: `quality.language_gap` / `untrusted_layers` —
+  `::test_shifted_cipher_text_layer_is_untrusted_not_partial`. The synthetic broken samples: 34 false page_partial
+  → 1 (MinerU), 0 in the other configs.
+- *Broken-font classification*: symbol / dingbat fonts excluded, per page by broken-character share ≥ 2 %, span
+  names matched normalised, a name embedded broken and healthy counts a span only with ≥ 10 % unmapped characters —
+  `tests/unit/test_probe.py::test_symbol_and_dingbat_fonts_are_not_broken_fonts`,
+  `::test_broken_tounicode_fonts_detected` (page 2's one-character footer no longer makes it a broken-font page),
+  `tests/bench/test_make_synthetic.py` (variant c: footer only → no broken-font page). Head First: 339 → 124 pages.
+  `probe.broken_font_pages` is the corrected list, so alignment (spot check exclusion), flag_pages and reports use it.
+- *ReDoS*: adjacent whitespace tokens merge into one `[ \t]{m,}` run — `tests/unit/test_markers_fuzz.py` (the two
+  bypasses, a seeded 300-template fuzz with a 0.5 s per-call bound).
+- *Label gate*: `tests/integration/test_page_labels_real.py` asserts only on split `heldout_v2` (Wilson 95 % lower
+  bounds: precision ≥ 0.8; recall ≥ 0.8 with ≥ 10 positives); every earlier split is `dev`; `heldout_v2` is empty
+  with its protocol in `page_labels.json` "splits" — the independent verifier labels it blind. Until then the test
+  fails under `AIDOC_REQUIRE_MANUAL=1` by design.
+- *Calibration gate*: redefined by the user's decision above; `bench/calibrate.py::gate_v2`; the old numbers are kept
+  as `legacy` information. Fresh Tier A: `make_synthetic.py --seed-salt "fresh-20261020:" --out
+  bench/results/corpus-fresh-20261020` (seeds never generated before), `run.py --tier-a-root`.
+- `PAGE_CHECK_VERSION` 5 (re-grade on start).
+
+**Frozen thresholds (2026-10-20, before the held-out labels and the fresh-seed gate run; not to be changed on their
+results):** quality.py — `DROPPED_LAYER_MIN` 120, `DROPPED_BODY_MIN` 300, `DROPPED_SECTION_MAX` 20,
+`DROPPED_COVERAGE_MAX` 0.2, `DROPPED_TEXT_MAX` 150, `COVER_N` 5, `PARTIAL_COVERAGE_MIN` 0.5, `ELSEWHERE_MIN` 0.5,
+`SPLIT_PRESENT_MIN` 0.8, `MOVED_MIN` 0.3, `NEIGHBOUR_PAGES` 4, `DISTINCT_PAGES` 8, `DISTINCT_MIN` 40, `GIB_GAP` 1.5,
+`GIB_LAYER_MIN` 120, `GIB_SECTION_MIN` 60, `GIB_VOCAB` 1600, `MISALIGNED_MIN_PROBES` 2, `FLAGGED_MAX_RATIO` 0.20;
+pagemap.py — `FURNITURE_EDGE_LINES` 3, `FURNITURE_MIN_SHARE` 0.2, `FURNITURE_MAX_SHARE` 0.5, `PROSE_LINE_MIN` 20,
+`TRUSTED_LAYER_MIN` 120, `FIGURE_AREA_MIN` 0.02; probe.py — `BROKEN_SHARE_MIN` 0.02, `SYMBOL_FONT` pattern, mixed
+fonts 10 % unmapped; label gate — `LB_MIN` 0.8, `RECALL_MIN_POS` 10; calibration gate — ρ 0.6, page P / R 0.9.

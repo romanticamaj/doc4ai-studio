@@ -270,6 +270,22 @@ boundaries need text the PDF layer and the Markdown share; pages that are mostly
 multi-column books the text layer's order can differ from the reading order, so a boundary may sit a paragraph or
 two off.
 
+Known limits of the per-page checks:
+
+- `page_partial` (a page whose section holds clearly less than half of its text) is an **advisory**: shown on the
+  page, it never raises the level, triggers a repair or an engine fallback, until it has passed on a blind held-out
+  page set. Code listings, tables and body text count as page text; callouts and labels inside a figure kept as a
+  picture do not — but only lines over an embedded picture are recognised as figure lines: labels of a diagram
+  drawn as vectors, and lines shorter than 20 characters (table cells), are left out of the comparison too.
+- Code that exists only as an image in the PDF has no text layer to compare with: its loss is not seen.
+- A paragraph continued across a page break, or across the columns of a two-column page, often lands under the
+  previous page's marker; that is not flagged (it would be on every page of some books), so a page whose whole
+  first column moved is under-reported.
+- A document whose source PDF is gone cannot be re-graded: it keeps its last result (for example a stale `warn`)
+  until it is uploaded or converted again.
+- Text layers drawn through a wrong Unicode map (shifted-cipher fonts) are detected by a language-model check and
+  left out of the coverage checks; such pages are judged only on an empty section.
+
 ## Benchmark
 
 `bench/` (not part of the package) measures what the orchestration adds — automatic routing, fallback and per-page
