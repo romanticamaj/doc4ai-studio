@@ -120,7 +120,7 @@ def pdf_text_layers(pdf: Path) -> list[str]:
 FURNITURE_EDGE_LINES = 3          # a running header / footer sits among the first or last lines of a page
 FURNITURE_MIN_SHARE = 0.2         # ... and repeats on at least this share of the pages (and on 3 pages)
 PROSE_LINE_MIN = 20               # shorter lines (diagram labels, table cells, page furniture) are not prose
-FURNITURE_MAX_SHARE = 0.5         # furniture never takes more than half of a page's text
+FURNITURE_MAX_SHARE = 0.5         # furniture never takes more than half of the document's text
 _DIGITS = re.compile(r"\d+")
 
 
