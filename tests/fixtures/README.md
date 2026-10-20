@@ -41,3 +41,9 @@ Generate them from the original books (found by sha256 in the database's work co
     uv run python tests/fixtures/make_manual.py [--db data/aidoc.db] [--source <sha8>=<path> ...]
 
 Acceptance run (a skip is a failure there): `AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration -q`.
+
+The hand-judged page set `page_labels.json` (verifier round 2; identities, page numbers and verdicts only) also needs
+the judged Markdown in `tests/fixtures/manual/labelled/` — snapshots of the conversions that were judged, identified
+by sha256, which `make_manual.py` cannot rebuild. Samples with `"role": "labels"` in `manual_samples.json` exist for
+that set only (`tests/integration/test_page_labels_real.py`), not for the conversion acceptance test. Score the checks
+with `uv run python bench/page_labels.py --split test|dev|all`.

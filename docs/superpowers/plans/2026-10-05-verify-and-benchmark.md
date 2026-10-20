@@ -1137,3 +1137,72 @@ from the outputs on disk) and records `flagged_all`; the calibration report adds
 verifiable rows) for information only. Live DB: backup `data/aidoc.db.bak-20261013-023339`, dry run on a copy, then
 the two books' `source_path` set to their sha-verified originals and the server restarted (v3 re-grade). Numbers in
 the spec acceptance record §10.3.
+
+**Verifier round 2 (2026-10-20).** Each fix pinned by a test that failed first; numbers in the spec §10.4.
+- *Labelled real pages* (`tests/fixtures/page_labels.json`, scorer `bench/page_labels.py`, gate
+  `tests/integration/test_page_labels_real.py`, slow, fails instead of skipping under `AIDOC_REQUIRE_MANUAL=1`):
+  293 judged pages of the two books and five raw-engine samples (`manual_samples.json`), identity by sha256 only,
+  no document text. Protocol: the verifier's 21 pages plus a seeded sample were judged before any check changed;
+  that first test split was measured with the round-1 checks (page_dropped P 0.91 / R 0.83, page_partial 0.86 /
+  0.67, page_misaligned 1.0 / 0.5, page_oversized 0 / 0) and once with the first fix (0.80 / 1.0, 0.86 / 0.67,
+  1.0 / 0.5, 1.0 / 0.5: the misses showed the tag-stripping bug and doc-wide broken fonts skipping Head First pages),
+  then a second split once with the new checks frozen
+  (oversized P 0.0 on 11 flags: a paragraph continued across the page break put two probes of the next page in the
+  section; the OCR of screenshots made sections 3× their layer; doc-wide broken-font names cut real text out of Head
+  First layers), then a third split after those fixes, frozen again. Each measured split became design data ("dev").
+  Label corrections, each recorded in the label's `note`: five Head First pages judged partial with an aid that
+  stripped `<XML>` code as HTML tags (the same bug as finding B, in my judging script); Ortho 779 / 874 by the written
+  policy (a text-heavy diagram kept as a picture is dropped, like 369 / 454); hfmix 10 (holds page 12's paragraph)
+  and Ortho 1129 (holds page 1130's whole table, past the cut of the judging view) after the check flagged them.
+  Thresholds were set on dev pages only (`quality.py` constants) and not changed after the third split was measured.
+  The gate requires P and R ≥ 0.9 per reason on all labels; it fails for page_partial (P 0.88: two borderline code
+  pages whose callouts count as prose) and page_oversized (R 0.86: hfmix3 28 holds 0.30 of page 29, the threshold is
+  0.30 of the distinctive text) — reported, not tuned.
+- *A, dropped on the whole text*: `pagemap.pdf_layers` returns `PageLayers(full, prose, body, untrusted)`; dropped
+  when the prose layer has ≥ 120 or the furniture-free body layer ≥ 300 chars and the section is empty or a heading /
+  caption only (< 0.2 coverage in < 150 chars) — `test_page_checks_round2.py::test_full_page_table_lost_to_a_picture_is_dropped`,
+  `::test_heading_only_section_is_dropped_not_partial`. Partial stays on the prose layer. Coverage: character
+  5-gram multisets (`COVER_N`), also for repair acceptance (a repair layer is the body layer for a page without prose).
+- *B, merged tables / foreign text*: only engine-emitted HTML tags, entities and link URLs are stripped
+  (`pagemap.strip_tags`; generic tag stripping ate XML code — `::test_xml_code_listing_is_page_text_not_html`).
+  "Elsewhere" is measured on the page's distinctive 5-grams (on no other page within 8) that another section within 4
+  holds beyond its own layer: ≥ 0.5 (or own + elsewhere ≥ 0.8, or an empty section and ≥ 0.3) → page_misaligned, never
+  repaired; the host page_oversized, also on a dropped / partial page, which then is not repaired —
+  `::test_table_merged_into_previous_page_is_misaligned_not_dropped`, `::test_page_of_repeated_sentences_moved_to_a_neighbour_is_misaligned`,
+  `::test_one_shared_sentence_does_not_make_a_host`, `::test_solution_page_repeating_the_exercise_is_not_oversized`,
+  `::test_near_empty_page_holding_another_pages_text_is_oversized`. Deviation from the request "≥ 2 matching probes
+  before a page counts as hosting": probes no longer decide hosting at all (two probes of a continued paragraph were
+  the second split's false positives); they still decide page_misaligned for the moved page. The size proxy
+  (> 2 × layer + 300) is removed for the same reason (OCR of screenshots); `OVERSIZE_RATIO` / `OVERSIZE_SLACK` gone.
+- *Broken fonts*: `probe.broken_fonts_by_page`; a page's layer leaves out spans of the fonts broken on that page (Head
+  First: 339 of 532 pages use a broken handwriting font, their body text extracts fine); `untrusted` only with
+  < 120 chars of healthy text — `::test_broken_font_spans_are_left_out_of_the_layer`.
+- *C, ReDoS*: the custom marker is a fixed template (literal text around `{page}` or one `(\d+)` / `([0-9]+)` /
+  `(\d{1,k})`, escaped punctuation, `\s` `\s*` `\s+`, starting with a literal) compiled to a linear pattern; the five
+  bypasses are refused at once (`tests/unit/test_markers.py`, API 422 `tests/api/test_verify.py::test_redos_bypasses_are_422_fast`).
+  The structural regex check is deleted.
+- *D*: a repair (also from history on a re-grade) whose section still fails the checks is `repair_rejected` and
+  unrepaired — `::test_regrade_rechecks_a_page_with_an_old_repair`; furniture is judged per document (more than half
+  of the document's text → none) — `::test_furniture_only_and_caption_only_pages_are_not_dropped` (the edge3.pdf
+  shapes; the verifier's real edge3 Docling output now flags only 5 oversized / 7 misaligned, which is right);
+  link URLs do not count — `::test_link_urls_do_not_count_toward_the_section_size` (GEO report p14: no flag);
+  a scanned PDF with markers is `verifiable: "partial"` — `::test_scan_with_markers_is_partially_verifiable`.
+- *Gate input correction*: `bench/run.py` `FLAG_REASONS` now holds every page-level reason (it lacked page_partial /
+  page_misaligned / page_oversized) — `tests/bench/test_run_fake.py::test_flag_reasons_cover_every_page_level_reason`.
+  Gate definition and thresholds unchanged.
+- Tests changed by the new definitions: `test_partial_page_is_flagged_with_its_coverage` and the verify cut-page test
+  cut to 30 % (15 % of a short page in < 150 chars is now dropped); `test_dropped_pages_helper` uses the page's own
+  text for the other sections (30 × "x" is now dropped); the VLM budget test sees 2 dropped pages (was 1).
+- `PAGE_CHECK_VERSION` 4: the server re-grades every PDF document with its PDF on start.
+- Correction of the round-1 record: "Head First: 55 repaired_by restored from the sidecar" was true for the re-grade
+  of 2026-10-13, but the MinerU reconversion that followed replaced that conversion; the document has 15 repaired
+  pages (Docling → MinerU fallback, 12 broken-text-layer + 3 partial repairs).
+- A repair must cover the layer its page's check used (body for a dropped page, prose for a partial one): the first
+  reconversion accepted Ortho p779 against the prose layer and the final check rejected it —
+  `tests/unit/test_repair.py::test_a_dropped_page_is_repaired_against_its_body_layer_a_partial_one_against_its_prose`.
+  Both books were reconverted again after this fix (numbers in the spec §10.4: 0 rejected repairs).
+- The five label samples carry `"role": "labels"` in `manual_samples.json`; `test_manual_fixtures.py` does not convert
+  them (each took longer than the 300 s test timeout and killed the slow run; they are checked against their judged
+  Markdown by `test_page_labels_real.py`).
+- Final matrix: not-slow 1246 passed, 1 skipped (symlink privilege); slow 68 passed, 2 failed (the label gate:
+  page_partial precision, page_oversized recall), 0 skipped; web 211 passed; build ok; e2e 11 passed.

@@ -435,3 +435,40 @@ Tier A 各類 NED 與前次相同（例如繁中掃描 `auto` 0.68、Docling 0.9
 | Head First（532 頁） | Docling → MinerU（Docling 被標頁 > 20 %） | 2（修 0） | 22（修 3） | 0 | 1 | 12（修 12） | 15 | warn | 3443 |
 
 抽查：骨科 1052（整頁表格）修復後是完整的 HTML 表格；282（流程圖頁，標籤都是長行）OCR 只拿回少量文字，涵蓋率不到 0.5 → 不算修好、留 `warn`（前次這種頁會被誤記為已修）；1014 的文字確實在 1013 底下（`page_misaligned`，1013 為 `page_oversized`）。Head First 120 是程式碼頁，PDF 文字層含被手寫註記蓋住的舊版程式碼，MinerU 輸出畫面上的版本 → `page_partial`（文字層與畫面不一致，屬於訊號的已知限制）；74 由 Docling 全頁 OCR 修好。
+
+**更正（2026-10-20）**：第 4 項「Head First 的 55 筆修復紀錄從 sidecar 找回」只對 10-13 那次重評成立；之後的 MinerU 重轉取代了那份轉換，文件實際只有 15 頁已修復（上表「已修復」欄）。第 5 項之後的「有標記的掃描檔也回報 `verifiable: true`」已改為 `"partial"`（見 10.4）。
+
+### 10.4 驗證者第二回合（2026-10-20）
+
+修正（計畫偏差節「Verifier round 2」列出每項的測試）：
+
+1. **有標註的真實頁面集**：`tests/fixtures/page_labels.json`，293 頁（兩本書加五份原始引擎樣本），只存文件身分（sha256）、頁碼、預期理由與判定，不含任何文件文字；`tests/integration/test_page_labels_real.py`（slow，`AIDOC_REQUIRE_MANUAL=1` 下缺樣本就失敗）要求每個理由 precision 與 recall ≥ 0.9。流程：先標頁、再改檢查；每個 test 分割只量一次，量過就變成 dev，再抽新的 test。標註更正都記在該頁 `note`（其中五頁 Head First 是我的評判工具把 `<XML>` 程式碼當 HTML 標籤刪掉造成的誤標——與發現 B 同一個 bug）。
+2. **A**：`page_dropped` 改看去掉頁首頁尾的完整文字層（body，≥ 300 字）或 prose 層（≥ 120 字），段落空白或只有標題／圖說（涵蓋 < 0.2 且 < 150 字）即 dropped；`page_partial` 仍看 prose 層。涵蓋率改為字元 5-gram 多重集合（二元組對任何英文都高估）。
+3. **B**：只去掉引擎會輸出的 HTML 標籤、實體與連結網址；用「該頁獨有」的 5-gram 判斷文字是否在別段——合併表格頁成為 `page_misaligned`（不再 OCR 第二份），收容頁 `page_oversized`；重複句子、沒有唯一探針的頁也找得到。收容判定只看這個證據：一個或兩個探針（跨頁延續的段落）與段落大小都不再決定 oversized（第二個 test 分割裡這兩種造成 11 個誤報）。壞字型頁改用該頁健康字型的文字檢查（Head First 532 頁中 339 頁用了壞的手寫註記字型，本文卻抽得出來）。
+4. **C**：自訂頁碼標記改成固定樣板（`[[p {page}]]` 或 `\[\[p (\d+)\]\]` 這類：字面文字、跳脫標點、`\s` 系列、一個頁碼群組），編譯成線性時間的樣式；五個繞過寫法立即 422。
+5. **D**：重評時，歷史上的修復若段落仍不過檢查 → `repair_rejected`、算未修復；頁首頁尾是否算 furniture 改以整份文件判斷（只有頁首頁尾或只有短圖說的頁不再被判 dropped；verifier 的 edge3.pdf 現在只標出真的錯位 5／7）；連結網址不計入段落大小（GEO 報告 p14 不再誤報）；有標記的掃描檔回報 `verifiable: "partial"`；修復必須涵蓋該頁檢查所用的那一層（dropped 用 body 層——重轉時骨科 p779 曾在修復階段被接受、最終檢查又否決）。
+6. **閘門輸入更正**：`bench/run.py` 的 `FLAG_REASONS` 漏了 `page_partial`／`page_misaligned`／`page_oversized`，改為涵蓋全部頁層級理由；閘門定義與門檻不變。
+
+**標註頁上的 precision／recall**（每格 P / R，括號內為正例數）：
+
+| 理由 | 舊檢查（98c58f0），全部標註 | 新檢查，最後一個 test 分割（凍結後才抽） | 新檢查，全部標註 |
+|---|---|---|---|
+| page_dropped | 0.94 / 0.63 (27) | 1.00 / 1.00 (3) | 1.00 / 1.00 (27) |
+| page_partial | 0.52 / 0.73 (15) | 0.80 / 1.00 (4) | 0.88 / 1.00 (15) |
+| page_misaligned | 1.00 / 0.67 (3) | —（0 正例，0 誤報） | 1.00 / 1.00 (3) |
+| page_oversized | 0.40 / 0.29 (7) | 1.00 / 0.50 (2) | 1.00 / 0.86 (7) |
+
+閘門（≥ 0.9）**沒有全過**：page_partial precision 0.88（兩頁程式碼頁的旁註算 prose，屬邊界）、page_oversized recall 0.86（hfmix3 第 28 頁收容第 29 頁 0.297 的獨有文字，門檻 0.30）——如實回報，沒有在看過的頁上調門檻。page_misaligned 與 page_oversized 的正例很少（3／7），數字的信賴區間很寬。前兩個 test 分割量到的數字見計畫偏差節。
+
+**重跑 benchmark（`bench/results/2026-10-20-ulove-arrangement/`，A＋B × 5 設定，閘門未改）**：ρ 0.38、頁級 precision 0.74、recall 0.37（142 列）→ 仍未通過（前次 ρ 0.47 / P 1.00 / R 0.045；R 上升主要來自 `FLAG_REASONS` 更正與新的 dropped 規則，P 下降是 86 個被標頁的 NED ≥ 0.5，其中 MinerU 46、Docling 12、MarkItDown 12、auto 8）。僅供參考：只看有文字層的 102 列 ρ 0.42、P 0.74、R 0.77；掃描檔改為 `verifiable: "partial"` 後「verifiable 列」與有文字層的列相同。Tier A 各類 NED 與前次相同。
+
+**兩本書以 force 在 Library 重轉**：
+
+| 書 | 引擎 | page_dropped | page_partial | page_misaligned | page_oversized | broken_text_layer | 已修復 | 被否決的修復 | 秒 |
+|---|---|---|---|---|---|---|---|---|---|
+| 骨科書（1192 頁） 前次 | MinerU | 12（修 4） | 6（修 0） | 1 | 4 | 0 | 4 | — | 830 |
+| 骨科書 本次 | MinerU | 17（修 0） | 1（修 1） | 5 | 3 | 0 | 1 | 0 | 879 |
+| Head First（532 頁） 前次 | Docling → MinerU | 2（修 0） | 22（修 3） | 0 | 1 | 12（修 12） | 15 | — | 3443 |
+| Head First 本次 | Docling（187／525 頁被標）→ MinerU | 2（修 0） | 18（修 2） | 0 | 0 | 12（修 12） | 14 | 0 | 3596 |
+
+骨科 1052–1054（合併到 1051 的表格）現在是 `page_misaligned`、各自段落空白、文字只在 1051 一份（前次被 OCR 再插入一份）；1129 收容 1130 整張表 → oversized／misaligned。骨科 17 頁 dropped 都是整頁流程圖（「Interpretation of the clinical examination」系列）與整頁表格，MinerU／Docling OCR 都拿不回一半以上的文字 → 留 `warn`，不假裝修好。
