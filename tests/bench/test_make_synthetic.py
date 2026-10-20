@@ -95,3 +95,12 @@ def test_every_gt_has_a_license_line():
 def test_no_font_files_are_committed():
     r = subprocess.run(["git", "ls-files"], capture_output=True, text=True, cwd=BENCH.parent, check=True)
     assert not [f for f in r.stdout.splitlines() if f.lower().endswith((".ttf", ".otf", ".ttc"))]
+
+
+def test_seed_salt_gives_a_fresh_corpus_and_leaves_the_default_alone(monkeypatch):
+    from bench.corpus import make_synthetic as MS
+    base = MS.seed_of("syn-text-en-01")
+    monkeypatch.setattr(MS, "SEED_SALT", "fresh-20261020:")
+    assert MS.seed_of("syn-text-en-01") != base
+    monkeypatch.setattr(MS, "SEED_SALT", "")
+    assert MS.seed_of("syn-text-en-01") == base == int(__import__("hashlib").sha256(b"syn-text-en-01").hexdigest()[:12], 16)

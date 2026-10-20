@@ -38,6 +38,8 @@ BOOK = "syn-book-1200"
 BOOK_CONFIGS = {"auto", "mineru"}              # spec §3.5: the 1,200-page book runs only these
 TIER_C_CONFIGS = {"auto"}
 WARMUP_SAMPLE = ROOT / "bench" / "corpus" / "small" / "syn-text-en" / "syn-text-en.pdf"
+TIER_A_ROOT = ROOT / "bench" / "corpus"      # --tier-a-root: a fresh-seed Tier A corpus (gate decision 2026-10-20)
+TEXT_LAYER_MIN = 20                          # = aidoc.verify.TEXT_LAYER_MIN: a page verify can judge
 # every page-level reason verify can give (verifier round 2: the set was not updated when page_partial,
 # page_misaligned and page_oversized joined the page checks, so the gate missed them; corrected, not re-defined)
 FLAG_REASONS = {"broken_text_layer", "garbage", "page_map_missing", "page_conversion_failed", *PAGE_REASONS}
@@ -90,7 +92,7 @@ def collect(corpora: list[str], *, include_book: bool = True, log=print) -> tupl
     missing: list[dict] = []
     for c in corpora:
         if c in ("A", "A-small"):
-            base = ROOT / "bench" / "corpus" / ("small" if c == "A-small" else "")
+            base = TIER_A_ROOT / ("small" if c == "A-small" else "")
             for gt_path in sorted(base.glob("syn-*/gt.json")):
                 gt = json.loads(gt_path.read_text(encoding="utf-8"))
                 if gt["kind"] == "verify-negative" or (gt["name"] == BOOK and not include_book):
@@ -193,7 +195,7 @@ def environment(args, configs: list[str], corpora: list[str]) -> dict:
             "aidoc_commit": _git("rev-parse", "--short=12", "HEAD"), "aidoc_dirty": bool(dirty),
             "main_uv_lock_sha256": _sha_file(ROOT / "uv.lock"),
             "aidoc_toml": {"mineru_tier": cfg.engines.mineru_tier, "docling_ocr": cfg.engines.docling_ocr},
-            "configs": configs, "corpus": corpora, "fake": bool(args.fake), "repeat": args.repeat, "vlm": vlm,
+            "configs": configs, "corpus": corpora, "tier_a_root": str(TIER_A_ROOT), "fake": bool(args.fake), "repeat": args.repeat, "vlm": vlm,
             "no_repair_configs": [c for c in configs if "AIDOC_BENCH_NO_REPAIR" in env_for_config(c)]}
 
 
@@ -406,6 +408,8 @@ def score(s: Sample, config: str, conv: dict) -> dict:
         v = {"score": rep.summary["score"], "level": rep.level, "pages_flagged": rep.summary["pages_flagged"],
              "flagged_pages": sorted(e["page"] for e in rep.pages if set(e.get("reasons") or []) & FLAG_REASONS),
              "flagged_all": sorted(e["page"] for e in rep.pages if e.get("reasons")),
+             "advised_partial": sorted(e["page"] for e in rep.pages if "page_partial" in (e.get("advisories") or [])),
+             "text_pages": [p for p, lay in enumerate(pdf_text_layers(s.pdf), 1) if len(lay) >= TEXT_LAYER_MIN],
              "reasons": rep.summary["reasons"], "verifiable": rep.verifiable,
              "inferred": bool(rep.page_map and rep.page_map.get("method") == "inferred")}
     except ValueError as e:
@@ -462,9 +466,17 @@ def run(argv: list[str] | None = None) -> int:
     ap.add_argument("--vlm-base-url", default="http://127.0.0.1:11434/v1")
     ap.add_argument("--vlm-model", default="gemma4:12b")
     ap.add_argument("--no-report", action="store_true")
+    ap.add_argument("--tier-a-root", help="Tier A corpus root (default bench/corpus); recorded in env.json")
     ap.add_argument("--rescore", action="store_true",
                     help="recompute metrics and verify for the rows of --out from the outputs on disk (no conversion)")
     a = ap.parse_args(argv)
+    global TIER_A_ROOT
+    if a.tier_a_root:
+        TIER_A_ROOT = Path(a.tier_a_root).resolve()
+    elif (Path(a.out) / "env.json").is_file():
+        prev_root = json.loads((Path(a.out) / "env.json").read_text(encoding="utf-8")).get("tier_a_root")
+        if prev_root:
+            TIER_A_ROOT = Path(prev_root)
     if a.rescore:
         return rescore(Path(a.out).resolve())
     corpora = a.corpus.split(",")

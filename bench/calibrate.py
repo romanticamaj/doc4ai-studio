@@ -95,6 +95,47 @@ def fill_unrecovered(rows: list[dict], run: Path, corpus_root: Path) -> None:
         r["gt_defects_unrecovered"] = [p for p in r["gt_defects"] if sc.get(p, {"ned": 0})["ned"] < RECOVERED_NED]
 
 
+GATE_V2_MIN_RHO = 0.6
+GATE_V2_MIN_RECALL = 0.9
+GATE_V2_MIN_PRECISION = 0.9
+
+
+def _judgeable(r: dict) -> bool:
+    return r.get("kind") != "scan" and (r.get("verify") or {}).get("verifiable") is True
+
+
+def _gate_numbers(rows: list[dict]) -> dict:
+    if len(rows) < 2:
+        return {"n": len(rows), "rho": None, "precision": None, "recall": None, "tp": 0, "fp": 0, "fn": 0}
+    rho = spearman([r["verify"]["score"] for r in rows], [r["metrics"]["ned"] for r in rows])
+    tp = fp = fn = 0
+    for r in rows:
+        v = r["verify"]
+        text = set(v.get("text_pages") or []) if v.get("text_pages") is not None else _all_pages(r)
+        pred = set(v.get("flagged_all", v.get("flagged_pages")) or []) & text
+        bad = _bad_pages(r) & text
+        tp += len(pred & bad)
+        fp += len(pred - bad)
+        fn += len(bad - pred)
+    return {"n": len(rows), "rho": round(rho, 4), "precision": round(tp / (tp + fp), 4) if tp + fp else 1.0,
+            "recall": round(tp / (tp + fn), 4) if tp + fn else 1.0, "tp": tp, "fp": fp, "fn": fn}
+
+
+def gate_v2(rows: list[dict]) -> dict:
+    """The calibration gate as redefined on 2026-10-20 (user approved, spec §3.4): Tier A L1 rows verify can judge
+    (a text layer: verifiable True, not a scan), pages with a text layer only; rho >= 0.6, page precision and
+    recall >= 0.9 over every page-level reason (`flagged_all`: advisory page_partial is not a reason). Scans are
+    reported separately and do not gate."""
+    base = [r for r in rows if r.get("tier") == "A" and r.get("gt_level") == "L1"
+            and (r.get("metrics") or {}).get("ned") is not None and (r.get("verify") or {}).get("score") is not None]
+    out = _gate_numbers([r for r in base if _judgeable(r)])
+    out["scans"] = _gate_numbers([r for r in base if r.get("kind") == "scan"])
+    out["excluded_unverifiable"] = sum(1 for r in base if r.get("kind") != "scan" and not _judgeable(r))
+    out["passed_metrics"] = (out["rho"] is not None and out["rho"] >= GATE_V2_MIN_RHO
+                             and out["recall"] >= GATE_V2_MIN_RECALL and out["precision"] >= GATE_V2_MIN_PRECISION)
+    return out
+
+
 def gate(out: dict, min_rho: float = CALIBRATION_MIN_RHO, min_recall: float = CALIBRATION_MIN_RECALL) -> bool:
     return (out.get("rho") is not None and out["rho"] >= min_rho and out.get("recall") is not None
             and out["recall"] >= min_recall)
@@ -155,10 +196,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--run", required=True)
     ap.add_argument("--corpus", default=None, help="corpus dir holding syn-dropped-pages (default: full, else small)")
+    ap.add_argument("--tier-a-root", default=None, help="Tier A corpus root of the run (default: env.json, bench/corpus)")
     a = ap.parse_args(argv)
     run = Path(a.run)
     rows = [json.loads(x) for x in (run / "results.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
-    fill_unrecovered(rows, run, HERE / "corpus")
+    env = json.loads((run / "env.json").read_text(encoding="utf-8")) if (run / "env.json").is_file() else {}
+    root = Path(a.tier_a_root or env.get("tier_a_root") or HERE / "corpus")
+    fill_unrecovered(rows, run, root)
     out = calibrate_rows(rows)
     corpus = Path(a.corpus) if a.corpus else (HERE / "corpus" if (HERE / "corpus" / "syn-dropped-pages").is_dir()
                                               else HERE / "corpus" / "small")
@@ -177,11 +221,19 @@ def main(argv: list[str] | None = None) -> int:
         ("all_page_reasons_text_layer_samples", {"all_reasons": True, "text_layer_only": True}),
         ("all_three", {"low_flags_all": True, "defects_only": True, "text_layer_only": True}))}
     out.update(min_rho=CALIBRATION_MIN_RHO, min_recall=CALIBRATION_MIN_RECALL)
-    out["passed"] = gate(out) and defects_ok(out["defects"])
+    out["legacy_passed"] = gate(out) and defects_ok(out["defects"])          # the pre-2026-10-20 definition, info
+    out["gate_v2"] = gate_v2(rows)
+    out["tier_b_flags"] = {c: sum(len((r.get("verify") or {}).get("flagged_all") or []) for r in rows
+                                  if r.get("tier") == "B" and r["config"] == c)
+                           for c in sorted({r["config"] for r in rows if r.get("tier") == "B"})}
+    out["passed"] = out["gate_v2"]["passed_metrics"] and defects_ok(out["defects"])
     out["extra_negatives_ok"] = extra_negatives_ok(out["defects"])
     (run / "calibration.json").write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"rho={out['rho']} precision={out['precision']} recall={out['recall']} n={out['n']} "
-          f"defects_ok={defects_ok(out['defects'])} -> {'PASS' if out['passed'] else 'FAIL'}")
+    g = out["gate_v2"]
+    print(f"gate (2026-10-20): rho={g['rho']} precision={g['precision']} recall={g['recall']} n={g['n']} "
+          f"defects_ok={defects_ok(out['defects'])} -> {'PASS' if out['passed'] else 'FAIL'}; scans (not gating): "
+          f"rho={g['scans']['rho']} P={g['scans']['precision']} R={g['scans']['recall']} n={g['scans']['n']}; "
+          f"legacy rho={out['rho']} P={out['precision']} R={out['recall']}")
     return 0 if out["passed"] else 1
 
 
