@@ -241,7 +241,7 @@ def measure(samples, cover_pdf: Path | None, base_url: str | None, *, out: Path,
            "vram": {"baseline": smp.baseline, "peak": smp.peak, "delta": smp.delta},
            "load_seconds": load_seconds, "server": server_info, "endpoint_host": urlparse(base_url or "").hostname,
            "launched": server_factory is not None}
-    rows.append({"kind": "summary", **{k: v for k, v in res.items() if k != "per_doc"}})
+    rows.append({"kind": "summary", **res})
     with open(out / "vlm.jsonl", "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
