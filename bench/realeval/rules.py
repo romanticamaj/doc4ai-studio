@@ -36,3 +36,4 @@ VLM_PINNED = {   # sha256 from docs/superpowers/spikes/2026-10-vlm-ocr.md
 CONTROL_RENDER_DPI = 300
 CONTROL_VALIDITY_NED = 0.85    # spec §7.0 check 3 on en-aashto-usrn-1984
 SNIPPET_MAX = 30
+EPS = 1e-9                     # floating-point tolerance at a threshold (0.83 - 0.80 = 0.02999...); not a rule
