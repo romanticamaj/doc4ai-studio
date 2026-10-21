@@ -482,6 +482,10 @@ Tier A 各類 NED 與前次相同（例如繁中掃描 `auto` 0.68、Docling 0.9
 
 骨科 1052–1054（合併到 1051 的表格）現在是 `page_misaligned`、各自段落空白、文字只在 1051 一份（前次被 OCR 再插入一份）；1129 收容 1130 整張表 → oversized／misaligned。骨科 17 頁 dropped 都是整頁流程圖（「Interpretation of the clinical examination」系列）與整頁表格，MinerU／Docling OCR 都拿不回一半以上的文字 → 留 `warn`，不假裝修好。
 
+### 10.6 驗收紀錄：標註閘門（2026-10-21）
+
+`heldout_v2` 由獨立驗證者盲標（183 頁，種子 20261021，提交 5f99bba，標註者為驗證者）。正例數：dropped 1、partial 4、misaligned 1、oversized 1，全部 < 15 → `test_page_labels_real.py` 的四個理由都是 **strict xfail**（「blind P/R not measurable: n_pos=… < 15」），**不是通過**；缺樣本仍然失敗。新增凍結門檻 `FIGURE_AREA_MAX` = 0.8（OCR 文字層的掃描頁每一行都落在整頁影像上，prose 層因此為空、`page_partial` 永遠不會觸發；蓋住 ≥ 80 % 頁面的圖片不算圖區），之後只重跑一次標註評分、沒有調整別的門檻。
+
 ### 10.5 驗證者第三回合（2026-10-20／21）
 
 修正（計畫偏差節「Verifier round 3」列出測試與凍結門檻）：`page_partial` 改為提示（不提高等級、不修復、不換引擎）；頁面文字政策（使用者確認：程式碼、表格、本文算；圖片中的旁註不算——嵌入圖片上的非等寬行移出 prose 層）；錯誤 Unicode 對照的文字層以語言模型偵測後標為不可信（合成壞字型樣本的假 `page_partial` 34 → 1）；壞字型改為逐頁、依壞字元比例 ≥ 2 %，符號字型不算（Head First 339 → 124 頁）；自訂標記相鄰空白合併為一段（加 fuzz 測試）；標註閘門只看獨立驗證者盲標的 `heldout_v2`（Wilson 95 % 下界），在標註完成前於驗收模式下失敗。
@@ -515,3 +519,9 @@ Head First 這一列是加上 `font_suspect_pages`（見下）之後再重轉一
 - **跨頁／跨欄延續的段落**：引擎常把下一頁（或雙欄頁的下一欄）延續的段落放在前一頁標記底下；這不算 `page_oversized`（否則某些書每頁都會被標），所以整欄被搬走的頁會被低報。
 - **錯誤 Unicode 對照的文字層**（位移密碼字型）：以文件自身的字元二元語言模型偵測、標為不可信，只在段落空白時判 `page_dropped`。
 - **校準閘門**：見 §3.4 的 2026-10-20 新定義與 §10.5 的結果；掃描檔的 OCR 錯字 `verify` 看不到（只另列報告）。
+- **文字層與輸出裡一模一樣的亂碼抓不到**：引擎原樣抄出亂碼文字層時，涵蓋率檢查看到的是「相符」；文字系統一致性檢查（script-consistency）延後。
+- **雜訊多的 OCR 文字層上，搬走的文字可能漏抓**（例：AASHTO 第 4 頁，盲標為 `page_oversized`，檢查沒標）：「該頁獨有的 n-gram」在 OCR 錯字下不穩。
+- **延續段落的邊界是判斷題**：一段跨頁延續的文字要算「正常延續」還是「整塊搬走」，標註者之間也會不同。
+- **盲標 P／R 尚未量到**：獨立驗證者盲標的 `heldout_v2`（183 頁，種子 20261021）每個理由只有 1–4 個正例，少於 15：標註閘門以 strict xfail 回報「blind P/R not measurable」，不是通過。僅供參考（同一次重跑，`FIGURE_AREA_MAX` 之後）：dropped 1/1、partial 提示 tp 4 fp 2、misaligned tp 1 fp 1、oversized tp 0 fp 1 fn 1。
+- **校準閘門未通過**（ρ 0.63、P 0.83、R 0.72，§10.5）：benchmark 不發表。
+- **已公布的閘門數字早於 4a2dd90**（font_suspect_pages 修正）：那次修正只影響壞字型頁的 Markdown 亂碼檢查，閘門沒有重跑。

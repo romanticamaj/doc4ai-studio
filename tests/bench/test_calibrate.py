@@ -110,3 +110,10 @@ def test_gate_v2_counts_only_judgeable_rows_and_pages():
 
 def test_gate_v2_thresholds_are_the_decided_ones():
     assert (C.GATE_V2_MIN_RHO, C.GATE_V2_MIN_RECALL, C.GATE_V2_MIN_PRECISION) == (0.6, 0.9, 0.9)
+
+
+def test_precision_and_recall_print_na_when_there_is_nothing_to_count():
+    """Round 4: the scan line printed P=R=1.0 for 0 / 0 / 0."""
+    assert C.fmt_pr({"tp": 0, "fp": 0, "fn": 0, "precision": 1.0, "recall": 1.0}) == "P=n/a R=n/a"
+    assert C.fmt_pr({"tp": 3, "fp": 1, "fn": 0, "precision": 0.75, "recall": 1.0}) == "P=0.75 R=1.0"
+    assert C.fmt_pr({"tp": 0, "fp": 2, "fn": 0, "precision": 0.0, "recall": 1.0}) == "P=0.0 R=n/a"

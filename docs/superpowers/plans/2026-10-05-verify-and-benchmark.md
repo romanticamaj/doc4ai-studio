@@ -1265,3 +1265,22 @@ fonts 10 % unmapped; label gate — `LB_MIN` 0.8, `RECALL_MIN_POS` 10; calibrati
 - e2e `mcp.spec.ts` "貼上 token ... nothing stored" fails at its last step (after navigating to Library and back the
   pasted value is still in the box) also with the web code of 30d8831: environmental (browser back-forward cache),
   not caused by this round; left as is and reported.
+
+**Round 4 cleanup (2026-10-21).**
+- `heldout_v2` labels by the independent verifier committed as they are (5f99bba).
+- Label gate: a reason with < 15 held-out positives is a strict xfail ("blind P/R not measurable: n_pos=N < 15");
+  missing samples still fail. All four reasons are xfail now (1 / 4 / 1 / 1 positives).
+- Calibration report prints `n/a` for precision / recall with nothing to count (`calibrate.fmt_pr`,
+  `tests/bench/test_calibrate.py::test_precision_and_recall_print_na_when_there_is_nothing_to_count`).
+- New frozen threshold `pagemap.FIGURE_AREA_MAX` = 0.8: a picture covering >= 80 % of the page is a scan under an
+  OCR text layer, not a figure (every line sat on it; the prose layer was empty, page_partial could never fire) —
+  `test_page_checks_round2.py::test_full_page_scan_image_is_not_a_figure_region`. Label scoring re-run once, nothing
+  else tuned: heldout_v2 dropped tp 1 / fp 0, partial (advisory) tp 4 / fp 2, misaligned tp 1 / fp 1, oversized
+  tp 0 / fp 1 / fn 1; all labels dropped P 1.0 R 1.0 (28), partial 0.85 / 0.94 (18), misaligned 0.80 / 1.0 (4),
+  oversized 0.86 / 0.75 (8).
+- MCP admin token hint now says what is true (kept in this tab's memory only, never sent or saved); the e2e test no
+  longer asserts the field is empty after a back navigation (the back-forward cache may restore it; storage and
+  requests are still asserted). 10 / 10 Chromium runs passed.
+- Final matrix: not-slow 1266 passed, 1 skipped (symlink privilege); slow 66 passed, 4 xfailed (the label gate:
+  blind P/R not measurable), 0 skipped, 0 failed; web 212 passed; build ok; e2e 11 passed.
+- Known limits added (spec §11, README).
