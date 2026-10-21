@@ -80,7 +80,7 @@ class ScenarioState:
 
 def _parse(body: dict) -> dict:
     page = total = None
-    image_bytes, image_px, detail, prompt = 0, None, None, ""
+    image_bytes, image_px, detail, prompt, n_images = 0, None, None, "", 0
     for msg in body.get("messages") or []:
         content = msg.get("content")
         parts = content if isinstance(content, list) else [{"type": "text", "text": content or ""}]
@@ -93,6 +93,7 @@ def _parse(body: dict) -> dict:
                 if m and msg.get("role") == "user":
                     page, total = int(m.group(1)), int(m.group(2))
             elif part.get("type") == "image_url":
+                n_images += 1
                 iu = part.get("image_url") or {}
                 detail = iu.get("detail")
                 url = iu.get("url") or ""
@@ -100,7 +101,7 @@ def _parse(body: dict) -> dict:
                     raw = base64.b64decode(url.split(",", 1)[1])
                     image_bytes, image_px = len(raw), png_size(raw)
     return {"page": page, "total": total, "image_bytes": image_bytes, "image_px": image_px, "detail": detail,
-            "prompt": prompt}
+            "prompt": prompt, "n_images": n_images}
 
 
 def handle_chat(state: ScenarioState, body: dict, headers) -> tuple[int, dict, dict]:
@@ -111,7 +112,8 @@ def handle_chat(state: ScenarioState, body: dict, headers) -> tuple[int, dict, d
     state.record({"ts": time.time(), "path": "/v1/chat/completions", "model": model, "page": info["page"],
                   "total": info["total"], "image_bytes": info["image_bytes"], "image_px": info["image_px"],
                   "has_auth": bool(auth), "detail": info["detail"], "max_tokens": body.get("max_tokens"),
-                  "max_completion_tokens": body.get("max_completion_tokens"), "prompt": info["prompt"]})
+                  "max_completion_tokens": body.get("max_completion_tokens"), "prompt": info["prompt"],
+                  "temperature": body.get("temperature"), "n_images": info["n_images"]})
     key = state.sc.get("require_key")
     if key and auth != f"Bearer {key}":
         return _error("unauthorized")
@@ -177,7 +179,9 @@ def make_handler(state: ScenarioState, prefix: str = "/v1"):
                 pass
 
         def do_GET(self):
-            if self.path.rstrip("/") == f"{prefix}/models":
+            if self.path.rstrip("/") == "/health":         # llama-server's readiness probe
+                self._send(200, {"status": "ok"})
+            elif self.path.rstrip("/") == f"{prefix}/models":
                 self._send(200, {"object": "list", "data": [{"id": state.sc.get("model", "fake-vlm"), "object": "model"}]})
             else:
                 self._send(404, {"error": {"message": "not found", "type": "invalid_request_error", "code": None}})
