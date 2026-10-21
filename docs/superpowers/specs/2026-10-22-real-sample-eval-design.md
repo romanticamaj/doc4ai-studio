@@ -233,11 +233,13 @@ A／C 組：`gt/page-NNN.txt` 的 NNN = PDF 頁碼（SOURCE.md 已目視抽查�
 >
 > | 範圍 | 檢查 | 不過的後果 |
 > |---|---|---|
-> | 共用 | 1（sha256、資料夾未被追蹤、GT 檔齊全、衍生檔 0 字）、2（樹乾淨、commit 含本文件與 harness） | 三個決策全部 `insufficient`（`run invalid (validity checks)`） |
-> | 路由 | 3（對照組 NED）、4（`auto` 走 `mineru`） | 只有 (1a)、(1b) `insufficient`（`run invalid (route validity checks)`）；(2) 照 §7.3 判 |
+> | 共用 | 1（sha256、資料夾未被追蹤、GT 檔齊全、衍生檔 0 字）、2（樹乾淨、commit 含本文件與 harness）、3（對照組 NED；2026-10-22 修訂 B′） | 三個決策全部 `insufficient`（`run invalid (validity checks)`） |
+> | 路由 | 4（`auto` 走 `mineru`） | 只有 (1a)、(1b) `insufficient`（`run invalid (route validity checks)`）；(2) 照 §7.3 判 |
 > | VLM | 5（CUDA0、18/18 層、loopback、三檔 sha256） | 只有 (2) `insufficient`（`run invalid (VLM validity checks)`）；(1a)、(1b) 照 §7.1／§7.2 判 |
 >
-> 未列名的檢查一律算共用。重跑規則不變（§8.3：只重跑出問題的部分一次並記錄）。檢查 3 雖然量的是兩個引擎，修訂依協調者列舉的共用清單歸入「路由」；它原本的理由（「harness／頁對應／正規化有 bug」）若成立，VLM 的數字也可疑——這點寫進紀錄的評註供讀者判讀，不改判定。釘住的測試：`tests/unit/test_realeval_rules.py::test_a_vlm_setup_failure_leaves_the_route_verdicts`、`::test_a_route_validity_failure_leaves_the_vlm_verdict`、`::test_a_shared_validity_failure_invalidates_every_verdict`。
+> 未列名的檢查一律算共用。重跑規則不變（§8.3：只重跑出問題的部分一次並記錄）。
+>
+> **2026-10-22 修訂 B′（凍結前，協調者裁定）**：檢查 3（對照組 `en-aashto-usrn-1984` 的 NED ≥ 0.85）改列**共用**。它不過代表 harness、頁對應或正規化有 bug，而這些同樣會污染 VLM 的數字，所以保守地讓三個決策一起 `insufficient`。釘住的測試：`tests/unit/test_realeval_rules.py::test_a_shared_validity_failure_invalidates_every_verdict[control_ned]`、`::test_a_route_validity_failure_leaves_the_vlm_verdict[auto_route]`、常數測試的 `VALIDITY_SCOPE`。
 
 **三種結論**（每個決策只能是其一；由 `rules.decide(results) → decisions.json` 機械判定，人只能加註解）：`change`（含改什麼）、`confirm`（現狀確認，不改）、`insufficient`（證據不足，不改；附 §11 的樣本需求）。
 

@@ -44,7 +44,7 @@ def test_constants_match_spec():
     assert rules.EPS == 1e-9          # tie tolerance only, far below the 4-decimal page scores
     assert rules.VLM_DOCS == 8            # spec §7.0: 6 zh + 2 en
     assert rules.VLM_LAYERS == 18         # spec §5.6: 18/18 layers on CUDA0
-    assert rules.VALIDITY_SCOPE == {"samples": "shared", "clean_tree": "shared", "control_ned": "route",
+    assert rules.VALIDITY_SCOPE == {"samples": "shared", "clean_tree": "shared", "control_ned": "shared",
                                     "auto_route": "route", "vlm_setup": "vlm"}   # amendment 2026-10-22 §7.0
 
 
@@ -237,7 +237,7 @@ def test_missing_parts_are_insufficient():
     assert [out[k]["verdict"] for k in ("zh_scan_route", "formula_route", "vlm_local")] == ["insufficient"] * 3
 
 
-@pytest.mark.parametrize("check", ["samples", "clean_tree"])
+@pytest.mark.parametrize("check", ["samples", "clean_tree", "control_ned"])
 def test_a_shared_validity_failure_invalidates_every_verdict(check):
     """Spec amendment 2026-10-22 (§7.0): shared checks still void the whole run."""
     out = _decide(validity={"checks": {**VALID["checks"], check: False}})
@@ -246,7 +246,7 @@ def test_a_shared_validity_failure_invalidates_every_verdict(check):
         assert out[k]["verdict"] == "insufficient" and out[k]["reason"] == "run invalid (validity checks)"
 
 
-@pytest.mark.parametrize("check", ["control_ned", "auto_route"])
+@pytest.mark.parametrize("check", ["auto_route"])
 def test_a_route_validity_failure_leaves_the_vlm_verdict(check):
     """Spec amendment 2026-10-22 (§7.0 / §7.3.2): route checks void only the two route verdicts."""
     out = _decide(validity={"checks": {**VALID["checks"], check: False}})
