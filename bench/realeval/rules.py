@@ -44,6 +44,13 @@ VLM_LAYERS = 18                # spec §5.6: all 18 layers on CUDA0
 ROUTE_CURRENT = ["mineru", "docling"]
 ROUTE_CANDIDATE = ["docling", "mineru"]
 RUN_INVALID = "run invalid (validity checks)"
+RUN_INVALID_ROUTE = "run invalid (route validity checks)"
+RUN_INVALID_VLM = "run invalid (VLM validity checks)"
+# Spec amendment 2026-10-22 (§7.0 / §7.3.2, coordinator decision before the freeze): validity is scoped. A shared
+# check voids every verdict; a route check voids (1a) and (1b) only; the VLM setup check voids (2) only. A check
+# not listed here counts as shared.
+VALIDITY_SCOPE = {"samples": "shared", "clean_tree": "shared", "control_ned": "route", "auto_route": "route",
+                  "vlm_setup": "vlm"}
 ON_PASS = "plan: VLM local backend 8a (spec §7.3.3)"
 KNOWN_LIMITATION = "scanned_cht repeated paragraph 0.75 (spec §7.3.4)"
 NEEDED = {   # spec §11, for an `insufficient` verdict
@@ -230,13 +237,23 @@ def decide(route: dict | None, formulas: list[dict] | None, vlm: dict | None, gt
     gt_quality = dict(gt_quality or {})
     checks = dict((validity or {}).get("checks") or {})
     valid = bool(checks) and all(checks.values())
+    scope = {sc: all(v for k, v in checks.items() if VALIDITY_SCOPE.get(k, "shared") == sc) and bool(checks)
+             for sc in ("shared", "route", "vlm")}
     margin = margin_for(gt_quality.get("cer_upper"))
     out = {"margin": margin, "cer_upper": gt_quality.get("cer_upper"), "validity_ok": valid,
-           "validity_checks": checks,
+           "validity_checks": checks, "validity_scope": scope,
            "zh_scan_route": _decide_route(route, margin),
            "formula_route": _decide_formulas(formulas, gt_quality),
            "vlm_local": _decide_vlm(vlm)}
-    if not valid:
-        for k in ("zh_scan_route", "formula_route", "vlm_local"):
-            out[k].update(verdict="insufficient", reason=RUN_INVALID, on_pass=None, change_to=None)
+    void = {"zh_scan_route": None, "formula_route": None, "vlm_local": None}
+    if not scope["shared"]:
+        void = dict.fromkeys(void, RUN_INVALID)
+    else:
+        if not scope["route"]:
+            void.update(zh_scan_route=RUN_INVALID_ROUTE, formula_route=RUN_INVALID_ROUTE)
+        if not scope["vlm"]:
+            void["vlm_local"] = RUN_INVALID_VLM
+    for k, reason in void.items():
+        if reason:
+            out[k].update(verdict="insufficient", reason=reason, on_pass=None, change_to=None)
     return out

@@ -44,6 +44,8 @@ def test_constants_match_spec():
     assert rules.EPS == 1e-9          # tie tolerance only, far below the 4-decimal page scores
     assert rules.VLM_DOCS == 8            # spec §7.0: 6 zh + 2 en
     assert rules.VLM_LAYERS == 18         # spec §5.6: 18/18 layers on CUDA0
+    assert rules.VALIDITY_SCOPE == {"samples": "shared", "clean_tree": "shared", "control_ned": "route",
+                                    "auto_route": "route", "vlm_setup": "vlm"}   # amendment 2026-10-22 §7.0
 
 
 def test_vlm_thresholds_equal_rule_1():
@@ -235,12 +237,36 @@ def test_missing_parts_are_insufficient():
     assert [out[k]["verdict"] for k in ("zh_scan_route", "formula_route", "vlm_local")] == ["insufficient"] * 3
 
 
-def test_invalid_run_makes_every_verdict_insufficient():
-    bad = {"checks": {**VALID["checks"], "control_ned": False}}
-    out = _decide(validity=bad)
-    assert out["validity_ok"] is False
+@pytest.mark.parametrize("check", ["samples", "clean_tree"])
+def test_a_shared_validity_failure_invalidates_every_verdict(check):
+    """Spec amendment 2026-10-22 (§7.0): shared checks still void the whole run."""
+    out = _decide(validity={"checks": {**VALID["checks"], check: False}})
+    assert out["validity_ok"] is False and out["validity_scope"]["shared"] is False
     for k in ("zh_scan_route", "formula_route", "vlm_local"):
         assert out[k]["verdict"] == "insufficient" and out[k]["reason"] == "run invalid (validity checks)"
+
+
+@pytest.mark.parametrize("check", ["control_ned", "auto_route"])
+def test_a_route_validity_failure_leaves_the_vlm_verdict(check):
+    """Spec amendment 2026-10-22 (§7.0 / §7.3.2): route checks void only the two route verdicts."""
+    out = _decide(validity={"checks": {**VALID["checks"], check: False}})
+    assert out["validity_ok"] is False
+    for k in ("zh_scan_route", "formula_route"):
+        assert out[k]["verdict"] == "insufficient" and out[k]["reason"] == "run invalid (route validity checks)"
+    assert out["vlm_local"]["verdict"] == "pass" and "reason" not in out["vlm_local"]
+
+
+def test_a_vlm_setup_failure_leaves_the_route_verdicts():
+    """Spec amendment 2026-10-22 (§7.0 / §7.3.2): the VLM setup check voids only decision (2)."""
+    out = _decide(validity={"checks": {**VALID["checks"], "vlm_setup": False}})
+    assert out["zh_scan_route"]["verdict"] == "change" and out["formula_route"]["verdict"] == "confirm"
+    assert out["vlm_local"]["verdict"] == "insufficient"
+    assert out["vlm_local"]["reason"] == "run invalid (VLM validity checks)" and out["vlm_local"]["on_pass"] is None
+
+
+def test_an_unknown_validity_check_counts_as_shared():
+    out = _decide(validity={"checks": {**VALID["checks"], "something_new": False}})
+    assert all(out[k]["verdict"] == "insufficient" for k in ("zh_scan_route", "formula_route", "vlm_local"))
 
 
 def test_decide_is_pure():

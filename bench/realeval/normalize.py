@@ -2,18 +2,20 @@
 `norm_pred` = `bench.metrics.plain` (markup and math removed) followed by exactly the steps of `norm_gt`. The only
 GT-only step is errata, applied to the scoring copy of the GT by `apply_errata` before `norm_gt` (§4.4, §6.1).
 
-Order: plain (pred) → errata (GT) → Bopomofo tone marks removed → apostrophes unified → `aidoc.pagemap.squash`
+Order: math unwrapped (pred; amendment 2026-10-22) → plain (pred) → errata (GT) → Bopomofo tone marks removed → apostrophes unified → `aidoc.pagemap.squash`
 (NFKC, soft hyphen / line-break hyphen, lower-case, alphanumerics of any script). No simplified/traditional or glyph
 variant folding, no per-document filtering."""
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
 from rapidfuzz.distance import Levenshtein
 
 from aidoc.pagemap import squash
+from bench.metrics import _MATH as MATH_SPAN  # the span pattern plain() and formulas_in() use
 from bench.metrics import plain
 
 VARIANTS = Path(__file__).resolve().parent / "variants.json"
@@ -26,8 +28,28 @@ def norm_gt(text: str) -> str:
     return squash(text.translate(_TABLE))
 
 
+_CMD = re.compile(r"\\[A-Za-z]+\*?")        # \frac, \mathrm, \alpha, \text*: the command name goes
+_ESC = re.compile(r"\\(?=[^A-Za-z])")        # \{, \%, \, : the backslash goes, the character stays
+
+
+def _unwrap_span(m: re.Match) -> str:
+    t = m.group(0)
+    for a, b in (("$$", "$$"), ("$", "$"), ("\\[", "\\]"), ("\\(", "\\)")):
+        if t.startswith(a) and t.endswith(b) and len(t) >= len(a) + len(b):
+            t = t[len(a):len(t) - len(b)]
+            break
+    return " " + _ESC.sub("", _CMD.sub(" ", t)) + " "
+
+
+def unwrap_math(markdown: str) -> str:
+    r"""Spec amendment 2026-10-22 (§5.1 step 1): every `$$…$$`, `$…$`, `\[…\]`, `\(…\)` span keeps its
+    content — delimiters and LaTeX command names removed, the arguments' characters kept — for every engine alike,
+    so an engine that wraps digits or CJK in inline math is not penalised for it."""
+    return MATH_SPAN.sub(_unwrap_span, markdown)
+
+
 def norm_pred(markdown: str) -> str:
-    return norm_gt(plain(markdown))
+    return norm_gt(plain(unwrap_math(markdown)))
 
 
 def apply_errata(gt_pages: dict[int, str], errata: list[dict], doc: str) -> dict[int, str]:
