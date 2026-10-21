@@ -315,6 +315,9 @@ between its score and the page text accuracy, page recall ≥ 0.9). The first ru
 (ρ 0.48, recall 0.16 — precision was 1.00: the pages it flags are bad, but it misses most bad pages, mainly OCR
 misreadings in scans and paragraphs moved to a neighbouring page), nor did the re-run on 2026-10-13 after the page-level checks were added (ρ 0.47, recall 0.05 under the unchanged gate definition). The record, with the reasons and what the run
 showed about routing, is in [the verify spec, §10](docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md).
+On 2026-10-20 the user redefined the gate (rows and pages `verify` can judge; ρ ≥ 0.6, page precision and recall
+≥ 0.9 over every page-level reason; scans reported separately) and it was run once on a fresh-seed Tier A plus
+Tier B: ρ 0.63, precision 0.83, recall 0.72 — not passed, so still nothing is published (spec §10.5).
 
 ## Docs
 
