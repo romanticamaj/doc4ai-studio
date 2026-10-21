@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aidoc import fsops, pagemap, paths
+from aidoc import fsops, pagemap, paths, scanchecks
 from aidoc.config import AidocConfig
 from aidoc.engines.base import EngineCancelled, EngineError
 from aidoc.engines.host import compute_timeout
@@ -359,8 +359,17 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
         for e in page_checks(merged.markdown, layers, content, probe.blank_pages, untrusted, body=body):
             if e["reasons"]:                    # advisory-only pages (page_partial) are never repaired or counted
                 by_page.setdefault(e["page"], e)
+    # scan pages (no text layer): judged on the page image (T-002); page_empty_scan and a scan misattribution are
+    # repaired — re-OCR of each page image cannot carry text across pages, so both sides of a misattribution are
+    # re-done and the text is not duplicated
+    scan_ink = None
+    if ctx.work_src is not None:
+        scan_ink = scanchecks.page_ink(ctx.work_src, layers=layers)
+        for e in scanchecks.scan_page_checks(merged.markdown, scan_ink, probe.blank_pages):
+            by_page.setdefault(e["page"], e)
     flagged = [by_page[p] for p in sorted(by_page)]
-    to_repair = [e for e in flagged if not set(e["reasons"]) & {"page_misaligned", "page_oversized"}]
+    to_repair = [e for e in flagged if not set(e["reasons"]) & {"page_misaligned", "page_oversized"}
+                 or (e.get("metrics") or {}).get("scan")]
     # a repaired page must cover the layer its check used: the body layer for a dropped page (page_dropped is judged
     # on it - a repair accepted on the prose layer was rejected by the final check, Ortho p779), the prose layer
     # for a partial page, the body layer when there is no prose (verifier round 2)
@@ -399,7 +408,7 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
                flagged_before=len(flagged), repaired=repaired, last_resort=last_resort,
                failed_pages={p: m for p, m in failed.items() if p not in outcome_repaired},
                vlm_pages=vlm_pages, layers=layers, content_layers=content, body_layers=body,
-               untrusted_pages=untrusted)
+               untrusted_pages=untrusted, scan_ink=scan_ink)
     if q.page_map and q.page_map.get("alignment"):
         al = q.page_map["alignment"]
         ctx.log(f"page map {q.page_map['found']}/{q.page_map['expected']} ({q.page_map.get('method')}); "

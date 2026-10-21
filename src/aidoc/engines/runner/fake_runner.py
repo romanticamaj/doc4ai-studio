@@ -135,8 +135,14 @@ def _write_ok(req, sc, with_pages=True, shift=0, garbled=False, sticky=False, fa
         if a in moved:
             continue
 
-        def page_text(r):                               # r: page within this request (1..n)
-            if not 1 <= r <= n or texts is None:
+        def page_text(r, first_abs=first_abs):          # r: page within this request (1..n)
+            if not 1 <= r <= n:
+                return ""
+            if texts is None or not any(texts):         # a scan: scenario page_texts stand in for the layer
+                pt = sc.get("page_texts") or {}
+                if pt and not _repairing(req) and os.path.basename(req["src"]) != "pages.pdf":
+                    return " ".join(str(pt.get(str(first_abs - 1 + r), "")).split())
+            if texts is None:
                 return ""
             if len(texts) == n:
                 return " ".join(texts[r - 1].split())

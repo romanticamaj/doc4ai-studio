@@ -38,7 +38,7 @@ SHIFT_HITS_MIN = 3
 #    two probes, furniture judged per document, link URLs stripped, repairs re-validated
 # 5: verifier round 3 - page_partial advisory, broken fonts per page by share (no symbol fonts), wrong-Unicode-map
 #    guard, figure lines out of the prose layer
-PAGE_CHECK_VERSION = 5
+PAGE_CHECK_VERSION = 6                 # 6: scan pages (no text layer) checked by aidoc.scanchecks (T-002)
 DROPPED_LAYER_MIN = 120        # squashed prose-layer chars a page needs before an empty section means "dropped" ...
 DROPPED_BODY_MIN = 300         # ... or body-layer chars (full-page tables, text-heavy diagrams: short lines only)
 DROPPED_SECTION_MAX = 20       # squashed chars (markup stripped) below which a section counts as empty
@@ -59,7 +59,8 @@ GIB_LAYER_MIN = 120            # layer / section characters needed to compare th
 GIB_SECTION_MIN = 60
 GIB_VOCAB = 1600               # add-0.5 smoothing vocabulary of the bigram model
 MISALIGNED_MIN_PROBES = 2      # a page is page_misaligned when at least this many of its probes sit elsewhere
-PAGE_REASONS = ("page_dropped", "page_misaligned", "page_oversized")   # level-raising per-page check reasons
+PAGE_REASONS = ("page_dropped", "page_misaligned", "page_oversized",   # level-raising per-page check reasons
+                "page_empty_scan")                                    # T-002: scan pages (aidoc.scanchecks)
 # page_partial is an advisory (verifier round 3: blind relabel kappa 0.29): shown per page, never raises the level,
 # never triggers repair or engine fallback, until it passes on a fresh held-out set
 PAGE_ADVISORIES = ("page_partial",)
@@ -443,7 +444,8 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
            failed_pages: dict[int, str] | None = None,
            layers: list[str] | None = None, vlm_pages=None,
            skip_page_map_reasons: bool = False, content_layers: list[str] | None = None,
-           body_layers: list[str] | None = None, untrusted_pages: list[int] | None = None) -> QualityResult:
+           body_layers: list[str] | None = None, untrusted_pages: list[int] | None = None,
+           scan_ink: dict | None = None) -> QualityResult:
     """Document quality. Legacy rules for non-PDFs; PDFs add the page map, alignment spot check and flagged pages
     (spec 2026-10-01 §5.2: any document reason -> low; else unrepaired flagged pages -> warn; else ok).
     `skip_page_map_reasons`: the markers were inferred by `verify` (index A26) — the page map is not evaluated
@@ -481,6 +483,12 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
     checks = ({e["page"]: e for e in page_checks(markdown, layers, content_layers or layers, probe.blank_pages,
                                                  untrusted, body=body_layers)}
               if not quick and layers is not None else {})
+    # scan pages (no text layer) are judged on the page image (T-002); the layer checks above skip them
+    if not quick and pdf is not None and Path(pdf).is_file():
+        from aidoc import scanchecks
+        ink = scan_ink if scan_ink is not None else scanchecks.page_ink(pdf, layers=layers)
+        for e in scanchecks.scan_page_checks(markdown, ink, probe.blank_pages):
+            checks.setdefault(e["page"], e)
     kept = []
     for e in repaired:
         c = checks.get(e["page"])
