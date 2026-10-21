@@ -176,8 +176,29 @@ class LlamaServer:
             self._log = None
 
 
+def _is_timeout(e: BaseException) -> bool:
+    return isinstance(e, (TimeoutError, socket.timeout)) or (
+        isinstance(e, urllib.error.URLError) and isinstance(e.reason, (TimeoutError, socket.timeout)))
+
+
+def wait_idle(base_url: str, timeout_s: float = 600) -> None:
+    """After a client-side timeout llama-server (-np 1) keeps generating; wait until its slot is free so the next
+    page's wall time is its own. Best effort: no /slots endpoint (the fake) → return at once."""
+    root = base_url.rstrip("/").removesuffix("/v1")
+    t0 = time.perf_counter()
+    while time.perf_counter() - t0 < timeout_s:
+        try:
+            with urllib.request.urlopen(f"{root}/slots", timeout=5) as r:
+                slots = json.loads(r.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError):
+            return
+        if not any(isinstance(x, dict) and x.get("is_processing") for x in slots or []):
+            return
+        time.sleep(1.0)
+
+
 def measure(samples, cover_pdf: Path | None, base_url: str | None, *, out: Path, sampler_factory=Sampler,
-            gt_texts: dict[str, dict[int, str]] | None = None, server_factory=None) -> dict:
+            gt_texts: dict[str, dict[int, str]] | None = None, server_factory=None, timeout_s: float = 120) -> dict:
     """Writes `<out>/vlm.jsonl` (per page: recall, common, gt_len, seconds, finish_reason, tokens — never text) and
     returns {per_doc, max_sec_overall, cover_hit, cover_measured, vram, load_seconds, server, endpoint_host}."""
     if server_factory is None:
@@ -189,12 +210,17 @@ def measure(samples, cover_pdf: Path | None, base_url: str | None, *, out: Path,
     cover = {"hit": False, "measured": False}
     load_seconds = None
     server_info = None
+    server_error = None
     srv = None
     with sampler_factory() as smp:
         try:
             if server_factory is not None:
                 srv = server_factory().start()
-                load_seconds = srv.wait_ready()
+                try:
+                    load_seconds = srv.wait_ready()
+                except (RuntimeError, TimeoutError, OSError) as e:      # recorded → (2) insufficient, not a crash
+                    server_error = str(e)[:300]
+                    samples, cover_pdf = [], None
                 base_url = srv.base_url
                 _check_endpoint(base_url)
             for s in samples:
@@ -205,14 +231,20 @@ def measure(samples, cover_pdf: Path | None, base_url: str | None, *, out: Path,
                     g = norm_gt(gts[p])
                     row = {"kind": "page", "doc": s.name, "page": p, "gt_len": len(g)}
                     try:
-                        r = ocr_request(base_url, render_page_png(pdf, p))
+                        r = ocr_request(base_url, render_page_png(pdf, p), timeout_s=timeout_s)
                         rec, _, _ = bag_prf(g, norm_pred(r["text"]))
                         row.update(recall=round(rec, 4), common=round(rec * len(g)), seconds=round(r["seconds"], 3),
                                    finish_reason=r["finish_reason"],
                                    prompt_tokens=r["usage"].get("prompt_tokens"),
-                                   completion_tokens=r["usage"].get("completion_tokens"), error=None)
+                                   completion_tokens=r["usage"].get("completion_tokens"), timed_out=False, error=None)
                     except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
-                        row.update(recall=0.0, common=0, seconds=None, finish_reason=None, error=str(e)[:200])
+                        if _is_timeout(e):      # measured: no answer within timeout_s (> 10 s: fails the speed rule)
+                            row.update(recall=0.0, common=0, seconds=timeout_s, finish_reason=None, timed_out=True,
+                                       error=None)
+                            wait_idle(base_url)
+                        else:
+                            row.update(recall=0.0, common=0, seconds=None, finish_reason=None, timed_out=False,
+                                       error=str(e)[:200])
                     prow.append(row)
                 rows += prow
                 secs = [r["seconds"] for r in prow if r["seconds"] is not None]
@@ -221,6 +253,7 @@ def measure(samples, cover_pdf: Path | None, base_url: str | None, *, out: Path,
                                    "pages": len(prow), "max_sec": max(secs) if secs else None,
                                    "mean_sec": (sum(secs) / len(secs)) if secs else None,
                                    "length_pages": sum(1 for r in prow if r["finish_reason"] == "length"),
+                                   "timed_out_pages": sum(1 for r in prow if r.get("timed_out")),
                                    "complete": all(r["error"] is None for r in prow) and bool(prow),
                                    "errors": sum(1 for r in prow if r["error"] is not None)}
             if cover_pdf is not None and Path(cover_pdf).is_file():
@@ -239,7 +272,8 @@ def measure(samples, cover_pdf: Path | None, base_url: str | None, *, out: Path,
     res = {"per_doc": per_doc, "max_sec_overall": max(secs_all) if secs_all else None,
            "cover_hit": cover["hit"], "cover_measured": cover["measured"],
            "vram": {"baseline": smp.baseline, "peak": smp.peak, "delta": smp.delta},
-           "load_seconds": load_seconds, "server": server_info, "endpoint_host": urlparse(base_url or "").hostname,
+           "load_seconds": load_seconds, "server": server_info, "server_error": server_error,
+           "endpoint_host": urlparse(base_url or "").hostname,
            "launched": server_factory is not None}
     rows.append({"kind": "summary", **res})
     with open(out / "vlm.jsonl", "w", encoding="utf-8") as f:

@@ -209,3 +209,46 @@ def test_data_uri_round_trip():
     png = V.render_page_png(FIX / "scanned_en.pdf", 1)
     uri = V.data_uri(png)
     assert uri.startswith("data:image/png;base64,") and base64.b64decode(uri.split(",", 1)[1]) == png
+
+
+# ---------------------------------------------------------------- final-review fixes
+
+class BrokenServer(FakeServerProcess):
+    def wait_ready(self, timeout_s=600):
+        raise RuntimeError("llama-server exited with 1")
+
+
+def test_a_server_that_does_not_start_is_recorded_not_raised(tmp_path):
+    events: list[str] = []
+    docs = _two_docs()
+    res = V.measure(docs, FIX / "scanned_en.pdf", None, out=tmp_path, gt_texts=_gt(docs),
+                    sampler_factory=FixedSampler, server_factory=lambda: BrokenServer("http://127.0.0.1:1/v1", events))
+    assert "exited" in res["server_error"] and res["per_doc"] == {} and events[-1] == "stop"
+    assert (tmp_path / "vlm.jsonl").is_file()
+
+
+def test_a_timed_out_page_is_measured_not_dropped(tmp_path):
+    srv = FakeVlmServer({"default": "ok", "delay_s": 1.5, "rules": [{"match": {"request_no": 2}, "behavior": "slow"}]})
+    url = srv.start()
+    try:
+        res = _measure(tmp_path, url, timeout_s=0.5)
+    finally:
+        srv.stop()
+    two = res["per_doc"]["two"]
+    assert two["complete"] is True and two["timed_out_pages"] == 1
+    assert res["max_sec_overall"] >= 0.5
+    rows = [json.loads(x) for x in (tmp_path / "vlm.jsonl").read_text(encoding="utf-8").splitlines()]
+    t = next(r for r in rows if r.get("timed_out"))
+    assert t["seconds"] == 0.5 and t["recall"] == 0.0
+
+
+def test_parse_server_log_on_the_b11559_format():
+    """Line format copied from a real `llama-server -v` start of the pinned b11559 build (no document content):
+    timestamped, `n_layer` and `n_layer_all`, and the layer list printed more than once."""
+    lines = ["0.03.889.898 I llama_prepare_model_devices: using device CUDA0 (NVIDIA GeForce RTX 5070 Ti) "
+             "(0000:01:00.0) - 15009 MiB free",
+             "0.03.923.141 I print_info: n_layer               = 18",
+             "0.03.923.141 I print_info: n_layer_all           = 18"]
+    lines += [f"0.03.923.592 D load_tensors: layer {i:3d} assigned to device CUDA0, is_swa = 0"
+              for _ in range(2) for i in range(19)]
+    assert V.parse_server_log("\n".join(lines)) == {"device_cuda": True, "layers_on_gpu": 18, "layers_total": 18}
