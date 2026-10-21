@@ -3,7 +3,7 @@
  "policy": "page_dropped = the section holds essentially none of the page's text (at most a heading or a caption; a text-heavy diagram kept as a picture counts as its text). page_partial = it holds some, but clearly less than half of the page's text, where code listings, tables and body text count as page text and callouts and labels inside a figure kept as a picture do not (user decision 2026-10-20). page_misaligned = most of the page's text sits under another page's marker. page_oversized = the section holds another page's text: most of that page's own text, or a whole block of it such as table rows or a paragraph that is not the continuation of a sentence across the page break. ambiguous = no clear verdict, excluded from the scores.",
  "splits": {
   "dev": "design data",
-  "heldout_v2": "heldout_v2 (empty until labelled): labelled by the independent verifier, blind, after the thresholds were frozen (plan: Verifier round 3, frozen thresholds). Pages: drawn with a seed the verifier chooses, from pages not labelled here - every page the checks flag or advise on in the two books' latest Library conversions plus at least twice as many unflagged pages at random, and every page of at least two new seeded 6-page-run samples (tests/fixtures/manual_samples.json, role labels) converted with a raw engine (AIDOC_BENCH_NO_REPAIR=1). Judging: PDF text and Markdown section only, never the checker's output, by the policy above. Recording: docs by identity as above, labels with split heldout_v2. Target: >= 60 pages and >= 10 positives per reason where the data has them. Scored once, by tests/integration/test_page_labels_real.py (Wilson 95 % lower bounds)."
+  "heldout_v2": "labelled by the independent verifier, blind, after the thresholds were frozen (plan: Verifier round 3, frozen thresholds). Pages: drawn with a seed the verifier chooses, from pages not labelled here - every page the checks flag or advise on in the two books' latest Library conversions plus at least twice as many unflagged pages at random, and every page of at least two new seeded 6-page-run samples (tests/fixtures/manual_samples.json, role labels) converted with a raw engine (AIDOC_BENCH_NO_REPAIR=1). Judging: PDF text and Markdown section only, never the checker's output, by the policy above. Recording: docs by identity as above, labels with split heldout_v2. Target: >= 60 pages and >= 10 positives per reason where the data has them. Scored once, by tests/integration/test_page_labels_real.py (Wilson 95 % lower bounds). Labelled 2026-10-21 by the independent verifier, seed 20261021 (183 pages: Library books' flagged/advised unlabelled pages plus 2x random, two raw-Docling 30-page run samples, two English OCR-layer scans, four arXiv papers)."
  },
  "docs": {
   "ortho": {
@@ -59,6 +59,78 @@
    "pdf": "hfad_docling_mix3.pdf",
    "md": "labelled/hfad_docling_mix3.md",
    "made_by": "aidoc convert --engine docling, AIDOC_BENCH_NO_REPAIR=1 (raw engine page map)"
+  },
+  "ortho2": {
+   "pdf": "originals/A System of Orthopaedic Medicine, 3rd Edition.pdf",
+   "pdf_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
+   "md": "labelled/v2/ortho2.md",
+   "md_sha256": "8cf02ff11fe40c1583b09966488f734d2d2bef7c504eb786643876d2ef562a87",
+   "made_by": "Library conversion 2026-10-21 (MinerU, with repairs), page check v5"
+  },
+  "hf2": {
+   "pdf": "originals/Head First Android Development.pdf",
+   "pdf_sha256": "184392c5363a8026e8466358e619df977a9dd53b48e77abc2ace7818cfaf06da",
+   "md": "labelled/v2/hf2.md",
+   "md_sha256": "123b58b51e439b470f7d0a42e258ea5813479b50adbdf8267c15a140a72da674",
+   "made_by": "Library conversion 2026-10-21 (MinerU, with repairs), page check v5"
+  },
+  "hfrun2": {
+   "pdf": "hfad_docling_v2.pdf",
+   "source_sha256": "184392c5363a8026e8466358e619df977a9dd53b48e77abc2ace7818cfaf06da",
+   "text_sha256": "3ccf39327dac79c03b95d3eca0ed6ef4d98b5885a39371ddbdbcf1842abc140f",
+   "md": "labelled/v2/hfrun2.md",
+   "md_sha256": "41a0481fc910d0b3a470ad6337001084c2953f33e001b8638d9794b34bbf33d4",
+   "made_by": "aidoc convert --engine docling, AIDOC_BENCH_NO_REPAIR=1 (raw engine page map), seed 20261021"
+  },
+  "orthorun2": {
+   "pdf": "ortho_docling_v2.pdf",
+   "source_sha256": "ed486cbbc07fdb080f63094cb081087a9e4dff2a2bc06a415d6b68273ce9b81c",
+   "text_sha256": "2c5b56b2efaa0f218fbda94efc050354a0e62ff6d7e697c75b6876aad92c7906",
+   "md": "labelled/v2/orthorun2.md",
+   "md_sha256": "053caae24cf6233705addc9845d916c48652f29bd84b65dfab5164aff3292e1c",
+   "made_by": "aidoc convert --engine docling, AIDOC_BENCH_NO_REPAIR=1 (raw engine page map), seed 20261021"
+  },
+  "en-aashto-usrn-1984": {
+   "pdf": "realeval/en-aashto-usrn-1984/original.pdf",
+   "pdf_sha256": "380aee33a484f39e49e46be98d66b2223e7468a384af644926278733209fc8a1",
+   "md": "labelled/v2/en-aashto-usrn-1984.md",
+   "md_sha256": "99bb22a3a9ce43224c495545bbd6118d2304649a447d52cb0a3561f4feb096c6",
+   "made_by": "aidoc convert (auto: MinerU, with repairs), page check v5"
+  },
+  "en-christian-ker-lastwords": {
+   "pdf": "realeval/en-christian-ker-lastwords/original.pdf",
+   "pdf_sha256": "f3a3a482eab757432b405a1c0d8115f30bfd72801a729408d7ad32742ad6facc",
+   "md": "labelled/v2/en-christian-ker-lastwords.md",
+   "md_sha256": "47d2b07399cc335e105ab4955317cd2a47386ce78beab3faac579c12422d7643",
+   "made_by": "aidoc convert (auto: MinerU, with repairs), page check v5"
+  },
+  "arxiv-2506.00108": {
+   "pdf": "realeval/arxiv-2506.00108/paper.pdf",
+   "pdf_sha256": "9eabc0feef646dbaf5ca2e138def95a30e0f23942044a89d7439feec2a847262",
+   "md": "labelled/v2/arxiv-2506.00108.md",
+   "md_sha256": "7426aa71b2f155290c9857723f0c260441bfed4c8865d09f671145d3fdb689a0",
+   "made_by": "aidoc convert (auto: MinerU, with repairs), page check v5"
+  },
+  "arxiv-2506.00451": {
+   "pdf": "realeval/arxiv-2506.00451/paper.pdf",
+   "pdf_sha256": "285990e516332d50dce6dd4faa51f461137fcb8bcdf6298e57cc7f8e8753b6ba",
+   "md": "labelled/v2/arxiv-2506.00451.md",
+   "md_sha256": "480edb6fe35bfffef9a75d508fd120d8884d08ca0450fb1da8f1ee95db522291",
+   "made_by": "aidoc convert (auto: MinerU, with repairs), page check v5"
+  },
+  "arxiv-2506.00231": {
+   "pdf": "realeval/arxiv-2506.00231/paper.pdf",
+   "pdf_sha256": "f0975c7c12db948266b004a490dacb60e526d55fd093eb3b4718d2b66c4f4481",
+   "md": "labelled/v2/arxiv-2506.00231.md",
+   "md_sha256": "3822e28652c02b2fada986269b552b293b05f90b20eb1fd6daee90bcff13ae98",
+   "made_by": "aidoc convert (auto: MinerU, with repairs), page check v5"
+  },
+  "arxiv-2506.00106": {
+   "pdf": "realeval/arxiv-2506.00106/paper.pdf",
+   "pdf_sha256": "3b54409c2337a8e94ce9ebe2625109ebf8caac1fcae13cb0844164c204232f47",
+   "md": "labelled/v2/arxiv-2506.00106.md",
+   "md_sha256": "96dfa64d66fc204b415deac92b4f8bbf07b6681413b2b2b44969c3fa7e6a5112",
+   "made_by": "aidoc convert (auto: MinerU, with repairs), page check v5"
   }
  },
  "labels": [
@@ -2224,6 +2296,1301 @@
    "expected": [],
    "verdict": "ambiguous",
    "split": "dev"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 10,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 20,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 26,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 30,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 37,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 43,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00106",
+   "page": 48,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00108",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00108",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00108",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00108",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00108",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00108",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00108",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 12,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 24,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 28,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00231",
+   "page": 31,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 8,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 10,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 11,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 12,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 16,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 20,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 21,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 22,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "arxiv-2506.00451",
+   "page": 23,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-aashto-usrn-1984",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-aashto-usrn-1984",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-aashto-usrn-1984",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-aashto-usrn-1984",
+   "page": 4,
+   "expected": [
+    "page_oversized"
+   ],
+   "verdict": "misplaced",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-aashto-usrn-1984",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 8,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 10,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 11,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 12,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "en-christian-ker-lastwords",
+   "page": 16,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 29,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 32,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 57,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 67,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 71,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 74,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 75,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 88,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 98,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 107,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 111,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 155,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 159,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 186,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 216,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 229,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 245,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 277,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 333,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 349,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 364,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 373,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 375,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 382,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 386,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 390,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 393,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 398,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 399,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 404,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 415,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 434,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 449,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 459,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 485,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hf2",
+   "page": 516,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 2,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 5,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 6,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 8,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 10,
+   "expected": [
+    "page_dropped"
+   ],
+   "verdict": "loss",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 11,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 12,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 16,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 20,
+   "expected": [
+    "page_partial"
+   ],
+   "verdict": "loss",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 21,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 22,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 23,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 24,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 25,
+   "expected": [],
+   "verdict": "ambiguous",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 26,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 27,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 28,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 29,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "hfrun2",
+   "page": 30,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 25,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 40,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 117,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 135,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 484,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 512,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 686,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 829,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 837,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 867,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 880,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 882,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 1046,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 1130,
+   "expected": [
+    "page_misaligned"
+   ],
+   "verdict": "misplaced",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "ortho2",
+   "page": 1190,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 1,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 2,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 3,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 4,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 5,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 6,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 7,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 8,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 9,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 10,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 11,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 12,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 13,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 14,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 15,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 16,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 17,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 18,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 19,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 20,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 21,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 22,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 23,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 24,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 25,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 26,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 27,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 28,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 29,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
+  },
+  {
+   "doc": "orthorun2",
+   "page": 30,
+   "expected": [],
+   "verdict": "clean",
+   "split": "heldout_v2"
   }
  ]
 }
