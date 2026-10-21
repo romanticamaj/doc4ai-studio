@@ -1253,3 +1253,15 @@ results):** quality.py — `DROPPED_LAYER_MIN` 120, `DROPPED_BODY_MIN` 300, `DRO
 pagemap.py — `FURNITURE_EDGE_LINES` 3, `FURNITURE_MIN_SHARE` 0.2, `FURNITURE_MAX_SHARE` 0.5, `PROSE_LINE_MIN` 20,
 `TRUSTED_LAYER_MIN` 120, `FIGURE_AREA_MIN` 0.02; probe.py — `BROKEN_SHARE_MIN` 0.02, `SYMBOL_FONT` pattern, mixed
 fonts 10 % unmapped; label gate — `LB_MIN` 0.8, `RECALL_MIN_POS` 10; calibration gate — ρ 0.6, page P / R 0.9.
+- *Regression found by the slow suite after the reconversion*: the share rule hid Head First T-001 pages whose
+  only broken text is a heading (0.5-1 % of the page): `ProbeResult.font_suspect_pages` (every page using a broken
+  non-symbol font) feeds `flag_pages`, which still needs garbage in the Markdown —
+  `tests/unit/test_probe.py::test_font_suspect_pages_keep_small_broken_shares_for_the_markdown_check`,
+  slow `test_t001_mix_detection_and_repair`. Head First reconverted again after it.
+- Final matrix: not-slow 1264 passed, 1 skipped (symlink privilege); slow 66 passed, 4 failed (the held-out label
+  gate, by design until heldout_v2 is labelled), 0 skipped; web 212 passed; build ok; e2e 10 passed, 1 failed (above).
+- Fresh-seed gate run (once): rho 0.63, page precision 0.83, recall 0.72 on 102 text-layer rows: not passed; not
+  published, nothing tuned (spec §10.5).
+- e2e `mcp.spec.ts` "貼上 token ... nothing stored" fails at its last step (after navigating to Library and back the
+  pasted value is still in the box) also with the web code of 30d8831: environmental (browser back-forward cache),
+  not caused by this round; left as is and reported.

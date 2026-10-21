@@ -482,6 +482,31 @@ Tier A 各類 NED 與前次相同（例如繁中掃描 `auto` 0.68、Docling 0.9
 
 骨科 1052–1054（合併到 1051 的表格）現在是 `page_misaligned`、各自段落空白、文字只在 1051 一份（前次被 OCR 再插入一份）；1129 收容 1130 整張表 → oversized／misaligned。骨科 17 頁 dropped 都是整頁流程圖（「Interpretation of the clinical examination」系列）與整頁表格，MinerU／Docling OCR 都拿不回一半以上的文字 → 留 `warn`，不假裝修好。
 
+### 10.5 驗證者第三回合（2026-10-20／21）
+
+修正（計畫偏差節「Verifier round 3」列出測試與凍結門檻）：`page_partial` 改為提示（不提高等級、不修復、不換引擎）；頁面文字政策（使用者確認：程式碼、表格、本文算；圖片中的旁註不算——嵌入圖片上的非等寬行移出 prose 層）；錯誤 Unicode 對照的文字層以語言模型偵測後標為不可信（合成壞字型樣本的假 `page_partial` 34 → 1）；壞字型改為逐頁、依壞字元比例 ≥ 2 %，符號字型不算（Head First 339 → 124 頁）；自訂標記相鄰空白合併為一段（加 fuzz 測試）；標註閘門只看獨立驗證者盲標的 `heldout_v2`（Wilson 95 % 下界），在標註完成前於驗收模式下失敗。
+
+**校準閘門（§3.4 的 2026-10-20 新定義），全新種子 Tier A（`fresh-20261020:`）＋ Tier B，A＋B × 5 設定，只跑一次：未通過。**
+
+| | n | ρ（≥ 0.6） | 頁 precision（≥ 0.9） | 頁 recall（≥ 0.9） |
+|---|---|---|---|---|
+| 有文字層的列（閘門） | 102 | **0.63** ✓ | **0.83** ✗（tp 234／fp 49） | **0.72** ✗（fn 93） |
+| 掃描檔（另列，不參與） | 40 | 0.61 | —（沒有可判斷頁） | — |
+| 舊定義（參考） | 142 | 0.55 | 0.83 | 0.35 |
+
+各設定（有文字層的列）：Docling ρ 0.84、P 0.90、R 0.93；MinerU 0.53／0.79／0.68；auto 0.47／0.50／0.14；auto-norepair 0.55／0.80／0.40；MarkItDown 0.38／1.00／0.00（12 頁壞頁全沒標）。Tier B 只有 L3 正解，標記頁數：auto 5、auto-norepair 5、Docling 3、MinerU 22、MarkItDown 0。`syn-dropped-pages` 負樣本通過（切頁負樣本以提示呈現）。依決定不在看到結果後調整；benchmark 頁與 README 表格**不發表**。Tier A 的 NED 與舊種子相近（例：英文數位 auto 0.96、Docling 0.45）。
+
+**兩本書以 force 在 Library 重轉（本回合程式碼）**：
+
+| 書 | 引擎 | page_dropped | page_partial（提示） | page_misaligned | page_oversized | broken_text_layer | 已修復 | 秒 |
+|---|---|---|---|---|---|---|---|---|
+| 骨科書 | MinerU | 17（修 0） | 1 | 5 | 3 | 0 | 0 | 1568 |
+| Head First | Docling（127／525 頁被標）→ MinerU | 2（修 0） | 18 | 0 | 0 | 12（修 12） | 12 | 3266 |
+
+Head First 這一列是加上 `font_suspect_pages`（見下）之後再重轉一次的結果。`page_partial` 不再送修，所以 Head First 的「已修復」從 14 降為 12（前次修好的 2 頁 partial 現在只是提示）；骨科前次 1 頁 partial 修復同理。
+
+重轉後的慢速測試抓到一個回歸：依比例判定壞字型頁後，Head First 只有一個壞標題（佔頁面 0.5–1 %）的 T-001 頁不再被檢查 Markdown 亂碼。修正：`ProbeResult.font_suspect_pages` 列出每個用到壞（非符號）字型的頁，`flag_pages`（還需要 Markdown 真的有亂碼）看這張清單；壞字型清單本身（對齊、報告、涵蓋率檢查）仍依比例。
+
 ## 11. 已知限制（2026-10-20）
 
 - **沒有 PDF 就不能重評**：原始檔與工作副本都不在的文件，重評時保留上次的結果與 `page_check` 版本（Library 顯示「未評估」）；例如佑立診所 GEO 報告（doc 20a31841）的 p14 舊 `page_oversized`（連結網址造成的誤報，新檢查已不會標）要重新上傳或重轉才會消失。
