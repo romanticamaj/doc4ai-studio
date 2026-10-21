@@ -35,6 +35,7 @@ from bench.realeval.samples import sha256_file
 from bench.realeval.scoring import bag_prf
 
 PROMPT = "OCR:"
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # loopback only: never via HTTP_PROXY
 COVER_PAGE = 1
 
 
@@ -76,7 +77,7 @@ def ocr_request(base_url: str, png: bytes, *, timeout_s: int = 120) -> dict:
     req = urllib.request.Request(base_url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode("utf-8"),
                                  headers={"Content-Type": "application/json"}, method="POST")
     t0 = time.perf_counter()
-    with urllib.request.urlopen(req, timeout=timeout_s) as r:
+    with _DIRECT.open(req, timeout=timeout_s) as r:
         data = json.loads(r.read().decode("utf-8"))
     seconds = time.perf_counter() - t0
     ch = (data.get("choices") or [{}])[0]
@@ -148,7 +149,7 @@ class LlamaServer:
             if self.proc is not None and self.proc.poll() is not None:
                 raise RuntimeError(f"llama-server exited with {self.proc.returncode}")
             try:
-                with urllib.request.urlopen(url, timeout=5) as r:
+                with _DIRECT.open(url, timeout=5) as r:
                     if r.status == 200:
                         return time.perf_counter() - self._t0
             except (urllib.error.URLError, OSError):
@@ -188,7 +189,7 @@ def wait_idle(base_url: str, timeout_s: float = 600) -> None:
     t0 = time.perf_counter()
     while time.perf_counter() - t0 < timeout_s:
         try:
-            with urllib.request.urlopen(f"{root}/slots", timeout=5) as r:
+            with _DIRECT.open(f"{root}/slots", timeout=5) as r:
                 slots = json.loads(r.read().decode("utf-8"))
         except (urllib.error.URLError, OSError, ValueError):
             return
