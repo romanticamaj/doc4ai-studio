@@ -49,7 +49,7 @@ RUN_INVALID_VLM = "run invalid (VLM validity checks)"
 # Spec amendment 2026-10-22 (§7.0 / §7.3.2, coordinator decision before the freeze): validity is scoped. A shared
 # check voids every verdict; a route check voids (1a) and (1b) only; the VLM setup check voids (2) only. A check
 # not listed here counts as shared.
-VALIDITY_SCOPE = {"samples": "shared", "clean_tree": "shared", "control_ned": "route", "auto_route": "route",
+VALIDITY_SCOPE = {"samples": "shared", "clean_tree": "shared", "control_ned": "shared", "auto_route": "route",
                   "vlm_setup": "vlm"}
 ON_PASS = "plan: VLM local backend 8a (spec §7.3.3)"
 KNOWN_LIMITATION = "scanned_cht repeated paragraph 0.75 (spec §7.3.4)"
