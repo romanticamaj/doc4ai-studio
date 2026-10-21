@@ -36,6 +36,7 @@ def test_constants_match_spec():
     assert rules.CONTROL_RENDER_DPI == 300
     assert rules.CONTROL_VALIDITY_NED == 0.85
     assert rules.SNIPPET_MAX == 30
+    assert rules.EPS == 1e-9          # tie tolerance only, far below the 4-decimal page scores
 
 
 def test_vlm_thresholds_equal_rule_1():
