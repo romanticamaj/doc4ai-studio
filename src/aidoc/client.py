@@ -24,6 +24,16 @@ class ServerError(Exception):
         super().__init__(f"server replied {status}: {err}")
 
 
+def _loopback(url: str) -> bool:
+    import ipaddress
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ""
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost"
+
+
 class ServerGone(Exception):
     """The server stopped while we were following a job."""
 
@@ -36,8 +46,9 @@ class ServerClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
         headers = {"Authorization": f"Bearer {token}"} if token else {}
+        # a loopback server is never reached through HTTP_PROXY / ALL_PROXY (httpx honours them for 127.0.0.1 too)
         self._http = httpx.Client(base_url=self.base_url, headers=headers, transport=transport,
-                                  timeout=httpx.Timeout(timeout, read=timeout))
+                                  timeout=httpx.Timeout(timeout, read=timeout), trust_env=not _loopback(self.base_url))
 
     def close(self) -> None:
         self._http.close()

@@ -226,6 +226,19 @@ def parse_retry_after(value: str | None) -> float | None:
         return None
 
 
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # no proxy, whatever the environment
+
+
+def is_loopback_url(url: str) -> bool:
+    import ipaddress
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ""
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost"
+
+
 class Client:
     def __init__(self, base_url: str, model: str, api_key: str | None, timeout_s: float, detail: str | None,
                  max_output_tokens: int):
@@ -241,8 +254,10 @@ class Client:
         return h
 
     def _open(self, req, timeout):
+        # a loopback endpoint (local llama.cpp / Ollama) is never reached through HTTP_PROXY: pages stay local
+        opener = _DIRECT.open if is_loopback_url(self.base_url) else urllib.request.urlopen
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with opener(req, timeout=timeout) as r:
                 return json.loads(r.read().decode("utf-8", errors="replace"))
         except urllib.error.HTTPError as e:
             try:

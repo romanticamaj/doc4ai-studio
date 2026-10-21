@@ -284,3 +284,15 @@ def test_page_cache_key_is_the_whole_endpoint_not_just_host_port(tmp_path):
             for u in ("http://h:1/v1", "http://h:1/v2", "https://h:1/v1", "http://h:2/v1")}
     assert len(keys) == 4
     assert R._cache_dir(req, {**eo, "base_url": "http://h:1/v1/"}, "h:1", 3) == R._cache_dir(req, {**eo, "base_url": "http://H:1/v1"}, "h:1", 3)
+
+
+def test_a_loopback_endpoint_never_goes_through_a_proxy(monkeypatch):
+    """Privacy (verifier finding 2026-10-22): urllib follows HTTP_PROXY even for 127.0.0.1; pages sent to a local
+    VLM must not reach a proxy."""
+    from tests.fakes.proxy import RecordingProxy, point_env_at
+    vr = R
+    with RecordingProxy() as proxy, FakeVlmServer({"default": "ok"}) as url:
+        point_env_at(monkeypatch, proxy)
+        c = vr.Client(url, "m", None, 10, None, 256)
+        out = c.chat([{"role": "user", "content": "hi"}], 16)
+        assert out["choices"] and proxy.hits == []
