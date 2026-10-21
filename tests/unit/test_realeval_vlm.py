@@ -252,3 +252,12 @@ def test_parse_server_log_on_the_b11559_format():
     lines += [f"0.03.923.592 D load_tensors: layer {i:3d} assigned to device CUDA0, is_swa = 0"
               for _ in range(2) for i in range(19)]
     assert V.parse_server_log("\n".join(lines)) == {"device_cuda": True, "layers_on_gpu": 18, "layers_total": 18}
+
+
+def test_loopback_requests_never_go_through_a_proxy(tmp_path, monkeypatch):
+    """Privacy (verifier finding 2026-10-22): no page reaches an HTTP proxy on the way to the local server."""
+    from tests.fakes.proxy import RecordingProxy, point_env_at
+    with RecordingProxy() as proxy, FakeVlmServer({"default": "ok"}) as url:
+        point_env_at(monkeypatch, proxy)
+        res = _measure(tmp_path, url)
+        assert res["per_doc"]["one"]["complete"] is True and proxy.hits == []
