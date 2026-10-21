@@ -183,3 +183,39 @@ def test_follow_reports_tasks_that_changed_before_the_stream_opened(live_server,
     th.join(15)
     assert result == ["done"]
     assert any(k == "task.updated" and str(src).endswith("a.pdf") and st == "done" for k, src, st in seen)
+
+
+def test_a_loopback_server_client_never_goes_through_a_proxy(monkeypatch):
+    """Privacy (verifier finding 2026-10-22): httpx honours HTTP_PROXY / ALL_PROXY for 127.0.0.1 too."""
+    import json as _json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from aidoc.client import ServerClient
+    from tests.fakes.proxy import RecordingProxy, point_env_at
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            body = _json.dumps({"job": {"id": "j1", "status": "done"}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with RecordingProxy() as proxy:
+            point_env_at(monkeypatch, proxy)
+            c = ServerClient(f"http://127.0.0.1:{httpd.server_address[1]}", None)
+            try:
+                got = c.get_job("j1")
+            finally:
+                c.close()
+            assert proxy.hits == [] and got["job"]["id"] == "j1"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
