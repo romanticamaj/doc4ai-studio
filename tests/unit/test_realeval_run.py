@@ -128,7 +128,7 @@ def test_dry_run_scores_the_derived_control(dry_run):
 
 def test_dry_run_validity_file(dry_run):
     v = json.loads((dry_run["out"] / "validity.json").read_text(encoding="utf-8"))
-    assert set(v["checks"]) == {"samples", "clean_tree", "control_ned", "auto_route", "vlm_setup"}
+    assert set(v["checks"]) == {"samples", "clean_tree", "control_ned", "gt_pages", "auto_route", "vlm_setup"}
     assert v["checks"]["vlm_setup"] is False                 # the fake endpoint is not a pinned llama-server
 
 
@@ -221,15 +221,16 @@ def test_route_reason_is_the_routers_rule():
 
 def test_validity_checks_on_hand_made_rows():
     env = {"aidoc_dirty": False, "commit_has_spec_and_harness": True, "missing": [],
-           "derived": {"en-aashto-usrn-1984": {"text_chars": 0}}, "expected_samples": 2, "samples": {"a": 1, "b": 2}}
+           "derived": {"en-aashto-usrn-1984": {"text_chars": 0}}, "expected_samples": 2, "samples": {"a": 1, "b": 2},
+           "gt_problems": []}
     rows = [{"config": "docling", "doc": "en-aashto-usrn-1984", "group": "C", "ned": 0.86},
             {"config": "mineru", "doc": "en-aashto-usrn-1984", "group": "C", "ned": 0.5},
             {"config": "auto", "doc": "zh-a", "group": "A", "tried": ["mineru", "docling"], "route_reason": "pdf_scanned"}]
     vlm = {"server": {"device_cuda": True, "layers_on_gpu": 18, "layers_total": 18}, "endpoint_host": "127.0.0.1",
            "pinned_ok": True}
     v = R.validity(env, rows, vlm)
-    assert v["checks"] == {"samples": True, "clean_tree": True, "control_ned": True, "auto_route": True,
-                           "vlm_setup": True}
+    assert v["checks"] == {"samples": True, "clean_tree": True, "control_ned": True, "gt_pages": True,
+                           "auto_route": True, "vlm_setup": True}
     rows[0]["ned"] = 0.84
     rows[2]["tried"] = ["docling"]
     v = R.validity({**env, "aidoc_dirty": True}, rows, {**vlm, "pinned_ok": False})
@@ -289,3 +290,125 @@ def test_decisions_carry_the_whole_route_input(dry_run):
     route = dec["zh_scan_route"]["route"]
     assert set(route) >= {"delta", "lo", "hi", "per_doc", "wins_D", "wins_M", "big_loss_D", "big_loss_M"}
     assert "zh-stand-in" in route["per_doc"]
+
+
+# ---------------------------------------------------------------- verifier Task 9 findings
+
+def _real_stand_in(tmp_path, monkeypatch, *, digest=True):
+    """A stand-in run in *real* mode (git guard bypassed by handing load() the stand-in's samples)."""
+    stand_in = build_stand_in(tmp_path / "s")
+    docs, _ = SM.load(stand_in, manifest=stand_in / "MANIFEST.json", stand_in=True)
+    monkeypatch.setattr(R, "base_environment", _clean_env)
+    monkeypatch.setattr(R.samples, "load", lambda *a, **k: (docs, []))
+    monkeypatch.setattr(R, "_commit_has_spec_and_harness", lambda head: True)
+    monkeypatch.setattr(R, "_manifest", lambda root, fake: json.loads((stand_in / "MANIFEST.json").read_text("utf-8")))
+    if digest:
+        from bench.realeval import gt_quality as G
+        q = json.loads((stand_in / "gt_quality.json").read_text(encoding="utf-8"))
+        q["gt_sha256"] = G.scoring_gt_digest(stand_in, manifest=stand_in / "MANIFEST.json")
+        (stand_in / "gt_quality.json").write_text(json.dumps(q), encoding="utf-8")
+    return stand_in
+
+
+def _no_convert(monkeypatch):
+    monkeypatch.setattr(R.B, "convert", lambda *a, **k: pytest.fail("converted"))
+
+
+def test_validity_flags_bad_gt_pages_as_shared():
+    env = {"aidoc_dirty": False, "commit_has_spec_and_harness": True, "missing": [], "derived": {},
+           "expected_samples": 0, "samples": {}, "gt_problems": [{"doc": "zh-a", "page": 3, "problems": ["markup"]}]}
+    v = R.validity(env, [], None)
+    assert v["checks"]["gt_pages"] is False and R.rules.VALIDITY_SCOPE["gt_pages"] == "shared"
+    assert R.validity({**env, "gt_problems": []}, [], None)["checks"]["gt_pages"] is True
+
+
+def test_gt_problems_find_near_empty_and_markup_but_honour_short_ok():
+    docs = [SM.RealSample("zh-a", "A", "cht", FIX / "text.pdf", FIX, [1, 2, 3], 3, None, "0" * 64, False,
+                          {"short_ok": [2]})]
+    gt = {"zh-a": {1: "正文" * 20, 2: "短頁", 3: "正文" * 20 + "{{專|x"}}
+    assert R.gt_problems(docs, gt) == [{"doc": "zh-a", "page": 3, "problems": ["markup"]}]
+
+
+def test_real_run_refuses_bad_gt_before_converting(tmp_path, monkeypatch):
+    stand_in = _real_stand_in(tmp_path, monkeypatch, digest=False)
+    (stand_in / "zh-stand-in" / "gt" / "page-002.txt").write_text("短", encoding="utf-8")
+    from bench.realeval import gt_quality as G
+    q = json.loads((stand_in / "gt_quality.json").read_text(encoding="utf-8"))
+    q["gt_sha256"] = G.scoring_gt_digest(stand_in, manifest=stand_in / "MANIFEST.json")
+    (stand_in / "gt_quality.json").write_text(json.dumps(q), encoding="utf-8")
+    _no_convert(monkeypatch)
+    with pytest.raises(SystemExit, match="near_empty"):
+        R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "x")])
+
+
+def test_real_run_refuses_a_gt_quality_judged_on_another_gt(tmp_path, monkeypatch):
+    stand_in = _real_stand_in(tmp_path, monkeypatch)
+    (stand_in / "zh-stand-in" / "gt" / "page-001.txt").write_text(ZH * 5, encoding="utf-8")   # GT changed after
+    _no_convert(monkeypatch)
+    with pytest.raises(SystemExit, match="gt_sha256"):
+        R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "x")])
+
+
+def _fake_convert(*a, **k):
+    return {"status": "failed", "md": None, "seconds": 0.1, "engine_used": None, "tried": [], "error": "x",
+            "peak_vram_mb": None}
+
+
+def test_the_run_register_allows_one_real_run(tmp_path, monkeypatch):
+    stand_in = _real_stand_in(tmp_path, monkeypatch)
+    monkeypatch.setattr(R.B, "convert", _fake_convert)
+    assert R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "run1")]) == 0
+    reg = json.loads((stand_in / "RUNS.json").read_text(encoding="utf-8"))
+    assert [r["id"] for r in reg["runs"]] == ["run1"] and reg["runs"][0]["started"]
+    with pytest.raises(SystemExit, match="RUNS.json"):
+        R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "run2")])
+    # resuming the registered run is not a new run
+    assert R.run(["--part", "formulas", "--root", str(stand_in), "--out", str(tmp_path / "run1"), "--resume"]) == 0
+
+
+def test_a_second_run_needs_an_invalidated_first_run(tmp_path, monkeypatch):
+    stand_in = _real_stand_in(tmp_path, monkeypatch)
+    monkeypatch.setattr(R.B, "convert", _fake_convert)
+    R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "run1")])
+    v = json.loads((tmp_path / "run1" / "validity.json").read_text(encoding="utf-8"))
+    assert not all(v["checks"].values())                     # failed conversions: control and route checks fail
+    assert R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "run2"),
+                  "--invalidated-run", "run1"]) == 0
+    reg = json.loads((stand_in / "RUNS.json").read_text(encoding="utf-8"))
+    assert reg["runs"][1]["invalidates"] == "run1"
+
+
+def test_invalidated_run_must_show_a_validity_failure(tmp_path, monkeypatch):
+    stand_in = _real_stand_in(tmp_path, monkeypatch)
+    monkeypatch.setattr(R.B, "convert", _fake_convert)
+    R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "run1")])
+    v = json.loads((tmp_path / "run1" / "validity.json").read_text(encoding="utf-8"))
+    v["checks"] = dict.fromkeys(v["checks"], True)
+    (tmp_path / "run1" / "validity.json").write_text(json.dumps(v), encoding="utf-8")
+    with pytest.raises(SystemExit, match="validity"):
+        R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "run2"),
+               "--invalidated-run", "run1"])
+
+
+def test_rerun_pair_once_per_pair_and_recorded(tmp_path, monkeypatch):
+    stand_in = _real_stand_in(tmp_path, monkeypatch)
+    monkeypatch.setattr(R.B, "convert", _fake_convert)
+    out = tmp_path / "run1"
+    R.run(["--part", "scans", "--root", str(stand_in), "--out", str(out)])
+    args = ["--part", "scans", "--root", str(stand_in), "--out", str(out), "--resume",
+            "--rerun-pair", "docling/zh-stand-in", "--reason", "timeout (harness)"]
+    assert R.run(args) == 0
+    reg = json.loads((stand_in / "RUNS.json").read_text(encoding="utf-8"))
+    assert reg["runs"][0]["reruns"][0]["pair"] == "docling/zh-stand-in"
+    with pytest.raises(SystemExit, match="already rerun"):
+        R.run(args)
+
+
+def test_resume_compares_the_errata_sha(tmp_path, monkeypatch):
+    stand_in = _real_stand_in(tmp_path, monkeypatch)
+    monkeypatch.setattr(R.B, "convert", _fake_convert)
+    out = tmp_path / "run1"
+    R.run(["--part", "scans", "--root", str(stand_in), "--out", str(out)])
+    (stand_in / "gt_errata.json").write_text("[ ]", encoding="utf-8")       # same meaning, different bytes
+    with pytest.raises(SystemExit, match="gt_errata"):
+        R.run(["--part", "formulas", "--root", str(stand_in), "--out", str(out), "--resume"])

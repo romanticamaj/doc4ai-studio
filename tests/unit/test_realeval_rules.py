@@ -45,7 +45,7 @@ def test_constants_match_spec():
     assert rules.VLM_DOCS == 8            # spec §7.0: 6 zh + 2 en
     assert rules.VLM_LAYERS == 18         # spec §5.6: 18/18 layers on CUDA0
     assert rules.VALIDITY_SCOPE == {"samples": "shared", "clean_tree": "shared", "control_ned": "shared",
-                                    "auto_route": "route", "vlm_setup": "vlm"}   # amendment 2026-10-22 §7.0
+                                    "gt_pages": "shared", "auto_route": "route", "vlm_setup": "vlm"}   # amendment 2026-10-22 §7.0
 
 
 def test_vlm_thresholds_equal_rule_1():
@@ -59,7 +59,8 @@ def test_vlm_thresholds_equal_rule_1():
 # ---------------------------------------------------------------- decide() (spec §7.1–§7.3)
 
 GTQ = {"cer_upper": 0.01, "formula_gt_low_confidence": False}
-VALID = {"checks": {"samples": True, "clean_tree": True, "control_ned": True, "auto_route": True, "vlm_setup": True}}
+VALID = {"checks": {"samples": True, "clean_tree": True, "control_ned": True, "gt_pages": True,
+                    "auto_route": True, "vlm_setup": True}}
 
 
 def _route(**kw):
@@ -281,3 +282,17 @@ def test_decide_is_pure():
 def test_decisions_carry_the_route_input_for_hand_recomputation():
     d = _decide(route=_route(per_doc={"a": 0.03}))["zh_scan_route"]
     assert d["route"]["per_doc"] == {"a": 0.03} and d["route"]["hi"] == 0.14
+
+
+def test_a_scope_without_checks_counts_as_failed():
+    """Verifier finding (minor): a scope with no check at all is not a pass."""
+    out = _decide(validity={"checks": {"samples": True, "clean_tree": True, "control_ned": True, "gt_pages": True}})
+    assert out["validity_scope"] == {"shared": True, "route": False, "vlm": False}
+    assert out["zh_scan_route"]["verdict"] == "insufficient" and out["vlm_local"]["verdict"] == "insufficient"
+
+
+def test_ci_lo_is_strictly_positive_without_tolerance():
+    """Verifier finding (minor): `lo > 0` exactly (spec §7.1); the tie tolerance is for >= / <= only."""
+    assert _decide(route=_route(lo=1e-12))["zh_scan_route"]["conditions"]["ci_lo"]["ok"] is True
+    assert _decide(route=_route(lo=0.0))["zh_scan_route"]["conditions"]["ci_lo"]["ok"] is False
+    assert _decide(route=_mirror(hi=-1e-12))["zh_scan_route"]["conditions"]["ci_hi"]["ok"] is True

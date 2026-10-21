@@ -43,6 +43,30 @@ def draw_formulas(manifest: list[dict], seed: int = SEED) -> dict[str, list[int]
             for e in manifest if e["group"] == "B"}
 
 
+def digest_of(gt: dict[str, dict[int, str]]) -> str:
+    """sha256 of the scoring GT ({doc: {page: text}} after errata), canonical JSON."""
+    import hashlib
+    canon = {d: {str(p): gt[d][p] for p in sorted(gt[d])} for d in sorted(gt)}
+    return hashlib.sha256(json.dumps(canon, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def scoring_gt_digest(root: Path, *, manifest: Path | None = None) -> str:
+    """The digest of what the run will score: every A/C GT page of the manifest with gt_errata.json applied. The
+    verifier's gt_quality.json carries it, so a spot-check judged on another GT cannot be used (verifier Task 9)."""
+    from bench.realeval.normalize import apply_errata
+    root = Path(root)
+    m = json.loads(Path(manifest or MANIFEST).read_text(encoding="utf-8"))
+    ep = root / "gt_errata.json"
+    errata = json.loads(ep.read_text(encoding="utf-8")) if ep.is_file() else []
+    gt = {}
+    for e in m:
+        if e["group"] in ("A", "C"):
+            pages = {p: (root / e["name"] / "gt" / f"page-{p:03d}.txt").read_text(encoding="utf-8")
+                     for p in e["gt_pages"]}
+            gt[e["name"]] = apply_errata(pages, errata, e["name"])
+    return digest_of(gt)
+
+
 def wilson_upper(k: int, n: int, z: float = 1.96) -> float | None:
     """Wilson score interval upper bound (the symmetric form of bench.page_labels.wilson_lower; not rounded)."""
     if n == 0:
@@ -91,9 +115,17 @@ def summarise(root: Path, *, manifest: Path | None = None, author: str) -> dict:
     q = {"pages": spot, "k": k, "n": n, "cer": k / n if n else None, "cer_upper": up,
          "margin": margin_for(up), "formula_checks": fspot, "formula_gt_low_confidence": formula_low_confidence(fspot),
          "errata_count": len(errata), "alignment": align, "alignment_ok": al_ok, "author": author,
-         "date": datetime.now().astimezone().isoformat(timespec="seconds"), "seed": SEED}
+         "date": datetime.now().astimezone().isoformat(timespec="seconds"), "seed": SEED,
+         "gt_sha256": _digest_or_none(root, manifest)}
     (root / "gt_quality.json").write_text(json.dumps(q, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return q
+
+
+def _digest_or_none(root: Path, manifest: Path | None) -> str | None:
+    try:
+        return scoring_gt_digest(root, manifest=manifest)
+    except FileNotFoundError:          # a tool test without GT folders
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:

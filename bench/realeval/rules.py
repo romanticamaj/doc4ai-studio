@@ -49,8 +49,8 @@ RUN_INVALID_VLM = "run invalid (VLM validity checks)"
 # Spec amendment 2026-10-22 (§7.0 / §7.3.2, coordinator decision before the freeze): validity is scoped. A shared
 # check voids every verdict; a route check voids (1a) and (1b) only; the VLM setup check voids (2) only. A check
 # not listed here counts as shared.
-VALIDITY_SCOPE = {"samples": "shared", "clean_tree": "shared", "control_ned": "shared", "auto_route": "route",
-                  "vlm_setup": "vlm"}
+VALIDITY_SCOPE = {"samples": "shared", "clean_tree": "shared", "control_ned": "shared", "gt_pages": "shared",
+                  "auto_route": "route", "vlm_setup": "vlm"}
 ON_PASS = "plan: VLM local backend 8a (spec §7.3.3)"
 KNOWN_LIMITATION = "scanned_cht repeated paragraph 0.75 (spec §7.3.4)"
 NEEDED = {   # spec §11, for an `insufficient` verdict
@@ -81,10 +81,10 @@ def _c(value, threshold, op: str) -> dict:
         ok = value >= threshold - EPS
     elif op == "<=":
         ok = value <= threshold + EPS
-    elif op == ">":
-        ok = value > threshold + EPS
+    elif op == ">":                     # strict: no tie tolerance (spec §7.1 `lo > 0`)
+        ok = value > threshold
     elif op == "<":
-        ok = value < threshold - EPS
+        ok = value < threshold
     elif op == "==":
         ok = value == threshold
     else:
@@ -237,8 +237,10 @@ def decide(route: dict | None, formulas: list[dict] | None, vlm: dict | None, gt
     gt_quality = dict(gt_quality or {})
     checks = dict((validity or {}).get("checks") or {})
     valid = bool(checks) and all(checks.values())
-    scope = {sc: all(v for k, v in checks.items() if VALIDITY_SCOPE.get(k, "shared") == sc) and bool(checks)
-             for sc in ("shared", "route", "vlm")}
+    scope = {}
+    for sc in ("shared", "route", "vlm"):           # a scope with no check at all is not a pass
+        vals = [v for k, v in checks.items() if VALIDITY_SCOPE.get(k, "shared") == sc]
+        scope[sc] = bool(vals) and all(vals)
     margin = margin_for(gt_quality.get("cer_upper"))
     out = {"margin": margin, "cer_upper": gt_quality.get("cer_upper"), "validity_ok": valid,
            "validity_checks": checks, "validity_scope": scope,

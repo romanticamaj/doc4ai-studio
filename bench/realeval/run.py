@@ -33,6 +33,8 @@ from bench.metrics import plain
 from bench.realeval import formulas as F
 from bench.realeval import report, rules, samples, scoring
 from bench.realeval import vlm_measure as V
+from bench.realeval.gt_from_wikitext import check_text
+from bench.realeval.gt_quality import digest_of
 from bench.realeval.normalize import apply_errata
 
 CONFIGS = ["auto", "docling", "mineru"]
@@ -139,6 +141,66 @@ def _commit_has_spec_and_harness(head: str) -> bool:
     return all(_git("cat-file", "-e", f"{head}:{p}").returncode == 0 for p in (SPEC, HARNESS))
 
 
+def _manifest(root: Path, fake: bool) -> list[dict]:
+    return json.loads(((root / "MANIFEST.json") if fake else samples.MANIFEST).read_text(encoding="utf-8"))
+
+
+def gt_problems(docs, gt: dict[str, dict[int, str]]) -> list[dict]:
+    """Scored GT pages that are near-empty (manifest `short_ok` pages excepted) or still hold markup."""
+    out = []
+    for s in docs:
+        short = set(s.entry.get("short_ok") or [])
+        for p, text in sorted((gt.get(s.name) or {}).items()):
+            probs = [x for x in check_text(text) if not (x == "near_empty" and p in short)]
+            if probs:
+                out.append({"doc": s.name, "page": p, "problems": probs})
+    return out
+
+
+class Register:
+    """RUNS.json beside the samples (gitignored, outside --out): one registered real run (verifier Task 9, "no
+    fishing"). A second run starts only with --invalidated-run <id> naming a registered run whose validity.json
+    shows a failed check; --rerun-pair is allowed once per pair and recorded here."""
+
+    def __init__(self, path: Path, out: Path, invalidated: str | None):
+        self.path, self.out, self.id = path, Path(out), Path(out).name
+        self.data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"runs": []}
+        self.mine = next((r for r in self.data["runs"] if r["id"] == self.id), None)
+        if self.mine is not None and self.mine["out"] != str(self.out):
+            raise SystemExit(f"RUNS.json: run id {self.id} is registered for another folder")
+        self.invalidates = None
+        if self.mine is None and self.data["runs"]:
+            ids = {r["id"]: r for r in self.data["runs"]}
+            taken = {r.get("invalidates") for r in self.data["runs"]}
+            if not invalidated or invalidated not in ids or invalidated in taken:
+                raise SystemExit(f"RUNS.json already holds a registered run ({', '.join(ids)}): the decision samples "
+                                 "are used once (spec §8.2); a new run needs --invalidated-run <id> of a run whose "
+                                 "validity checks failed")
+            v = Path(ids[invalidated]["out"]) / "validity.json"
+            checks = json.loads(v.read_text(encoding="utf-8")).get("checks", {}) if v.is_file() else {}
+            if not checks or all(checks.values()):
+                raise SystemExit(f"run {invalidated}: its validity.json shows no failed validity check")
+            self.invalidates = invalidated
+
+    def _save(self) -> None:
+        self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=1) + chr(10), encoding="utf-8")
+
+    def start(self, commit: str | None) -> None:
+        if self.mine is None:
+            self.mine = {"id": self.id, "out": str(self.out), "started": _now(), "aidoc_commit": commit,
+                         "invalidates": self.invalidates, "reruns": []}
+            self.data["runs"].append(self.mine)
+            self._save()
+
+    def rerun(self, pair: str, reason: str) -> None:
+        if self.mine is None:
+            raise SystemExit("--rerun-pair needs a registered run (resume it)")
+        if any(r["pair"] == pair for r in self.mine["reruns"]):
+            raise SystemExit(f"{pair} was already rerun once (RUNS.json; spec §8.3)")
+        self.mine["reruns"].append({"date": _now(), "pair": pair, "reason": reason})
+        self._save()
+
+
 def _loopback(host: str | None) -> bool:
     try:
         return ipaddress.ip_address(host or "").is_loopback
@@ -158,6 +220,8 @@ def validity(env: dict, rows: list[dict], vlm: dict | None) -> dict:
                           "missing": env.get("missing"),
                           "derived_text_chars": {k: d.get("text_chars") for k, d in derived.items()}}
     checks["clean_tree"] = env.get("aidoc_dirty") is False and bool(env.get("commit_has_spec_and_harness"))
+    checks["gt_pages"] = "gt_problems" in env and not env["gt_problems"]
+    details["gt_pages"] = {"problems": env.get("gt_problems")}
     ctrl = {r["config"]: r.get("ned") for r in rows if r.get("doc") == CONTROL_DOC and r["config"] in
             ("docling", "mineru")}
     best = max((v for v in ctrl.values() if v is not None), default=None)
@@ -347,6 +411,7 @@ def _parse(argv):
     ap.add_argument("--offline-declared", action="store_true")
     ap.add_argument("--rerun-pair", help="<config>/<doc>: rerun one pair after a harness failure (spec §8.3)")
     ap.add_argument("--reason")
+    ap.add_argument("--invalidated-run", help="id of a registered run whose validity.json shows a failed check")
     a = ap.parse_args(argv)
     if a.decide_only:
         return a
@@ -396,6 +461,7 @@ def run(argv: list[str] | None = None) -> int:
     results = out / "results.jsonl"
     if results.exists() and not a.resume:
         raise SystemExit(f"{results} exists: use --resume or another --out")
+    register = None if a.fake else Register(root / "RUNS.json", out, a.invalidated_run)   # refuses a second run
     out.mkdir(parents=True, exist_ok=True)
     log_f = open(out / "run.log", "a", encoding="utf-8")       # noqa: SIM115  closed at the end
 
@@ -406,22 +472,35 @@ def run(argv: list[str] | None = None) -> int:
         log_f.flush()
 
     try:
+        manifest = _manifest(root, a.fake)
         if a.fake:
             docs, missing = samples.load(root, fake=True, manifest=root / "MANIFEST.json", stand_in=True)
-            manifest = json.loads((root / "MANIFEST.json").read_text(encoding="utf-8"))
         else:
             docs, missing = samples.load(root)
             if missing:                 # spec §7.0 check 1 would void the run: stop before any sample is converted
                 raise SystemExit(f"samples missing or not matching the manifest: {missing}")
-            manifest = json.loads(samples.MANIFEST.read_text(encoding="utf-8"))
         errata = json.loads(errata_src.read_text(encoding="utf-8")) if errata_src.is_file() else []
         try:
             gt = {s.name: apply_errata({p: s.gt_text(p) for p in s.gt_pages}, errata, s.name)
                   for s in docs if s.group in ("A", "C")}
         except ValueError as e:
             raise SystemExit(f"gt_errata.json: {e}") from e
+        bad_gt = gt_problems(docs, gt)
+        gt_digest = digest_of(gt)
+        if not a.fake:
+            if bad_gt:                  # shared validity check gt_pages would void the run: stop before converting
+                raise SystemExit(f"scored GT pages are near-empty or hold markup: {bad_gt}")
+            if json.loads(gq_src.read_text(encoding="utf-8")).get("gt_sha256") != gt_digest:
+                raise SystemExit("gt_quality.json gt_sha256 does not match the scoring GT (gt/ + gt_errata.json): "
+                                 "the spot-check was judged on another GT")
         env_path = out / "env.json"
         prev = json.loads(env_path.read_text(encoding="utf-8")) if env_path.is_file() else None
+        if prev is not None:
+            for key, now in (("aidoc_commit", base.get("aidoc_commit")), ("gt_quality_sha256", _sha_text(gq_src)),
+                             ("gt_errata_sha256", _sha_text(errata_src))):
+                if prev.get(key) != now:
+                    raise SystemExit(f"--resume across a different {key.replace('_sha256', '')} "
+                                     f"({'gt_errata.json' if 'errata' in key else key}) is not the same run")
         derived = {}
         for s in docs:
             if s.group == "C":
@@ -442,21 +521,26 @@ def run(argv: list[str] | None = None) -> int:
                "commit_has_spec_and_harness": has, "root": str(root), "fake": bool(a.fake),
                "samples": {s.name: s.sha256 for s in docs}, "expected_samples": len(manifest), "missing": missing,
                "derived": derived, "gt_quality_sha256": _sha_text(gq_src), "gt_errata_sha256": _sha_text(errata_src),
+               "gt_sha256": gt_digest, "gt_problems": bad_gt,
                "cover_pdf": cover.name if cover else None, "cover_sha256": _sha_text(cover) if cover else None,
                "offline_declared": bool(a.offline_declared), "reruns": [], "parts": []}
         if prev is not None:
-            env = {**prev, "resumed": [*prev.get("resumed", []), env["date"]], "derived": derived,
+            env = {**prev, "resumed": [*prev.get("resumed", []), env.get("date") or _now()], "derived": derived,
+                   "gt_problems": bad_gt, "gt_sha256": gt_digest,
                    "offline_declared": prev.get("offline_declared") and bool(a.offline_declared)}
-            if prev.get("aidoc_commit") != base.get("aidoc_commit") or prev.get("gt_quality_sha256") != \
-                    _sha_text(gq_src):
-                raise SystemExit("--resume across a different commit or gt_quality.json is not the same run")
         if a.rerun_pair:
             config, doc = a.rerun_pair.split("/", 1)
+            if config not in CONFIGS or doc not in {s.name for s in docs}:
+                raise SystemExit(f"--rerun-pair {a.rerun_pair}: unknown config or document")
+            if register is not None:
+                register.rerun(a.rerun_pair, a.reason)          # once per pair (refuses a second time)
             for name in ("results.jsonl", "pages.jsonl"):
                 p = out / name
                 keep = [r for r in _jsonl(p) if not (r["config"] == config and r["doc"] == doc)]
                 p.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in keep), encoding="utf-8")
             env["reruns"] = [*env.get("reruns", []), {"date": _now(), "pair": a.rerun_pair, "reason": a.reason}]
+        if register is not None:
+            register.start(base.get("aidoc_commit"))            # the first real conversion follows
         _write_json(env_path, env)
         B.write_config_files(out, CONFIGS, argparse.Namespace(vlm_base_url=None, vlm_model=None))
         if a.fake:

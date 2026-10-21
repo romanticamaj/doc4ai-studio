@@ -119,3 +119,9 @@ def test_control_scores_the_derived_pdf(tmp_path):
     (root / "MANIFEST.json").write_text(json.dumps(man), encoding="utf-8")
     got, _ = samples.load(root, manifest=root / "MANIFEST.json", stand_in=True)
     assert got[0].scoring_pdf() == root / "zh-stand-in" / "derived" / "image_only.pdf"
+
+
+def test_short_pages_are_listed_only_for_the_ncl_title_and_colophon_pages():
+    man = json.loads(samples.MANIFEST.read_text(encoding="utf-8"))
+    short = {e["name"]: e["short_ok"] for e in man if e.get("short_ok")}
+    assert short == {"zh-ncl-renjian-cihua": [1, 3, 40]}
