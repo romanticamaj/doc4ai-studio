@@ -135,6 +135,10 @@ def exe_from_zip(exe: Path | None, zip_path: Path | None) -> bool:
         return hashlib.sha256(z.read(member)).hexdigest() == samples.sha256_file(exe)
 
 
+def _commit_has_spec_and_harness(head: str) -> bool:
+    return all(_git("cat-file", "-e", f"{head}:{p}").returncode == 0 for p in (SPEC, HARNESS))
+
+
 def _loopback(host: str | None) -> bool:
     try:
         return ipaddress.ip_address(host or "").is_loopback
@@ -159,9 +163,15 @@ def validity(env: dict, rows: list[dict], vlm: dict | None) -> dict:
     best = max((v for v in ctrl.values() if v is not None), default=None)
     checks["control_ned"] = best is not None and best >= rules.CONTROL_VALIDITY_NED - rules.EPS
     details["control_ned"] = {"doc": CONTROL_DOC, "ned": ctrl, "threshold": rules.CONTROL_VALIDITY_NED}
-    auto_a = {r["doc"]: (r.get("tried") or [None])[0] for r in rows if r.get("group") == "A" and r["config"] == "auto"}
-    checks["auto_route"] = bool(auto_a) and all(t == "mineru" for t in auto_a.values())
-    details["auto_route"] = {"tried0": auto_a, "expected": "mineru"}
+    # check 4 is about the harness's config: a conversion that failed without a payload (timeout, crash) has no
+    # `tried` and scores 0 (spec §3); it does not void the run. The router's reason must be pdf_scanned for all.
+    auto_rows = [r for r in rows if r.get("group") == "A" and r["config"] == "auto"]
+    auto_a = {r["doc"]: (r.get("tried") or [None])[0] for r in auto_rows}
+    reasons = {r["doc"]: r.get("route_reason") for r in auto_rows}
+    checks["auto_route"] = (bool(auto_rows) and all(t == "mineru" for t in auto_a.values() if t is not None)
+                            and any(t is not None for t in auto_a.values())
+                            and all(v == "pdf_scanned" for v in reasons.values()))
+    details["auto_route"] = {"tried0": auto_a, "route_reason": reasons, "expected": ["mineru", "pdf_scanned"]}
     srv = (vlm or {}).get("server") or {}
     checks["vlm_setup"] = bool(vlm) and bool(srv.get("device_cuda")) and \
         srv.get("layers_on_gpu") == srv.get("layers_total") == rules.VLM_LAYERS and \
@@ -378,6 +388,11 @@ def run(argv: list[str] | None = None) -> int:
             if not p.is_file():
                 raise SystemExit(f"{p.name} is missing in {root}: the verifier's GT preparation (plan Task 9) comes "
                                  "before any conversion (spec §6, §8.1)")
+        if json.loads(gq_src.read_text(encoding="utf-8")).get("alignment_ok") is not True:
+            raise SystemExit("gt_quality.json: alignment_ok is not true — fix the page mapping in MANIFEST.json "
+                             "before the freeze (spec §6.2)")
+        if not _commit_has_spec_and_harness(base.get("aidoc_commit") or "HEAD"):
+            raise SystemExit("the commit does not hold the spec and harness (spec §7.0 check 2)")
     results = out / "results.jsonl"
     if results.exists() and not a.resume:
         raise SystemExit(f"{results} exists: use --resume or another --out")
@@ -396,6 +411,8 @@ def run(argv: list[str] | None = None) -> int:
             manifest = json.loads((root / "MANIFEST.json").read_text(encoding="utf-8"))
         else:
             docs, missing = samples.load(root)
+            if missing:                 # spec §7.0 check 1 would void the run: stop before any sample is converted
+                raise SystemExit(f"samples missing or not matching the manifest: {missing}")
             manifest = json.loads(samples.MANIFEST.read_text(encoding="utf-8"))
         errata = json.loads(errata_src.read_text(encoding="utf-8")) if errata_src.is_file() else []
         try:
@@ -419,7 +436,7 @@ def run(argv: list[str] | None = None) -> int:
         if gq_src.is_file():
             shutil.copy2(gq_src, out / "gt_quality.json")
         head = base.get("aidoc_commit") or "HEAD"
-        has = all(_git("cat-file", "-e", f"{head}:{p}").returncode == 0 for p in (SPEC, HARNESS))
+        has = _commit_has_spec_and_harness(head)
         env = {**base, "spec_commit": _git("log", "-1", "--format=%h", "--", SPEC).stdout.strip() or None,
                "harness_commit": _git("log", "-1", "--format=%h", "--", "bench/realeval").stdout.strip() or None,
                "commit_has_spec_and_harness": has, "root": str(root), "fake": bool(a.fake),

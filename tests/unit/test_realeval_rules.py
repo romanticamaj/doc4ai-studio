@@ -250,3 +250,8 @@ def test_decide_is_pure():
     b = rules.decide(*args)
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
     assert json.dumps(args, sort_keys=True) == before
+
+
+def test_decisions_carry_the_route_input_for_hand_recomputation():
+    d = _decide(route=_route(per_doc={"a": 0.03}))["zh_scan_route"]
+    assert d["route"]["per_doc"] == {"a": 0.03} and d["route"]["hi"] == 0.14

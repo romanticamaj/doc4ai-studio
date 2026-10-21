@@ -57,7 +57,7 @@ def build_stand_in(root: Path) -> Path:
                 "layout": "horizontal", "spread": False, "ocr_text_layer": True})
     (root / "MANIFEST.json").write_text(json.dumps(man), encoding="utf-8")
     (root / "gt_errata.json").write_text("[]", encoding="utf-8")
-    (root / "gt_quality.json").write_text(json.dumps({"cer_upper": 0.01, "margin": 0.05,
+    (root / "gt_quality.json").write_text(json.dumps({"cer_upper": 0.01, "margin": 0.05, "alignment_ok": True,
                                                       "formula_gt_low_confidence": False}), encoding="utf-8")
     shutil.copy(FIX / "scanned_en.pdf", root / "cover.pdf")
     return root
@@ -224,7 +224,7 @@ def test_validity_checks_on_hand_made_rows():
            "derived": {"en-aashto-usrn-1984": {"text_chars": 0}}, "expected_samples": 2, "samples": {"a": 1, "b": 2}}
     rows = [{"config": "docling", "doc": "en-aashto-usrn-1984", "group": "C", "ned": 0.86},
             {"config": "mineru", "doc": "en-aashto-usrn-1984", "group": "C", "ned": 0.5},
-            {"config": "auto", "doc": "zh-a", "group": "A", "tried": ["mineru", "docling"]}]
+            {"config": "auto", "doc": "zh-a", "group": "A", "tried": ["mineru", "docling"], "route_reason": "pdf_scanned"}]
     vlm = {"server": {"device_cuda": True, "layers_on_gpu": 18, "layers_total": 18}, "endpoint_host": "127.0.0.1",
            "pinned_ok": True}
     v = R.validity(env, rows, vlm)
@@ -234,3 +234,58 @@ def test_validity_checks_on_hand_made_rows():
     rows[2]["tried"] = ["docling"]
     v = R.validity({**env, "aidoc_dirty": True}, rows, {**vlm, "pinned_ok": False})
     assert not any(v["checks"][k] for k in ("clean_tree", "control_ned", "auto_route", "vlm_setup"))
+
+
+# ---------------------------------------------------------------- final-review fixes
+
+def _clean_env(a):
+    return {"aidoc_dirty": False, "aidoc_commit": "HEAD"}
+
+
+def test_validity_auto_route_ignores_failed_conversions_but_checks_the_reason():
+    env = {"aidoc_dirty": False, "commit_has_spec_and_harness": True, "missing": [], "derived": {},
+           "expected_samples": 0, "samples": {}}
+    rows = [{"config": "auto", "doc": "zh-a", "group": "A", "tried": ["mineru"], "route_reason": "pdf_scanned"},
+            {"config": "auto", "doc": "zh-b", "group": "A", "tried": [], "status": "failed",
+             "route_reason": "pdf_scanned"}]
+    assert R.validity(env, rows, None)["checks"]["auto_route"] is True
+    rows[1]["route_reason"] = "pdf_default"
+    assert R.validity(env, rows, None)["checks"]["auto_route"] is False
+
+
+def test_real_run_refuses_missing_samples_before_converting(tmp_path, monkeypatch):
+    stand_in = build_stand_in(tmp_path / "s")
+    monkeypatch.setattr(R, "base_environment", _clean_env)
+    monkeypatch.setattr(R.samples, "load", lambda *a, **k: ([], [{"name": "zh-x", "why": "sha256 mismatch"}]))
+    monkeypatch.setattr(R.B, "convert", lambda *a, **k: pytest.fail("converted"))
+    with pytest.raises(SystemExit, match="missing"):
+        R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "x")])
+
+
+def test_real_run_refuses_a_commit_without_spec_and_harness(tmp_path, monkeypatch):
+    stand_in = build_stand_in(tmp_path / "s")
+    docs, _ = SM.load(stand_in, manifest=stand_in / "MANIFEST.json", stand_in=True)
+    monkeypatch.setattr(R, "base_environment", _clean_env)
+    monkeypatch.setattr(R.samples, "load", lambda *a, **k: (docs, []))
+    monkeypatch.setattr(R, "_commit_has_spec_and_harness", lambda head: False)
+    monkeypatch.setattr(R.B, "convert", lambda *a, **k: pytest.fail("converted"))
+    with pytest.raises(SystemExit, match="spec and harness"):
+        R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "x")])
+
+
+def test_real_run_refuses_a_failed_alignment(tmp_path, monkeypatch):
+    stand_in = build_stand_in(tmp_path / "s")
+    q = json.loads((stand_in / "gt_quality.json").read_text(encoding="utf-8"))
+    q["alignment_ok"] = False
+    (stand_in / "gt_quality.json").write_text(json.dumps(q), encoding="utf-8")
+    monkeypatch.setattr(R, "base_environment", _clean_env)
+    monkeypatch.setattr(R.samples, "load", lambda *a, **k: pytest.fail("samples opened"))
+    with pytest.raises(SystemExit, match="alignment"):
+        R.run(["--part", "scans", "--root", str(stand_in), "--out", str(tmp_path / "x")])
+
+
+def test_decisions_carry_the_whole_route_input(dry_run):
+    dec = json.loads((dry_run["out"] / "decisions.json").read_text(encoding="utf-8"))
+    route = dec["zh_scan_route"]["route"]
+    assert set(route) >= {"delta", "lo", "hi", "per_doc", "wins_D", "wins_M", "big_loss_D", "big_loss_M"}
+    assert "zh-stand-in" in route["per_doc"]

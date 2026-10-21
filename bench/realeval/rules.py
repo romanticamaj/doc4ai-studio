@@ -130,7 +130,7 @@ def _decide_route(route: dict | None, margin: float | None) -> dict:
         verdict, change_to, failed = "insufficient", None, _failed(c, _ROUTE_MIN + side)
     return {"verdict": verdict, "change_to": change_to, "conditions": c, "failed": failed,
             "needed_samples": NEEDED["zh_scan_route"] if verdict == "insufficient" else [],
-            "current": ROUTE_CURRENT}
+            "current": ROUTE_CURRENT, "route": route}         # the full input: per-doc Δ for hand recomputation
 
 
 def _formula_side(p: dict, mine: str, other: str) -> dict:
