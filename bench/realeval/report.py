@@ -146,7 +146,9 @@ def _cond_rows(conds: dict, prefix: str = "") -> list[list[str]]:
 def decisions_block(dec: dict) -> str:
     out = [f"margin {fmt(dec.get('margin'))}（CER_gt 上界 {fmt(dec.get('cer_upper'))}）；"
            f"有效性 {fmt(dec.get('validity_ok'))}：" + ", ".join(f"{k} {fmt(v)}" for k, v in
-                                                            (dec.get("validity_checks") or {}).items())]
+                                                            (dec.get("validity_checks") or {}).items())
+           + "；範圍（2026-10-22 修訂）：" + ", ".join(f"{k} {fmt(v)}" for k, v in
+                                               (dec.get("validity_scope") or {}).items())]
     titles = {"zh_scan_route": "(1a) 繁中掃描路由", "formula_route": "(1b) 公式路由", "vlm_local": "(2) 本機 VLM"}
     for key, title in titles.items():
         d = dec.get(key) or {}

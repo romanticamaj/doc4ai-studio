@@ -1,7 +1,7 @@
 # 真實樣本評估（繁中掃描路由、公式路由、本機 VLM 後端重測）— 設計文件
 
 - 日期：2026-10-22
-- 狀態：**預先登錄（pre-registered），尚未執行**。本文件的指標、正規化、門檻與決策規則在任何真實樣本被轉換之前凍結；執行紀錄填在 §14。
+- 狀態：**預先登錄（pre-registered），尚未執行**（2026-10-22 凍結前修訂 A：§5.1 數學展開；修訂 B：§7.0／§7.3.2 有效性分範圍）。本文件的指標、正規化、門檻與決策規則在任何真實樣本被轉換之前凍結；執行紀錄填在 §14。
 - 依據：使用者 2026-10-20 核准的兩個待決事項（見 §1.1）；`docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md` §3.4（指標）、§10.2（合成基準跑指出的路由問題）、§11（已知限制）；`docs/superpowers/specs/2026-10-05-vlm-ocr-engine-design.md` §3.4（spike 決策規則 1–4）、§5（路由）、§13 #6（本機後端驗收）、§15；`docs/superpowers/spikes/2026-10-vlm-ocr.md`（PaddleOCR-VL-1.6 的量測與「後續值得做」段）；`docs/superpowers/plans/2026-10-05-vlm-ocr-engine.md` Task 8a／8b／8c。
 - 樣本：`tests/fixtures/manual/realeval/`（**gitignored，永不進版控**）的 `INDEX.md` 與各資料夾 `SOURCE.md`。
 - 實作計畫：`docs/superpowers/plans/2026-10-22-real-sample-eval.md`
@@ -112,7 +112,7 @@ A／C 組：`gt/page-NNN.txt` 的 NNN = PDF 頁碼（SOURCE.md 已目視抽查�
 
 | 步 | 規則 | 說明 |
 |---|---|---|
-| 1 | pred 先過 `bench.metrics.plain()` | 去 `$…$` 數學（另計）、HTML 標籤、Markdown 標記、圖片連結、HTML 註解（= `quality.strip_markup()`） |
+| 1 | pred 先**展開數學**（2026-10-22 修訂 A，見本節末），再過 `bench.metrics.plain()` | 去 HTML 標籤、Markdown 標記、圖片連結、HTML 註解（= `quality.strip_markup()`）；~~去 `$…$` 數學（另計）~~ → 數學只去定界符、保留內容 |
 | 2 | 勘誤（只對 GT） | §6.1 |
 | 3 | 注音聲調符號移除（兩側） | U+02C7 ˇ、U+02CA ˊ、U+02CB ˋ、U+02D9 ˙（GT 與引擎對聲調的編碼都不穩定，不計） |
 | 4 | 撇號統一（兩側） | U+2019 ’、U+02BC ʼ → U+0027 '（封面句比對與英文對照用；之後反正被步 5 丟掉） |
@@ -129,6 +129,8 @@ A／C 組：`gt/page-NNN.txt` 的 NNN = PDF 頁碼（SOURCE.md 已目視抽查�
 - **舊字形／異體**：`衞`／`衛`、`爲`／`為`、`甯`／`寧`、`裏`／`裡` 等**不折疊**，算錯；§5.4 診斷估其佔比。
 - **數字〇、漢字數字**：`〇`（U+3007，Nl）為 alnum → 保留。
 - **不做任何「針對某份文件」的 pred 過濾**：臺北地院的邊緣行號、各文件的頁首頁尾／頁碼、館章文字、塗黑處的雜訊——引擎吐出來就是插入錯誤，兩個引擎同罰。這是預先登錄的取捨（不替任何引擎擦屁股）。
+
+> **2026-10-22 修訂 A（凍結前，協調者決定；`bench/realeval/normalize.unwrap_math`）**：原步 1 用 `plain()` 把 pred 裡所有 `$…$`、`$$…$$`、`\(…\)`、`\[…\]` 整段刪除，而掃描組沒有另計數學——若某引擎（MinerU）習慣把數字、圈號或中文包進行內數學而另一個（Docling）不包，被包的字只對前者算漏字，Δ 會偏向 `change`。修訂後：A／C 組（含 VLM 回應）**只去數學定界符、保留內容**；內容若是 LaTeX 命令（如 `\frac`、`\mathrm`、`\text`、`\alpha`），**去命令名、保留引數的字元**（`\frac{1}{2}` → `12`；`\{`、`\%` 只去反斜線），之後照步 1–5。所有引擎同一規則。B 組（公式）不受影響：公式仍由 §5.5 從 `$…$` 抽出計分，護欄 `T` 的 pred 文字仍是 `plain(md)`。釘住的測試：`tests/unit/test_realeval_normalize.py::test_math_wrapped_digits_and_cjk_score_like_plain_text`（MinerU 式 `$1973$`、`$\text{臺北}$`、`$\frac{1}{2}$` 與 Docling 式純文字得分相同）。
 
 ### 5.2 頁級指標（A／C 組）
 
@@ -227,6 +229,16 @@ A／C 組：`gt/page-NNN.txt` 的 NNN = PDF 頁碼（SOURCE.md 已目視抽查�
 4. `auto` 在 A 組的 `tried[0]` 必須是 `mineru`（現行 `pdf_scanned` 路由）——不是的話 harness 的設定檔有誤。
 5. VLM 階段：server 日誌有 CUDA0 與 18/18 層；端點 loopback；三個檔案 sha256 相符。
 
+> **2026-10-22 修訂 B（凍結前，協調者決定；`bench/realeval/rules.VALIDITY_SCOPE`）**：有效性檢查**分範圍**，取代上段「不過 → 整個 run 無效」：
+>
+> | 範圍 | 檢查 | 不過的後果 |
+> |---|---|---|
+> | 共用 | 1（sha256、資料夾未被追蹤、GT 檔齊全、衍生檔 0 字）、2（樹乾淨、commit 含本文件與 harness） | 三個決策全部 `insufficient`（`run invalid (validity checks)`） |
+> | 路由 | 3（對照組 NED）、4（`auto` 走 `mineru`） | 只有 (1a)、(1b) `insufficient`（`run invalid (route validity checks)`）；(2) 照 §7.3 判 |
+> | VLM | 5（CUDA0、18/18 層、loopback、三檔 sha256） | 只有 (2) `insufficient`（`run invalid (VLM validity checks)`）；(1a)、(1b) 照 §7.1／§7.2 判 |
+>
+> 未列名的檢查一律算共用。重跑規則不變（§8.3：只重跑出問題的部分一次並記錄）。檢查 3 雖然量的是兩個引擎，修訂依協調者列舉的共用清單歸入「路由」；它原本的理由（「harness／頁對應／正規化有 bug」）若成立，VLM 的數字也可疑——這點寫進紀錄的評註供讀者判讀，不改判定。釘住的測試：`tests/unit/test_realeval_rules.py::test_a_vlm_setup_failure_leaves_the_route_verdicts`、`::test_a_route_validity_failure_leaves_the_vlm_verdict`、`::test_a_shared_validity_failure_invalidates_every_verdict`。
+
 **三種結論**（每個決策只能是其一；由 `rules.decide(results) → decisions.json` 機械判定，人只能加註解）：`change`（含改什麼）、`confirm`（現狀確認，不改）、`insufficient`（證據不足，不改；附 §11 的樣本需求）。
 
 ### 7.1 決策 (1a)：繁中掃描路由（`router._rule` 的 `pdf_scanned`，`lang == "cht"`）
@@ -273,6 +285,8 @@ A／C 組：`gt/page-NNN.txt` 的 NNN = PDF 頁碼（SOURCE.md 已目視抽查�
 | **`pass`** | 五項全過 |
 | **`fail`** | 五項都量到，任一不過（紀錄寫明哪一項、哪份文件、數字） |
 | **`insufficient`** | 任一項量不到（server 起不來、不在 GPU、`nvidia-smi` 不可用、sha256 不符、某份文件沒量完） |
+
+> **2026-10-22 修訂 B（同 §7.0）**：上表 `insufficient` 的 VLM 設定類原因（不在 GPU、層數不足、sha256 不符、端點非 loopback）**只影響本決策 (2)**，不再經 §7.0 讓 (1a)、(1b) 一併無效；反之，路由範圍的有效性失敗也不影響 (2)。共用範圍的失敗仍讓三者都 `insufficient`。顯存照 §5.6 以 server 啟動前的基線計 delta；基線含桌面程式（量測當下約 4.5 GB）照實記錄，不需關閉。
 
 recall 落在 `[0.95 − CER_gt 上界, 0.95)` 仍是 `fail`——規則照寫；紀錄旁註「在 GT 誤差界內」供讀者判讀，但不改結論。
 

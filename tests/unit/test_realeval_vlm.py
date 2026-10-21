@@ -245,8 +245,8 @@ def test_a_timed_out_page_is_measured_not_dropped(tmp_path):
 def test_parse_server_log_on_the_b11559_format():
     """Line format copied from a real `llama-server -v` start of the pinned b11559 build (no document content):
     timestamped, `n_layer` and `n_layer_all`, and the layer list printed more than once."""
-    lines = ["0.03.889.898 I llama_prepare_model_devices: using device CUDA0 (NVIDIA GeForce RTX 5070 Ti) "
-             "(0000:01:00.0) - 15009 MiB free",
+    lines = [("0.03.889.898 I llama_prepare_model_devices: using device CUDA0 (NVIDIA GeForce RTX 5070 Ti) "
+              "(0000:01:00.0) - 15009 MiB free"),
              "0.03.923.141 I print_info: n_layer               = 18",
              "0.03.923.141 I print_info: n_layer_all           = 18"]
     lines += [f"0.03.923.592 D load_tensors: layer {i:3d} assigned to device CUDA0, is_swa = 0"

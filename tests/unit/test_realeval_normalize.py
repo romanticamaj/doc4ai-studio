@@ -44,9 +44,30 @@ def test_variants_are_errors_and_counted_by_the_diagnostic():
     assert N.variant_share("甲乙", "甲乙") is None
 
 
-def test_prediction_markup_removed():
+def test_prediction_markup_removed_math_unwrapped():
+    """Spec amendment 2026-10-22 (§5.1 step 1): math delimiters go, their content stays."""
     md = "# 標題\n\n<!-- page: 3 -->\n| a | b |\n|---|---|\n![](x.png) $x^2$ text"
-    assert N.norm_pred(md) == "標題abtext"
+    assert N.norm_pred(md) == "標題abx2text"
+
+
+def test_math_wrapped_digits_and_cjk_score_like_plain_text():
+    """MinerU wraps digits / CJK / fractions in $…$, Docling does not: both must score the same (amendment §5.1)."""
+    from bench.realeval import scoring
+    gt = "中華民國六十二年 1973 年 第 12 號 臺北 地方法院 二分之一 12 甲乙"
+    mineru = r"中華民國六十二年 $1973$ 年 第 $\mathrm{12}$ 號 $\text{臺北}$ 地方法院 二分之一 $\frac{1}{2}$ 甲乙"
+    docling = "中華民國六十二年 1973 年 第 12 號 臺北 地方法院 二分之一 12 甲乙"
+    assert N.norm_pred(mineru) == N.norm_pred(docling)
+    rm = scoring.page_rows(None, {1: gt}, f"<!-- page: 1 -->\n{mineru}")[0]
+    rd = scoring.page_rows(None, {1: gt}, f"<!-- page: 1 -->\n{docling}")[0]
+    assert rm["ned"] == rd["ned"] == 1.0 and rm["recall"] == rd["recall"]
+
+
+@pytest.mark.parametrize(("md", "want"), [
+    (r"\(x+1\)", "x1"), (r"\[ \alpha = 3 \]", "3"), ("$$\n\\sum_{i=1}^{n} a_i\n$$", "i1nai"),
+    (r"$\{a\}$", "a"), ("價格 $5$ 元", "價格5元"),
+])
+def test_unwrap_math_forms(md, want):
+    assert N.norm_pred(md) == want
 
 
 def test_apostrophes_unified():
