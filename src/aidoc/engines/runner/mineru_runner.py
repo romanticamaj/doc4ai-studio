@@ -40,14 +40,49 @@ def _single_pages(middle_json):
     return [render_markdown(middle_json.model_copy(update={"pages": [pg]})) for pg in middle_json.pages]
 
 
+DRAINED_MAX = 20     # characters: a planned page this short whose own render has text was drained (T-002)
+
+
+def _chars(page: str) -> int:
+    return len(re.sub(r"\s+", "", page))
+
+
+def undrain(pages, single_pages):
+    """(pages, chains): the DEFAULT render plan merges a block flagged continues_prev into the page where its chain
+    started; on scans (the 1973 court letter, the AASHTO tables) a chain can carry whole pages along, leaving their
+    markers empty. Every such chain — its start page through the last drained page — takes the single-page renders,
+    so each page holds its own text; a paragraph tail merged across one page break (no page drained) stays."""
+    out, chains, n, k = list(pages), [], len(pages), 0
+    while k < n:
+        if _chars(pages[k]) < DRAINED_MAX and _chars(single_pages[k]) >= DRAINED_MAX:
+            s = k - 1
+            while s > 0 and _chars(pages[s]) < DRAINED_MAX:
+                s -= 1
+            s = max(s, 0)
+            e = k
+            while e + 1 < n and _chars(pages[e + 1]) < DRAINED_MAX and _chars(single_pages[e + 1]) >= DRAINED_MAX:
+                e += 1
+            out[s:e + 1] = single_pages[s:e + 1]
+            chains.append((s + 1, e + 1))
+            k = e + 1
+        else:
+            k += 1
+    return out, chains
+
+
 def render_pages(middle_json, *, reference, plan=None, single=None):
     """(pages, method): the render plan when its pages, joined like MinerU joins them, equal markdown.md byte for
-    byte; otherwise (mismatch or any error) the public single-page render."""
+    byte (with any chain that drained whole pages re-rendered page by page: `undrain`); otherwise (mismatch or any
+    error) the public single-page render."""
     plan = plan or _plan_pages
     single = single or _single_pages
     try:
         pages = plan(middle_json)
         if "\n\n".join(p for p in pages if p) == reference:
+            if any(_chars(p) < DRAINED_MAX for p in pages):
+                pages, chains = undrain(pages, single(middle_json))
+                if chains:
+                    _proto.log(f"mineru page map: continued blocks drained pages {chains}; rendered page by page")
             return pages, "mineru_render_plan"
         reason = "per-page render differs from markdown.md"
     except Exception as e:  # noqa: BLE001  internal API moved / changed: fall back, never lose page markers
