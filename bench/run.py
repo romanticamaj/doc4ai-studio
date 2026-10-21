@@ -275,8 +275,9 @@ def _timeout(s: Sample) -> int:
     return max(900, (s.pages or 100) * 30, 7200 if (s.pages or 0) > 400 else 0)
 
 
-def convert(s: Sample, config: str, out: Path, *, fake: bool, log=print) -> dict:
-    """Run one conversion; returns {status, md, sidecar, seconds, peak/baseline vram, engine_used, tried, error}."""
+def convert(s: Sample, config: str, out: Path, *, fake: bool, log=print, extra_args: tuple[str, ...] = ()) -> dict:
+    """Run one conversion; returns {status, md, sidecar, seconds, peak/baseline vram, engine_used, tried, error}.
+    `extra_args` go to the end of the `aidoc convert` command (bench/realeval passes `--lang`)."""
     from aidoc import paths
     env = {**os.environ, **env_for_config(config, out)}
     env.pop("AIDOC_TOKEN", None)
@@ -300,6 +301,7 @@ def convert(s: Sample, config: str, out: Path, *, fake: bool, log=print) -> dict
         cmd = [sys.executable, "-m", "aidoc.cli", "convert", str(s.pdf), "-o", str(root), "--force", "--json"]
         if config in SINGLE:
             cmd += ["--engine", config]
+        cmd += list(extra_args)
     t0 = time.perf_counter()
     with Sampler() as gpu:
         try:
