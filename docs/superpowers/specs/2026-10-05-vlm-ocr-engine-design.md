@@ -466,6 +466,8 @@ local_prompt_style = ""           # "" = 依 preset；"paddle_tasks" | "generic"
 
 ## 15. 驗收紀錄（2026-10-12）
 
+> 2026-10-22 真實樣本重測（`docs/superpowers/evals/2026-10-22-real-sample-eval-record.md`）：run 因共用的對照組檢查不過而無效，決策 (2) `insufficient`，規則 4 維持（只交付 `openai` 後端）。本機後端沒有另開計畫。
+
 - **Spike S1 決策：規則 4（只交付 `openai` 後端，本機後端延後）。** PaddleOCR-VL-1.6（llama.cpp b11559 CUDA 13.4、BF16 GGUF）在 sm_120 上可跑：平均 1.15 s/頁（最大 4.7 s）、峰值顯存比基線多 2.4 GB、Head First 封面句命中、真實頁 recall 0.95–1.00；但 `scanned_cht.pdf` recall **0.75**（同一段落重複四次，模型只輸出三次；各種解析度、裁切、官方 chat template 皆同），規則 1 不過；Qwen2.5-VL-3B 0.55–0.73（規則 2 不過）；transformers 路徑同樣 0.75 且 19–45 s/頁（規則 3 不過）。門檻未調整。數字與釘死的 URL/sha256 見 `docs/superpowers/spikes/2026-10-vlm-ocr.md`。故 Task 4b、8a、8b 未實作；`backend = "local"` 時 `available()` 為假、`aidoc setup vlm` 拒絕並指向 spike、`/api/system` 回 `local_supported: false`、Settings 停用該選項（本節即 §3.4 規則 4 要求的 spec 註記）。
 
 | # | 項目 | 結果 |

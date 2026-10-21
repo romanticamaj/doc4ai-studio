@@ -326,6 +326,7 @@ showed about routing, is in [the verify spec, §10](docs/superpowers/specs/2026-
 On 2026-10-20 the user redefined the gate (rows and pages `verify` can judge; ρ ≥ 0.6, page precision and recall
 ≥ 0.9 over every page-level reason; scans reported separately) and it was run once on a fresh-seed Tier A plus
 Tier B: ρ 0.63, precision 0.83, recall 0.72 — not passed, so still nothing is published (spec §10.5).
+A separate real-sample evaluation (6 Traditional Chinese scans, 4 arXiv papers, 2 English controls; pre-registered rules) ran once on 2026-10-22 and was **invalid**: the shared English-control check failed (NED 0.70 / 0.59 < 0.85), so all three decisions are `insufficient` and nothing changed: the zh scan route, the formula route, and the local VLM backend. [Record](docs/superpowers/evals/2026-10-22-real-sample-eval-record.md).
 
 ## Docs
 

@@ -1,7 +1,7 @@
 # 真實樣本評估（繁中掃描路由、公式路由、本機 VLM 後端重測）— 設計文件
 
 - 日期：2026-10-22
-- 狀態：**預先登錄（pre-registered），尚未執行**（2026-10-22 凍結前修訂 A：§5.1 數學展開；B／B′：§7.0／§7.3.2 有效性分範圍；C：§6.6 正解重建；D：§8.4 一次性登錄與曝光紀錄）。本文件的指標、正規化、門檻與決策規則在任何真實樣本被轉換之前凍結；執行紀錄填在 §14。
+- 狀態：**已執行一次（2026-10-22），run 無效，三個決策 `insufficient`**（§14）。預先登錄（2026-10-22 凍結前修訂 A：§5.1 數學展開；B／B′：§7.0／§7.3.2 有效性分範圍；C：§6.6 正解重建；D：§8.4 一次性登錄與曝光紀錄）。本文件的指標、正規化、門檻與決策規則在任何真實樣本被轉換之前凍結；執行紀錄填在 §14。
 - 依據：使用者 2026-10-20 核准的兩個待決事項（見 §1.1）；`docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md` §3.4（指標）、§10.2（合成基準跑指出的路由問題）、§11（已知限制）；`docs/superpowers/specs/2026-10-05-vlm-ocr-engine-design.md` §3.4（spike 決策規則 1–4）、§5（路由）、§13 #6（本機後端驗收）、§15；`docs/superpowers/spikes/2026-10-vlm-ocr.md`（PaddleOCR-VL-1.6 的量測與「後續值得做」段）；`docs/superpowers/plans/2026-10-05-vlm-ocr-engine.md` Task 8a／8b／8c。
 - 樣本：`tests/fixtures/manual/realeval/`（**gitignored，永不進版控**）的 `INDEX.md` 與各資料夾 `SOURCE.md`。
 - 實作計畫：`docs/superpowers/plans/2026-10-22-real-sample-eval.md`
@@ -436,4 +436,9 @@ recall 落在 `[0.95 − CER_gt 上界, 0.95)` 仍是 `fail`——規則照寫�
 
 ## 14. 執行紀錄
 
-（執行後填寫：日期、`env.json.aidoc_commit`、三個結論各一行、紀錄檔連結、後續計畫檔名或「無」。）
+- 日期：2026-10-22（`env.json.date` 2026-10-22T03:26:43+08:00），FREEZE ＝ `env.json.aidoc_commit` ＝ `b5fdc3a`，`aidoc_dirty = false`；`RUNS.json` 唯一一筆，無重跑。
+- **run 無效**：共用有效性檢查 3（對照組 `en-aashto-usrn-1984` NED ≥ 0.85）沒過，Docling 0.6976、MinerU 0.593；其餘檢查全過。逐頁診斷是引擎行為（表格閱讀順序、頁歸屬），不是 harness，所以 §8.3 不允許重跑。
+- (1a) 繁中掃描路由：`insufficient`（run invalid）——路由不改。
+- (1b) 公式路由：`insufficient`（run invalid）——路由不改。
+- (2) 本機 VLM：`insufficient`（run invalid）——規則 4 維持。
+- 紀錄：`docs/superpowers/evals/2026-10-22-real-sample-eval-record.md`。後續計畫：**無**（沒有 `change`／`pass`）；需要的樣本見 §11。這 12 份文件降為回歸集（§8.2）。

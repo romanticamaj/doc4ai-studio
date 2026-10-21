@@ -413,6 +413,8 @@ Tier A 平均 NED（括號內為最差樣本）：
 
 這張表指出的路由問題（後續）：繁中掃描 `auto` 走 MinerU（0.68）而 Docling＋RapidOCR 是 0.96；公式文件 `auto` 走 Docling（公式 NED 0）而 MinerU 是 0.84；表格 MinerU 較好。雙欄合成樣本的繪製方框被 probe 當成表格格線（`missing_table` 誤判，三個引擎都試過）。
 
+> 真實樣本評估（2026-10-22，`docs/superpowers/evals/2026-10-22-real-sample-eval-record.md`）：登錄的那一次 run 因共用的英文對照組檢查不過而**無效**，(1a) 繁中掃描路由與 (1b) 公式路由都是 `insufficient`，路由不改；上面兩個合成訊號仍是「真實樣本未確認」。
+
 修正後（`2026-10-12-ulove-arrangement-pagedrop/`）：`auto` 與基準相比只有三處改變，全是 `page_dropped` 修復：壞字型頁尾樣本 0.49 → 0.94（改走 MinerU）、arXiv RL-ARC 修好 5 頁、兩份 NIST 各修好 1 頁；其他樣本 NED 不變。
 
 VLM 欄（本機 Ollama `gemma4:12b`，`max_output_tokens` 4096，只跑小樣本）：幾乎每頁都 `truncated`，NED 多為 0、每頁約 66 s——這個模型在這個輸出上限下不可用，數字不代表 VLM 引擎本身。
