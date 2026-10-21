@@ -285,6 +285,14 @@ Known limits of the per-page checks:
   until it is uploaded or converted again.
 - Text layers drawn through a wrong Unicode map (shifted-cipher fonts) are detected by a language-model check and
   left out of the coverage checks; such pages are judged only on an empty section.
+- Garbage that is identical in the text layer and in the output is not caught (it "matches"); a script-consistency
+  check is deferred.
+- Moved text can be missed on noisy OCR text layers (the "distinctive n-grams" are unstable under OCR errors).
+- Whether a paragraph continued across a page break is a normal continuation or a moved block is a judgement call.
+- Blind precision / recall is not measured yet: the independent held-out set (183 pages) has only 1–4 positives per
+  reason, so the label gate reports an expected failure (xfail), not a pass.
+- The calibration gate fails (ρ 0.63, precision 0.83, recall 0.72), so the benchmark is not published; those gate
+  numbers predate commit 4a2dd90 (broken-heading garbage check), which the gate was not re-run for.
 
 ## Benchmark
 

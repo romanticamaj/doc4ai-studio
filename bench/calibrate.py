@@ -121,6 +121,13 @@ def _gate_numbers(rows: list[dict]) -> dict:
             "recall": round(tp / (tp + fn), 4) if tp + fn else 1.0, "tp": tp, "fp": fp, "fn": fn}
 
 
+def fmt_pr(d: dict) -> str:
+    """"P=… R=…" for the report; "n/a" when there is nothing to count (no flagged page / no bad page)."""
+    p = d.get("precision") if (d.get("tp") or 0) + (d.get("fp") or 0) else "n/a"
+    r = d.get("recall") if (d.get("tp") or 0) + (d.get("fn") or 0) else "n/a"
+    return f"P={p} R={r}"
+
+
 def gate_v2(rows: list[dict]) -> dict:
     """The calibration gate as redefined on 2026-10-20 (user approved, spec §3.4): Tier A L1 rows verify can judge
     (a text layer: verifiable True, not a scan), pages with a text layer only; rho >= 0.6, page precision and
@@ -230,10 +237,10 @@ def main(argv: list[str] | None = None) -> int:
     out["extra_negatives_ok"] = extra_negatives_ok(out["defects"])
     (run / "calibration.json").write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     g = out["gate_v2"]
-    print(f"gate (2026-10-20): rho={g['rho']} precision={g['precision']} recall={g['recall']} n={g['n']} "
+    print(f"gate (2026-10-20): rho={g['rho']} {fmt_pr(g)} n={g['n']} "
           f"defects_ok={defects_ok(out['defects'])} -> {'PASS' if out['passed'] else 'FAIL'}; scans (not gating): "
-          f"rho={g['scans']['rho']} P={g['scans']['precision']} R={g['scans']['recall']} n={g['scans']['n']}; "
-          f"legacy rho={out['rho']} P={out['precision']} R={out['recall']}")
+          f"rho={g['scans']['rho']} {fmt_pr(g['scans'])} n={g['scans']['n']}; "
+          f"legacy rho={out['rho']} {fmt_pr(out)}")
     return 0 if out["passed"] else 1
 
 

@@ -172,6 +172,8 @@ def content_layers(pages_lines: list[list[str]], prose_only: bool = False,
 
 TRUSTED_LAYER_MIN = 120           # squashed chars of healthy-font text a broken-font page needs to be checked
 FIGURE_AREA_MIN = 0.02            # a picture covering at least this share of the page is a figure region
+FIGURE_AREA_MAX = 0.8             # ... and less than this: a full-page picture is a scan under an OCR text layer, not a
+                                  # figure (round 4: every line of such a page sat on it, its prose layer was empty)
 
 
 class PageLayers(NamedTuple):
@@ -206,7 +208,7 @@ def page_lines(doc) -> PageText:
     (`probe.font_status`) keeps only its healthy-font text: Head First marks hundreds of pages "broken" because of
     handwriting annotation fonts, while its body text and code extract fine (verifier round 2). With less than
     TRUSTED_LAYER_MIN chars of healthy text the raw text is kept and the page is untrusted. Lines whose centre lies
-    in a picture of at least FIGURE_AREA_MIN of the page are figure lines: labels and callouts on a figure kept as a
+    in a picture of FIGURE_AREA_MIN to FIGURE_AREA_MAX of the page are figure lines: labels and callouts on a figure kept as a
     picture are not page prose (verifier round 3 policy); text drawn as vectors cannot be told apart that cheaply."""
     import pymupdf
 
@@ -219,7 +221,8 @@ def page_lines(doc) -> PageText:
         page = doc[i]
         area = abs(page.rect.width * page.rect.height) or 1.0
         rects = [im["bbox"] for im in page.get_image_info()
-                 if abs((im["bbox"][2] - im["bbox"][0]) * (im["bbox"][3] - im["bbox"][1])) >= FIGURE_AREA_MIN * area]
+                 if FIGURE_AREA_MIN * area <= abs((im["bbox"][2] - im["bbox"][0]) * (im["bbox"][3] - im["bbox"][1]))
+                 < FIGURE_AREA_MAX * area]
         bad, mixed = broken.get(i + 1, (set(), set()))
         raw, healthy, fig = [], [], set()
         for blk in page.get_text("dict", flags=pymupdf.TEXTFLAGS_TEXT)["blocks"]:

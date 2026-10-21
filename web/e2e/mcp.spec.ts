@@ -114,8 +114,12 @@ test("貼上 token fills the snippets in the browser only (no request carries it
   await box.fill(pat);
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
   expect(stored).not.toContain(pat);
+  await expect(page.getByText("只在這個瀏覽器分頁的記憶體裡替換文字")).toBeVisible();
+  // the hint says what is true: kept only in this tab's memory, never saved (a back navigation may restore the
+  // field from the browser's back-forward cache: not storage, so not asserted - round 4)
   await page.getByRole("link", { name: "Library" }).first().click();
   await page.goBack();
-  await expect(page.getByLabel("貼上你的 MCP token 以填入設定")).toHaveValue("");
+  const stored2 = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
+  expect(stored2).not.toContain(pat);
   expect(leaks).toEqual([]);
 });

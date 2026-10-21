@@ -68,7 +68,7 @@ export function TokenFill({ value, onChange }: { value: string; onChange: (v: st
       ) : null}
       <p id={`${id}-hint`} className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <ShieldCheck className="mt-px size-3.5 shrink-0" />
-        只在這個瀏覽器分頁裡替換文字：不會傳到伺服器，也不會儲存，離開這一頁就清掉。
+        只在這個瀏覽器分頁的記憶體裡替換文字：不會傳到伺服器，也不會存到瀏覽器或磁碟；關掉分頁就沒了。
       </p>
     </div>
   );

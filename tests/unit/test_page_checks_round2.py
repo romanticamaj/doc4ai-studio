@@ -309,3 +309,19 @@ def test_code_over_a_background_picture_stays_page_text(tmp_path):
     doc.save(pdf)
     _, prose, _, _ = pdf_layers(pdf)
     assert "handlernumber3" in prose[0]
+
+
+def test_full_page_scan_image_is_not_a_figure_region(tmp_path):
+    """Round 4: on a scan with an OCR text layer every line sits on the full-page image, so the prose layer was empty
+    and page_partial could never fire there. A picture covering >= 80 % of the page is not a figure region."""
+    doc = pymupdf.open()
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
+    pix.clear_with(250)
+    p = doc.new_page(width=595, height=842)
+    p.insert_image(p.rect, pixmap=pix)
+    for k in range(10):
+        p.insert_text((60, 100 + 30 * k), _sentence(700 + k), fontsize=10)
+    pdf = tmp_path / "scan.pdf"
+    doc.save(pdf)
+    _, prose, _, _ = pdf_layers(pdf)
+    assert len(prose[0]) > 300
