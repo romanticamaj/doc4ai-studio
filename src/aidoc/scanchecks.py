@@ -170,6 +170,8 @@ def measure(page) -> PageInk:
 def page_ink(pdf: Path, *, layers: list[str] | None = None) -> dict[int, PageInk | None]:
     """{page: PageInk} for every page without a text layer, None for pages that have one (the layer-based checks
     own those). `layers`: the squashed text layers when the caller has them."""
+    if layers is not None and all(len(x) >= SCAN_LAYER_MAX for x in layers):
+        return dict.fromkeys(range(1, len(layers) + 1))     # every page has a text layer: nothing to render
     import pymupdf
     out: dict[int, PageInk | None] = {}
     with pymupdf.open(pdf) as doc:

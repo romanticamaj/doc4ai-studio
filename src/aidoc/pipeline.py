@@ -363,7 +363,7 @@ def check_document(ctx: PipelineContext, engine_name: str, merged: NormalizedRes
     # repaired — re-OCR of each page image cannot carry text across pages, so both sides of a misattribution are
     # re-done and the text is not duplicated
     scan_ink = None
-    if ctx.work_src is not None:
+    if ctx.work_src is not None and Path(ctx.work_src).is_file():
         scan_ink = scanchecks.page_ink(ctx.work_src, layers=layers)
         for e in scanchecks.scan_page_checks(merged.markdown, scan_ink, probe.blank_pages):
             by_page.setdefault(e["page"], e)

@@ -201,3 +201,8 @@ def test_thresholds_are_frozen():
     assert (S.LINE_GAP, S.GLYPH_FILL, S.SCAN_LAYER_MAX, S.EMPTY_SECTION_MAX) == (1.6, 0.12, 20, 20)
     assert (S.CELLS_MIN, S.INK_TEXT_MAX, S.EMPTY_CELLS_REL, S.DENSITY_MIN_PAGES) == (20, 0.35, 0.10, 3)
     assert (S.OVER, S.UNDER, S.EXCESS_MIN, S.BALANCE) == (1.5, 0.5, 40, (0.5, 2.0))
+
+
+def test_a_text_pdf_is_not_rendered(tmp_path, monkeypatch):
+    """Known text layers on every page: page_ink answers without opening the PDF (no render cost on text PDFs)."""
+    assert S.page_ink(tmp_path / "does-not-exist.pdf", layers=["x" * 40, "y" * 40]) == {1: None, 2: None}
