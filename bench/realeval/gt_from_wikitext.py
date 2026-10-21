@@ -35,7 +35,7 @@ from bench.realeval.samples import MANIFEST, REAL_ROOT
 NEAR_EMPTY = 20                       # = bench.metrics.DROPPED_SECTION_MAX: a scored page needs real text
 PIPE = "\x00"                         # {{!}} until the end of template expansion
 T_OPEN, T_CLOSE = "\x01", "\x02"      # table {| and |} so they never meet the brace matcher
-UA = "Doc4AI-realeval-GT/1.0 (romanticamaj@gmail.com; one-off ground-truth rebuild)"
+UA = "Doc4AI-Studio-realeval/1.0 (+https://github.com/romanticamaj/doc4ai-studio)"
 API = "https://zh.wikisource.org/w/api.php"
 
 

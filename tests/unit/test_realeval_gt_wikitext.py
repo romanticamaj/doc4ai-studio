@@ -194,3 +194,21 @@ def test_rebase_realigns_a_scan_reading_against_the_rebuilt_text():
     assert apply_errata({1: "前文人知和靖點絳唇，舜兪蘇幕遮，永叔少年\n後文"}, [fixed], "d")[1].count("脣") == 1
     far = W.rebase_errata(e, {"d": {1: "完全不同的一頁"}}, transcribed=set())
     assert far[0]["status"] == "unresolved"
+
+
+def test_fetch_identifies_the_project_not_a_person(tmp_path):
+    """The User-Agent names the project and its repository; no personal address in committed source."""
+    import io
+
+    sent = []
+
+    class Opener:
+        def open(self, req, timeout=None):
+            sent.append(req.get_header("User-agent"))
+            body = {"query": {"pages": [{"title": "User:X/T", "revisions": [{"revid": 1, "timestamp": "t",
+                                                                               "slots": {"main": {"content": "x"}}}]}]}}
+            return io.BytesIO(json.dumps(body).encode("utf-8"))
+    (tmp_path / "gt_raw").mkdir()
+    W.fetch(tmp_path, [("template", "User:X/T")], sleep_s=0, opener=Opener())
+    assert sent == ["Doc4AI-Studio-realeval/1.0 (+https://github.com/romanticamaj/doc4ai-studio)"]
+    assert "@" not in sent[0]
