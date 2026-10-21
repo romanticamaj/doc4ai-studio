@@ -98,3 +98,19 @@ def test_cli_draw_prints_pages_and_formula_indices(capsys):
     assert G.main(["--draw"]) == 0
     out = capsys.readouterr().out
     assert "zh-kaohsiung-court-1973" in out and "arxiv-2506.00451" in out
+
+
+def test_gt_quality_is_bound_to_the_scoring_gt(tmp_path):
+    m = _manifest()[:1] + [{"name": "en-c", "group": "C", "gt_pages": [1]}]
+    m[0]["gt_pages"] = [1, 2, 3]
+    for e in m:
+        (tmp_path / e["name"] / "gt").mkdir(parents=True)
+        for p in e["gt_pages"]:
+            (tmp_path / e["name"] / "gt" / f"page-{p:03d}.txt").write_text(f"{e['name']}{p}", encoding="utf-8")
+    (tmp_path / "MANIFEST.json").write_text(json.dumps(m), encoding="utf-8")
+    (tmp_path / "gt_errata.json").write_text("[]", encoding="utf-8")
+    a = G.scoring_gt_digest(tmp_path, manifest=tmp_path / "MANIFEST.json")
+    (tmp_path / "gt_errata.json").write_text(json.dumps([{"doc": "zh-0", "page": 2, "wrong": "zh-02",
+                                                          "right": "x", "source": "s"}]), encoding="utf-8")
+    b = G.scoring_gt_digest(tmp_path, manifest=tmp_path / "MANIFEST.json")
+    assert len(a) == 64 and a != b

@@ -61,6 +61,9 @@ def apply_errata(gt_pages: dict[int, str], errata: list[dict], doc: str) -> dict
         p = int(e["page"])
         if p not in out:
             raise ValueError(f"erratum for {doc} p{p}: page has no GT")
+        if e.get("replace_page"):           # the verifier's transcription of the whole page from the scan
+            out[p] = e["right"]
+            continue
         n = out[p].count(e["wrong"])
         if n != 1:
             raise ValueError(f"erratum for {doc} p{p}: 'wrong' occurs {n} times (must be exactly once)")
