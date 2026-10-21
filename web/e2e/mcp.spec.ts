@@ -115,11 +115,31 @@ test("貼上 token fills the snippets in the browser only (no request carries it
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
   expect(stored).not.toContain(pat);
   await expect(page.getByText("只在這個瀏覽器分頁的記憶體裡替換文字")).toBeVisible();
-  // the hint says what is true: kept only in this tab's memory, never saved (a back navigation may restore the
-  // field from the browser's back-forward cache: not storage, so not asserted - round 4)
+  // in-app round trip: wait for the MCP page to really unmount (router transitions keep the old page until
+  // Library renders - going back earlier returns to a page that was never left), then the box must be empty
+  await page.evaluate(() => { (window as any).__doc = 1; });
   await page.getByRole("link", { name: "Library" }).first().click();
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(box).toHaveCount(0);
   await page.goBack();
+  await expect(page).toHaveURL(/\/mcp-admin/);
+  expect(await page.evaluate(() => (window as any).__doc)).toBe(1); // same document: bfcache not involved
+  await expect(box).toHaveValue("");
   const stored2 = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
   expect(stored2).not.toContain(pat);
   expect(leaks).toEqual([]);
+});
+
+test("貼上 token: a full reload never brings the token back; cross-document back may restore it only from memory", async ({ page }) => {
+  const pat = "doc4ai_pat_xGW2n8zGcJdieMqBmDCjiu10YwpYVPWuO187gPXtTYj_450QG8"; // well-formed, never issued
+  const label = "貼上你的 MCP token 以填入設定";
+  await page.goto("/mcp-admin");
+  await page.getByLabel(label).fill(pat);
+  await page.goto("/library"); // full document load
+  await page.goBack(); // bfcache may restore the frozen page
+  expect(["", pat]).toContain(await page.getByLabel(label).inputValue());
+  const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
+  expect(stored).not.toContain(pat);
+  await page.reload();
+  await expect(page.getByLabel(label)).toHaveValue("");
 });
