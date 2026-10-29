@@ -89,5 +89,36 @@ def test_disk_guard(client, tmp_root, fixtures, monkeypatch):
                         lambda p: collections.namedtuple("u", "total used free")(1, 1, 10))
     r = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]})
     assert r.status_code == 507 and r.json()["error"] == "insufficient_disk" and r.json()["free"] == 10
-    assert r.json()["needed"] == 3 * (tmp_root / "t.pdf").stat().st_size
+    # factor 3 + 1: the source copy sits on the output's volume (spec 2026-10-29 §5.3)
+    assert r.json()["needed"] == 4 * (tmp_root / "t.pdf").stat().st_size
     assert client.get("/api/jobs").json()["jobs"] == []
+
+
+def test_disk_preflight_counts_the_copy_on_the_same_volume(client, ctx, tmp_root, fixtures, monkeypatch):
+    """spec 2026-10-29 §5.3: needed = sum x (disk_space_factor + 1) when source/ and out/ share a volume."""
+    import collections
+    shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
+    size = (tmp_root / "t.pdf").stat().st_size
+    factor = ctx.config.limits.disk_space_factor
+    free = {"v": size * factor}
+    monkeypatch.setattr("aidoc.server.api.jobs.shutil.disk_usage",
+                        lambda p: collections.namedtuple("u", "total used free")(1, 1, free["v"]))
+    r = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]})
+    assert r.status_code == 507 and r.json()["needed"] == size * (factor + 1)
+    free["v"] = size * (factor + 1)
+    assert client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]}).status_code == 201
+    monkeypatch.setattr("aidoc.server.api.jobs.fsops.same_volume", lambda a, b: False)   # copies on another disk
+    free["v"] = size * factor
+    assert client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}], "force": True}).status_code == 201
+
+
+def test_unwritable_doc4ai_folder_names_the_path(client, ctx, tmp_root, fixtures, monkeypatch):
+    """User decision 2026-10-29: the folder is created on first use; when it cannot be, the job is refused with the
+    path, never redirected anywhere else."""
+    shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
+    blocker = tmp_root / "blocked"
+    blocker.write_text("a file, not a folder", encoding="utf-8")
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(blocker / "lib"))
+    r = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]})
+    assert r.status_code == 500 and r.json()["error"] == "output_dir_unwritable"
+    assert r.json()["path"] == str(blocker / "lib" / "out")

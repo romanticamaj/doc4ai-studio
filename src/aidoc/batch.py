@@ -5,7 +5,7 @@ import hashlib
 import json
 import threading
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from aidoc import fsops, names
@@ -19,16 +19,22 @@ IGNORED_NAMES = {"_manifest.jsonl", "chunks.jsonl"}
 _FINISHED = {TaskStatus.done.value, TaskStatus.low.value, TaskStatus.skipped.value}
 
 
-def collect_inputs(input_dir: Path, exclude: Path | None = None) -> list[Path]:
-    """Recursive, sorted by relative path; skips hidden files/dirs, manifests and anything under `exclude`."""
+def collect_inputs(input_dir: Path, exclude: Path | Iterable[Path] | None = None) -> list[Path]:
+    """Recursive, sorted by relative path; skips hidden files/dirs, manifests and anything under `exclude` (one
+    path or several: callers pass the output root and the source-copy root, spec 2026-10-29 §10.3)."""
     input_dir = Path(input_dir).resolve()
-    exclude = Path(exclude).resolve() if exclude else None
+    if exclude is None:
+        excl: list[Path] = []
+    elif isinstance(exclude, (str, Path)):
+        excl = [Path(exclude).resolve()]
+    else:
+        excl = [Path(e).resolve() for e in exclude if e]
     out = []
     for p in input_dir.rglob("*"):
         rel = p.relative_to(input_dir)
         if any(part.startswith(".") for part in rel.parts) or p.name in IGNORED_NAMES or not p.is_file():
             continue
-        if exclude is not None and (p == exclude or exclude in p.parents):
+        if any(p == e or e in p.parents for e in excl):
             continue
         out.append(p)
     return sorted(out, key=lambda p: p.relative_to(input_dir).as_posix())

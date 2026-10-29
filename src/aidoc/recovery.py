@@ -1,7 +1,8 @@
 """Startup recovery (spec §8.4). Runs before any CLI batch/convert (and, in P3, server) work starts.
 
 Order is mandatory: (1) kill orphan runners, (2) requeue interrupted tasks, (3) clean .tmp/ and .trash/,
-(4) mark orphaned documents, (5) purge expired work copies. Tasks another live process is running right now
+(4) mark orphaned documents, (5) purge expired work copies, (6) remove stale `.*.part` files of interrupted source
+copies (spec 2026-10-29 §8). No step ever deletes a source copy. Tasks another live process is running right now
 (its aidoc.tasklock lock is held) are left completely alone.
 """
 from __future__ import annotations
@@ -27,7 +28,7 @@ def _key(p: Path) -> str:
 
 def recover_on_startup(store, config, log: Callable[[str], None] = print) -> dict:
     res: dict = {"killed": [], "requeued": [], "segments_reset": 0, "tmp_removed": [], "trash_removed": [],
-                 "orphaned": [], "work_purged": 0}
+                 "orphaned": [], "work_purged": 0, "parts_removed": 0}
     interrupted = [t for t in store.list_tasks(status_in=_ACTIVE) if not store.task_is_live(t["id"])]
     live_ids = {t["id"] for t in store.list_tasks(status_in=_ACTIVE)} - {t["id"] for t in interrupted}
 
@@ -95,4 +96,13 @@ def recover_on_startup(store, config, log: Callable[[str], None] = print) -> dic
     res["work_purged"] = purge_expired_work_copies(store, time.time())
     if res["work_purged"]:
         log(f"purged {res['work_purged']} expired work cop(ies)")
+
+    # (6) interrupted source copies: `.<file>.<hex>.part` older than an hour, under the source root and next to
+    # every recorded copy (an older Doc4AI folder included)
+    from aidoc.source_copy import purge_stale_parts
+    roots = [Path(config.source_root())]
+    roots += sorted({Path(d["source_copy_path"]).parent for d in store.list_documents() if d.get("source_copy_path")})
+    res["parts_removed"] = purge_stale_parts(roots, time.time())
+    if res["parts_removed"]:
+        log(f"removed {res['parts_removed']} interrupted source cop(ies) (.part)")
     return res

@@ -54,6 +54,7 @@ def test_reconvert_document(mcp_server, mcp_env, fixtures, tmp_root):
     src.unlink()
     for d in ctx.store.list_documents():
         ctx.store.update_document(d["id"], work_copy_path=None)
+        ctx.store.set_source_copy(d["id"], path=None, status=None, error=None)   # and no source copy (2026-10-29)
     assert _err(mcp_call(mcp_server, raw, "reconvert_document", {"doc_id": doc["id"]}))["code"] == "source_missing"
     assert _err(mcp_call(mcp_server, raw, "reconvert_document", {"doc_id": "nope"}))["code"] == "document_not_found"
 

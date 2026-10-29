@@ -263,6 +263,82 @@ def remove_copy(path: Path) -> int:
     return st.st_size if st.st_nlink <= 1 else 0
 
 
+# ---------------------------------------------------------------- one document's copy (conversion, retry, backfill)
+
+@dataclass
+class CopyResult:
+    path: Path
+    size: int
+    mtime_ns: int
+    created: bool            # this call wrote the file (a rollback may remove it)
+    how: str                 # "present" | "copied" | "linked"
+
+
+def copy_trusted(doc: dict) -> bool:
+    """The document's recorded copy is there with its content: size + mtime_ns as recorded, else re-hashed."""
+    scp = doc.get("source_copy_path")
+    if not scp:
+        return False
+    try:
+        size, mtime_ns = stat_copy(Path(scp))
+    except OSError:
+        return False
+    if size == doc.get("source_copy_size") and mtime_ns == doc.get("source_copy_mtime_ns"):
+        return True
+    return file_matches(Path(scp), doc["sha256"])
+
+
+def verified_copy_of(store, sha256: str, exclude_id: str | None = None) -> Path | None:
+    """Another document's copy of the same content that still matches (the hardlink source, spec §4.5)."""
+    for d in store.documents_by_sha(sha256):
+        if d["id"] == exclude_id or d.get("source_copy_status") != "copied":
+            continue
+        if copy_trusted(d) and file_matches(Path(d["source_copy_path"]), sha256):
+            return Path(d["source_copy_path"])
+    return None
+
+
+def make_copy(store, source_root: Path, *, doc_id: str | None, output_dir: str, source_display: str,
+              sha256: str, src: Path | None) -> CopyResult:
+    """Plan and write one document's copy: reuse a matching target, else hardlink / copy another document's verified
+    copy of the same content, else copy `src` (a sha-verified file: the work copy, or a backfill candidate).
+    Raises CopyError."""
+    planned = plan_path(store, source_root, output_dir=output_dir, source_display=source_display, sha256=sha256,
+                        doc_id=doc_id)
+    if planned.present:
+        size, mtime_ns = stat_copy(planned.path)
+        return CopyResult(planned.path, size, mtime_ns, False, "present")
+    other = verified_copy_of(store, sha256, exclude_id=doc_id)
+    if other is not None:
+        how = link_or_copy(other, planned.path, sha256)
+    elif src is not None:
+        copy_verified(src, planned.path, sha256)
+        how = "copied"
+    else:
+        raise CopyError("unreadable", "no verified source to copy from")
+    try:
+        size, mtime_ns = stat_copy(planned.path)
+    except OSError as e:
+        raise _dest_error(e, planned.path) from e
+    return CopyResult(planned.path, size, mtime_ns, True, how)
+
+
+def record_copy(store, doc_id: str, result: CopyResult | None, error: CopyError | None) -> tuple[str, str | None]:
+    """Write the outcome to the documents row; (status, error text). A path another document already owns (a race
+    the planner could not see) is recorded as a collision."""
+    import sqlite3
+    if result is not None:
+        try:
+            store.set_source_copy(doc_id, path=str(fsops.plain_path(result.path)), status="copied", error=None,
+                                  size=result.size, mtime_ns=result.mtime_ns)
+            return "copied", None
+        except sqlite3.IntegrityError:
+            error = CopyError("collision", f"{result.path} belongs to another document")
+    text = error.text() if error is not None else "io_error: unknown"
+    store.set_source_copy(doc_id, path=None, status="failed", error=text)
+    return "failed", text
+
+
 # ---------------------------------------------------------------- sidecar (spec §9.2)
 
 def sidecar_info(source_root: Path, path: Path, sha256: str, size: int) -> dict:

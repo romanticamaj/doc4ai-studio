@@ -64,6 +64,9 @@ def test_source_missing_and_orphaned(client, ctx, tmp_root, fixtures):
     doc = ctx.store.get_document(did)
     (tmp_root / "text.pdf").unlink()
     shutil.rmtree(doc["work_copy_path"])
+    r = client.get(f"/api/documents/{did}/source")                # the source copy still serves it (spec 2026-10-29)
+    assert r.status_code == 200 and r.content == (fixtures / "text.pdf").read_bytes()
+    Path(ctx.store.get_document(did)["source_copy_path"]).unlink()
     r = client.get(f"/api/documents/{did}/source")
     assert r.status_code == 410 and r.json()["error"] == "source_missing"
     assert client.get(f"/api/documents/{did}").json()["source_available"] is False
@@ -136,6 +139,7 @@ def test_reconvert_source_missing(client, ctx, tmp_root, fixtures):
     did = converted(client, ctx, tmp_root, fixtures)
     (tmp_root / "text.pdf").unlink()
     _sh.rmtree(ctx.store.get_document(did)["work_copy_path"])
+    Path(ctx.store.get_document(did)["source_copy_path"]).unlink()      # and the source copy (spec 2026-10-29)
     r = client.post("/api/documents/reconvert", json={"ids": [did]})
     assert r.status_code == 410 and r.json()["error"] == "source_missing" and r.json()["id"] == did
 

@@ -59,13 +59,18 @@ def lookup_cached(store: Store, sha256: str, output_dir: Path) -> dict | None:
     return None
 
 
+_NO_COPY = object()
+
+
 def build_sidecar(*, source, sha256, pages, engine, tried, segments, probe, quality, lang, elapsed_s,
-                  vlm: dict | None = None) -> dict:
+                  vlm: dict | None = None, source_copy=_NO_COPY) -> dict:
     d = {"source": str(source), "sha256": sha256, "pages": pages, "engine": engine, "tried": tried,
          "segments": segments, "probe": probe, "quality": quality, "lang": lang,
          "elapsed_s": round(float(elapsed_s), 3), "aidoc_version": __version__}
     if vlm:                                     # only when a VLM was used (VLM spec §8.1)
         d["vlm"] = vlm
+    if source_copy is not _NO_COPY:             # spec 2026-10-29 §9.2: {path, sha256, size} or null (copy failed)
+        d["source_copy"] = source_copy
     return d
 
 

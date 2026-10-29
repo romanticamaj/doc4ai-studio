@@ -9,6 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field, model_validator
 
+from aidoc import fsops
 from aidoc.batch import collect_inputs, register_source
 from aidoc.models import ConvertOptions, TaskStatus
 from aidoc.output import planned_output_dir
@@ -87,7 +88,7 @@ def create_job(body: JobIn, request: Request) -> dict:
         if not p.is_absolute():                     # a relative path would depend on the server's cwd
             raise ApiError(400, "path_not_absolute", path=str(p))
         if p.is_dir():                              # spec §6 page 1: a local folder (recursive, like aidoc batch)
-            files_of[n] = collect_inputs(p, exclude=opts.output_dir)
+            files_of[n] = collect_inputs(p, exclude=[opts.output_dir, ctx.config.source_root()])
             if not files_of[n]:
                 raise ApiError(400, "no_inputs", path=str(p))
         elif p.is_file():
@@ -108,8 +109,16 @@ def create_job(body: JobIn, request: Request) -> dict:
         busy = store.busy_task_id(up["sha256"], out_dir)
         if busy is not None:
             raise ApiError(409, "already_converting", task_id=busy, upload_id=up["id"])
-    needed = sum(sizes) * ctx.config.limits.disk_space_factor
-    opts.output_dir.mkdir(parents=True, exist_ok=True)
+    # the source copy is permanent, outside the temporary margin: on the output's volume it counts once more
+    # (spec 2026-10-29 §5.3); on another volume its own check happens when the copy is written
+    factor = ctx.config.limits.disk_space_factor
+    if fsops.same_volume(opts.output_dir, ctx.config.source_root()):
+        factor += 1
+    needed = sum(sizes) * factor
+    try:                                         # the Doc4AI folder is created on first use; never a silent fallback
+        opts.output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise ApiError(500, "output_dir_unwritable", path=str(opts.output_dir), detail=str(e.strerror or e)) from None
     free = shutil.disk_usage(opts.output_dir).free
     if free < needed:
         raise ApiError(507, "insufficient_disk", needed=needed, free=free)

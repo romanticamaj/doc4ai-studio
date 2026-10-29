@@ -203,3 +203,14 @@ def test_batch_resumes_unfinished_segments(tmp_root, fixtures, monkeypatch):
 def test_cancel_command_without_server(tmp_root, capsys):      # tmp_root: never see a real running server
     assert main(["cancel", "abc"]) == 1
     assert "no server running; use Ctrl+C" in capsys.readouterr().err
+
+
+def test_collect_inputs_skips_output_and_source_roots(tmp_root, fixtures):
+    """spec 2026-10-29 §10.3: the whole Doc4AI folder dropped in never converts its own outputs or copies."""
+    d = tmp_root / "lib"
+    for sub in ("in", "out/doc", "source/doc"):
+        (d / sub).mkdir(parents=True)
+        shutil.copy(fixtures / "text.pdf", d / sub / "text.pdf")
+    got = collect_inputs(d, exclude=[d / "out", d / "source"])
+    assert [p.relative_to(d.resolve()).as_posix() for p in got] == ["in/text.pdf"]
+    assert len(collect_inputs(d, exclude=d / "out")) == 2                     # a single path still works

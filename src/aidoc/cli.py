@@ -192,13 +192,37 @@ def _convert_via_server(server, src: Path, opts, args):
     return TaskStatus(task["status"]), task
 
 
+def _source_copy_state(task: dict) -> dict | None:
+    """{status, error} of the converted document's source copy (spec 2026-10-29 §5.4), read from the database
+    opened read-only (a running server may own it); None when unknown."""
+    import sqlite3
+
+    from aidoc import paths
+    db = paths.data_dir() / "aidoc.db"
+    if not db.is_file() or not task.get("output_dir"):
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=5)
+        try:
+            row = con.execute("SELECT source_copy_status, source_copy_error FROM documents WHERE sha256=? AND "
+                              "output_dir=?", (task["sha256"], str(task["output_dir"]))).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    return {"status": row[0], "error": row[1]} if row is not None else None
+
+
 def _print_convert_result(args, src: Path, status, task: dict) -> int:
     from aidoc.output import read_sidecar
     quality = task.get("quality") or {}
+    copy = _source_copy_state(task) if status.value in ("done", "low", "skipped") else None
     if args.json:
         payload = read_sidecar(Path(task["output_dir"])) if status.value in ("done", "low", "skipped") else None
         payload = dict(payload or {"source": str(src), "sha256": task["sha256"]})
         payload.update({"status": status.value, "output_dir": task["output_dir"]})
+        if copy is not None:
+            payload["source_copy_status"] = copy
         if status.value == "failed":
             payload.update({"error_kind": task["error_kind"], "error_msg": task["error_msg"],
                             "tried": task.get("tried") or []})
@@ -211,6 +235,8 @@ def _print_convert_result(args, src: Path, status, task: dict) -> int:
                f"{_display_path(task['output_dir'])}"
         if quality.get("level") == "low" and quality.get("reasons"):
             line += f"  reasons: {', '.join(quality['reasons'])}"
+        if copy is not None and copy["status"] not in (None, "copied"):
+            line += f"  source copy: {copy['status']} ({(copy['error'] or '').split(':', 1)[0] or '-'})"
         print(line)
     return 1 if status.value == "failed" else 0
 
@@ -230,7 +256,7 @@ def cmd_batch(args) -> int:
     server = client_mod.find_server(cfg, getattr(args, "token", None))
     if server is not None:                   # spec §8.1: the server owns the queue; forward and follow
         from aidoc.batch import run_batch_via_server
-        inputs = collect_inputs(d.resolve(), exclude=opts.output_dir)
+        inputs = collect_inputs(d.resolve(), exclude=[opts.output_dir, cfg.source_root()])
         try:
             return run_batch_via_server(server, inputs, opts, lambda line: print(line, flush=True),
                                         input_root=d.resolve(), store_factory=lambda: open_store(cfg))
@@ -245,7 +271,7 @@ def cmd_batch(args) -> int:
     store = open_store(cfg)
     try:
         _recover(store, cfg)
-        inputs = collect_inputs(d.resolve(), exclude=opts.output_dir)
+        inputs = collect_inputs(d.resolve(), exclude=[opts.output_dir, cfg.source_root()])
         job = run_batch(store, cfg, get_engines(cfg), inputs, opts, emit=_emit_verbose(args.verbose),
                         input_root=d.resolve())
         store.refresh_job_status(job)

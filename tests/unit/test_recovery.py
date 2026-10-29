@@ -114,3 +114,26 @@ def test_cli_runs_recovery_first(tmp_root, fixtures, monkeypatch, capsys):
     (out / ".trash" / "old2").mkdir(parents=True)
     d = tmp_root / "in"; d.mkdir(); shutil.copy(fixtures / "text.pdf", d / "b.pdf")
     assert main(["batch", str(d), "-o", str(out)]) == 0 and not (out / ".trash").exists()
+
+
+def test_stale_parts_removed_on_startup(tmp_root):
+    """spec 2026-10-29 §8 step (6): interrupted copies (.part, older than an hour) go; copies never do."""
+    import os
+    import time as _t
+
+    from aidoc.config import load_config
+    from aidoc.recovery import recover_on_startup
+    from aidoc.store import Store
+    cfg = load_config()
+    d = cfg.source_root() / "doc"
+    d.mkdir(parents=True)
+    old, fresh, copy = d / ".doc.pdf.0badc0de.part", d / ".doc.pdf.12345678.part", d / "doc.pdf"
+    for f in (old, fresh, copy):
+        f.write_bytes(b"x")
+    past = _t.time() - 7200
+    os.utime(old, (past, past))
+    os.utime(copy, (past, past))
+    store = Store(tmp_root / "data" / "aidoc.db")
+    res = recover_on_startup(store, cfg, log=lambda s: None)
+    store.close()
+    assert res["parts_removed"] == 1 and not old.exists() and fresh.exists() and copy.exists()

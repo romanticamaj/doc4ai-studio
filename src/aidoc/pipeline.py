@@ -533,33 +533,110 @@ def _write_output(ctx: PipelineContext, task: dict, cand: _Candidate, output_dir
     tried = store.get_task(ctx.task_id)["tried"]
     stem = output_dir.name
     n_segments = len(store.list_segments(ctx.task_id)) or 1
+    # the permanent source copy (spec 2026-10-29 §5): from the sha-verified work copy, before the sidecar is built;
+    # a failure is recorded and shown, never fatal (index A29)
+    copied, copy_error = _source_copy_for(ctx, task, output_dir)
+    source_root = ctx.config.source_root()
     sidecar = build_sidecar(source=task["source_path"], sha256=task["sha256"],
                             pages=probe.pages if probe.pages is not None else cand.page_count,
                             engine=cand.engine, tried=tried, segments=n_segments, probe=probe.to_json(),
                             quality=cand.quality.to_json(), lang=opts.lang, elapsed_s=time.time() - ctx.started,
-                            vlm=_sidecar_vlm(ctx, cand))
+                            vlm=_sidecar_vlm(ctx, cand),
+                            source_copy=_sidecar_copy(source_root, copied, task["sha256"]))
     writer = OutputWriter(opts.output_dir, ctx.task_id, stem)
     try:
         writer.write(cand.norm.markdown, cand.norm.assets, sidecar)
         writer.finalize(output_dir)
     except FsBusyError as e:
         writer.discard()
+        _rollback_copy(ctx, copied)
         return _fail(ctx, ErrorKind.transient, f"output busy: {e}")
     except OSError as e:                      # disk full, invalid name, ...: never leave out/.tmp/<task> behind
         writer.discard()
-        return _fail(ctx, ErrorKind.transient, f"output write failed: {e}")
+        _rollback_copy(ctx, copied)
+        return _fail(ctx, ErrorKind.transient, f"output write failed ({opts.output_dir}): {e}")
     status = TaskStatus.done if cand.quality.level in ("ok", "warn") else TaskStatus.low
     retention = ctx.config.general.work_retention_days
-    store.upsert_document(sha256=task["sha256"], source_path=task["source_path"], output_dir=str(output_dir),
-                          engine=cand.engine, quality=cand.quality.to_json(), pages=sidecar["pages"], lang=opts.lang,
-                          aidoc_version=sidecar["aidoc_version"], status=cand.quality.level,
-                          work_copy_path=str(ctx.work_dir), work_copy_expires_at=time.time() + retention * 86400,
-                          created_at=time.time())
+    doc_id = store.upsert_document(sha256=task["sha256"], source_path=task["source_path"],
+                                   output_dir=str(output_dir), engine=cand.engine, quality=cand.quality.to_json(),
+                                   pages=sidecar["pages"], lang=opts.lang, aidoc_version=sidecar["aidoc_version"],
+                                   status=cand.quality.level, work_copy_path=str(ctx.work_dir),
+                                   work_copy_expires_at=time.time() + retention * 86400, created_at=time.time())
+    _record_source_copy(ctx, doc_id, copied, copy_error, output_dir, sidecar_written=True)
     _index_pages(ctx, store, output_dir)
     ctx.set(status=status, engine=cand.engine, quality=cand.quality.to_json(), output_dir=str(output_dir),
             error_kind=None, error_msg=None, pid=None)
     _purge_intermediates(ctx)
     return status
+
+
+def _source_copy_for(ctx: PipelineContext, task: dict, output_dir: Path):
+    """(CopyResult | None, CopyError | None) for this conversion's document (spec 2026-10-29 §5.1)."""
+    from aidoc import source_copy as sc
+    existing = ctx.store.get_document_by_output(str(output_dir))
+    try:
+        res = sc.make_copy(ctx.store, ctx.config.source_root(), doc_id=existing["id"] if existing else None,
+                           output_dir=str(output_dir), source_display=task["source_path"], sha256=task["sha256"],
+                           src=ctx.work_src)
+        return res, None
+    except sc.CopyError as e:
+        return None, e
+    except Exception as e:  # noqa: BLE001  a copy problem never fails a finished conversion (index A29)
+        return None, sc.CopyError("io_error", f"{type(e).__name__}: {e}")
+
+
+def _sidecar_copy(source_root: Path, copied, sha256: str) -> dict | None:
+    if copied is None:
+        return None
+    from aidoc.source_copy import sidecar_info
+    try:
+        return sidecar_info(source_root, copied.path, sha256, copied.size)
+    except ValueError:                           # not under the current source root (cannot happen for new copies)
+        return None
+
+
+def _rollback_copy(ctx: PipelineContext, copied) -> None:
+    """The output write failed: a copy this conversion created goes too (no orphan files); an existing one stays."""
+    if copied is None or not copied.created:
+        return
+    from aidoc.source_copy import remove_copy
+    try:
+        remove_copy(copied.path)
+    except OSError as e:
+        ctx.log(f"source copy rollback failed: {e}")
+
+
+def _record_source_copy(ctx: PipelineContext, doc_id: str, copied, error, output_dir: Path, *,
+                        sidecar_written: bool) -> None:
+    """DB status, task log and the `document.source_copy` event (spec 2026-10-29 §5.4)."""
+    from aidoc import source_copy as sc
+    status, text = sc.record_copy(ctx.store, doc_id, copied, error)
+    if status != "copied" and copied is not None:           # recorded as a collision after all: do not keep it
+        _rollback_copy(ctx, copied)
+        if sidecar_written:
+            sc.write_sidecar_copy(output_dir, None)
+    if status == "failed":
+        code, _, msg = (text or "").partition(": ")
+        ctx.log(f"source copy failed ({code}): {msg or code}")
+    elif copied is not None and copied.how != "present":
+        ctx.log(f"source copy {copied.how}: {copied.path}")
+    if ctx.emit is not None:
+        ctx.emit("document.source_copy", {"document_id": doc_id, "task_id": ctx.task_id, "status": status,
+                                          "error": text})
+
+
+def _cache_hit_copy(ctx: PipelineContext, hit: dict, output_dir: Path) -> None:
+    """A cache hit whose document has no valid copy gets one from this run's staged work copy (spec §5.1)."""
+    from aidoc import source_copy as sc
+    if "id" not in hit or ctx.work_src is None:
+        return                                   # a sidecar-only hit has no documents row to record it in
+    doc = ctx.store.get_document(hit["id"])
+    if doc is None or (doc.get("source_copy_status") == "copied" and sc.copy_trusted(doc)):
+        return
+    copied, error = _source_copy_for(ctx, {"source_path": doc["source_path"], "sha256": doc["sha256"]}, output_dir)
+    _record_source_copy(ctx, doc["id"], copied, error, output_dir, sidecar_written=False)
+    if ctx.store.get_document(doc["id"]).get("source_copy_status") == "copied":
+        sc.write_sidecar_copy(output_dir, _sidecar_copy(ctx.config.source_root(), copied, doc["sha256"]))
 
 
 def _sidecar_vlm(ctx: PipelineContext, cand: _Candidate) -> dict | None:
@@ -718,6 +795,7 @@ def _run_task(ctx: PipelineContext, engines: dict) -> TaskStatus:
             level = (hit.get("quality") or {}).get("level") or hit.get("status")
             if level in ("ok", "warn") or not opts.retry_low:
                 ctx.set(status=TaskStatus.skipped, engine=hit.get("engine"), quality=hit.get("quality"))
+                _cache_hit_copy(ctx, hit, output_dir)        # before the staged work copy is dropped
                 _drop_unused_work_dir(ctx)
                 return TaskStatus.skipped
 
