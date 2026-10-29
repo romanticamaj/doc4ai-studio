@@ -99,3 +99,12 @@ def test_root_dir_writable_check_creates_nothing(tmp_path):
     f = tmp_path / "file"
     f.write_text("x", encoding="utf-8")
     assert "無法寫入" in root_dir_writable(f / "lib", create=False)
+
+
+def test_root_is_normalized(tmp_root, tmp_path, monkeypatch):
+    """Verifier P4: `lib\\x\\..` and `lib` are one folder, so planning and ownership checks see one path."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(lib) + "\\x\\..")
+    cfg = load_config()
+    assert cfg.library_root() == lib and cfg.source_root() == lib / "source"

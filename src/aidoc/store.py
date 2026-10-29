@@ -515,12 +515,15 @@ class Store:
                           (time.time() if at is None and path is not None else at), doc_id))
 
     def document_by_source_copy(self, path: str) -> dict | None:
-        """The document whose source_copy_path is `path` (os.path.normcase comparison)."""
+        """The document whose source_copy_path names the same file as `path`: compared after normcase(realpath()),
+        so `a\\..`, 8.3 short names and case never give one physical file two owners (verifier P4)."""
         import os
-        key = os.path.normcase(str(path))
-        for r in self._qa("SELECT * FROM documents WHERE source_copy_path IS NOT NULL AND "
-                          "source_copy_path = ? COLLATE NOCASE", (str(path),)):
-            if os.path.normcase(r["source_copy_path"]) == key:
+
+        def norm(p) -> str:
+            return os.path.normcase(os.path.realpath(str(p)))
+        key = norm(path)
+        for r in self._qa("SELECT * FROM documents WHERE source_copy_path IS NOT NULL"):
+            if norm(r["source_copy_path"]) == key:
                 return r
         return None
 

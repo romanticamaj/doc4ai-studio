@@ -410,9 +410,10 @@ class AidocConfig:
 
     def library_root(self) -> Path:
         """AIDOC_LIBRARY_ROOT > general.root_dir > the platform default (C:\\doc4ai, ~/doc4ai): user decision
-        2026-10-29, which replaced the spec's "parent of output_dir" rule."""
+        2026-10-29, which replaced the spec's "parent of output_dir" rule. Normalized (realpath: `..`, 8.3 short
+        names, links) so one physical folder always has one spelling in plans and ownership checks."""
         root = self._configured_root()
-        return root if root is not None else default_library_root()
+        return Path(os.path.realpath(root if root is not None else default_library_root()))
 
     def output_root(self) -> Path:
         """Where new jobs write: always <root>/out. general.output_dir is a legacy key that is no longer used for new

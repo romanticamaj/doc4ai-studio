@@ -332,3 +332,15 @@ def test_backfill_racing_a_conversion_for_the_same_target_keeps_the_conversions_
     assert row["outcome"] == "failed" and row["detail"].startswith("collision")
     assert lb.store.get_document(b["id"])["source_copy_status"] == "failed"         # B retries later
     lb.store.close()
+
+
+def test_one_physical_file_has_one_owner_even_through_an_unnormalized_root(tmp_root, fixtures, monkeypatch):
+    """Verifier P4: a record made under `lib` and a lookup through `lib\\x\\..` name the same file."""
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root / "lib"))
+    _, ta = lb.convert(lb.place("same.pdf", content=(fixtures / "text.pdf").read_bytes() + b"%P4\n"))
+    a = lb.doc(ta)
+    cp = Path(a["source_copy_path"])
+    alias = os.path.join(str(cp.parent.parent), "x", "..", cp.parent.name, cp.name)
+    assert lb.store.document_by_source_copy(alias)["id"] == a["id"]
+    lb.store.close()
