@@ -11,8 +11,11 @@ from pathlib import Path
 
 from aidoc.models import TERMINAL_TASK, Attempt, ConvertOptions, JobStatus, TaskStatus
 
-SCHEMA_VERSION = 6   # v3 was never issued (MCP went to "v4"); v5 adds compat_tasks (docling-serve compatible API);
-                     # v6 adds vlm_usage (VLM spec 2026-10-05 §8.2, which said v5 before compat took that number)
+SCHEMA_VERSION = 7   # v3 was never issued (MCP went to "v4"); v5 adds compat_tasks (docling-serve compatible API);
+                     # v6 adds vlm_usage (VLM spec 2026-10-05 §8.2, which said v5 before compat took that number);
+                     # v7 adds documents.source_copy_* (spec 2026-10-29 §9.1)
+_SOURCE_COPY_COLS = (("source_copy_path", "TEXT"), ("source_copy_status", "TEXT"), ("source_copy_error", "TEXT"),
+                     ("source_copy_at", "REAL"), ("source_copy_size", "INTEGER"), ("source_copy_mtime_ns", "INTEGER"))
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -184,9 +187,20 @@ class Store:
         cols = {r[1] for r in self.con.execute("PRAGMA table_info(tasks)")}
         if "flags_json" not in cols:                     # schema v1 -> v2 (index §4, A18)
             self.con.execute("ALTER TABLE tasks ADD COLUMN flags_json TEXT NOT NULL DEFAULT '{}'")
+        self._migrate_v7()
         self.con.execute("INSERT INTO meta(key, value) VALUES('schema_version', ?) "
                          "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
         self._page_index_tokenizer = self._ensure_page_index()
+
+    def _migrate_v7(self) -> None:
+        """Additive and idempotent: missing source_copy_* columns, then the unique index. The index needs the columns,
+        so it lives here and never in _DDL (a v6 file runs _DDL before the columns exist)."""
+        cols = {r[1] for r in self.con.execute("PRAGMA table_info(documents)")}
+        for name, typ in _SOURCE_COPY_COLS:
+            if name not in cols:
+                self.con.execute(f"ALTER TABLE documents ADD COLUMN {name} {typ}")
+        self.con.execute("CREATE UNIQUE INDEX IF NOT EXISTS documents_source_copy ON documents("
+                         "source_copy_path COLLATE NOCASE) WHERE source_copy_path IS NOT NULL")
 
     def close(self) -> None:
         self.con.close()
@@ -486,6 +500,30 @@ class Store:
             self.con.execute("DELETE FROM page_index WHERE doc_id IN (SELECT id FROM documents WHERE status=?)",
                              (_val(status),))
             return self.con.execute("DELETE FROM documents WHERE status=?", (_val(status),)).rowcount
+
+    # ---- source copies (schema v7, spec 2026-10-29)
+    def set_source_copy(self, doc_id, *, path: str | None, status: str | None, error: str | None,
+                        size: int | None = None, mtime_ns: int | None = None, at: float | None = None) -> None:
+        """All six columns at once (a failure clears the path). Raises sqlite3.IntegrityError when another document
+        already owns `path` (case-insensitive)."""
+        self.con.execute("UPDATE documents SET source_copy_path=?, source_copy_status=?, source_copy_error=?, "
+                         "source_copy_size=?, source_copy_mtime_ns=?, source_copy_at=? WHERE id=?",
+                         (None if path is None else str(path), status, error, size, mtime_ns,
+                          (time.time() if at is None and path is not None else at), doc_id))
+
+    def document_by_source_copy(self, path: str) -> dict | None:
+        """The document whose source_copy_path is `path` (os.path.normcase comparison)."""
+        import os
+        key = os.path.normcase(str(path))
+        for r in self._qa("SELECT * FROM documents WHERE source_copy_path IS NOT NULL AND "
+                          "source_copy_path = ? COLLATE NOCASE", (str(path),)):
+            if os.path.normcase(r["source_copy_path"]) == key:
+                return r
+        return None
+
+    def source_copy_rows(self) -> list[dict]:
+        """Every document that is not orphaned, oldest first (backfill order)."""
+        return self._qa("SELECT * FROM documents WHERE status != 'orphaned' ORDER BY created_at, rowid")
 
     def known_output_dirs(self) -> set[str]:
         return {r[0] for r in self.con.execute("SELECT output_dir FROM documents")}

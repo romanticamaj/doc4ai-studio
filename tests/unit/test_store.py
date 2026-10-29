@@ -195,6 +195,6 @@ def test_v5_database_migrates_to_v6_with_data_intact(tmp_path):
     con.close()
     for _ in range(2):                                 # idempotent on a second open
         s = Store(db)
-        assert s.schema_version() == 6 and s.get_job(job) is not None
+        assert s.schema_version() == 7 and s.get_job(job) is not None
         s.add_vlm_usage("2026-10-05", "openai", "h", pages=1)
         s.close()
