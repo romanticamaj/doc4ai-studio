@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 
 from fastapi import APIRouter, Request
 
@@ -62,16 +61,20 @@ def vlm_status(ctx) -> dict:
 
 
 def system_snapshot(ctx) -> dict:
-    out_root = ctx.config.output_root()
-    probe = out_root if out_root.exists() else ctx.config.root
-    try:
-        free = shutil.disk_usage(probe).free
-    except OSError:
-        free = None
+    from aidoc.config import default_library_root
+    from aidoc.source_copy import free_bytes
+    cfg = ctx.config
+    out_root = cfg.output_root()
     engines = {n: (vlm_status(ctx) if n == "vlm" else engine_status(n)) for n in ENGINE_NAMES}
     return {"engines": engines, "gpu": gpu.query(),
-            "queue": ctx.queue.snapshot(), "disk_free": free, "output_dir": str(out_root), "version": __version__,
-            "long_paths_enabled": check_long_paths(), "libreoffice": soffice_info(ctx.config.preview.soffice_path)}
+            # free space of the nearest existing folder: the Doc4AI folder is made on first use
+            "queue": ctx.queue.snapshot(), "disk_free": free_bytes(out_root), "output_dir": str(out_root),
+            "version": __version__, "long_paths_enabled": check_long_paths(),
+            "libreoffice": soffice_info(cfg.preview.soffice_path),
+            # the Doc4AI folder (spec 2026-10-29 §10.1; unset = the platform default, user decision 2026-10-29)
+            "root_dir": str(cfg.library_root()), "root_configured": cfg.root_configured(),
+            "root_from_env": cfg.root_from_env(), "root_default": str(default_library_root()),
+            "source_dir": str(cfg.source_root()), "source_disk_free": free_bytes(cfg.source_root())}
 
 
 @router.get("/system")

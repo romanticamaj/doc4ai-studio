@@ -44,7 +44,8 @@ def output_available(doc: dict) -> bool:
 @router.get("/documents")
 def list_documents(request: Request, status: str | None = None, engine: str | None = None,
                    q: str | None = None,
-                   flag: Literal["page_map_incomplete", "page_quality", "unassessed"] | None = None) -> dict:
+                   flag: Literal["page_map_incomplete", "page_quality", "unassessed",
+                                 "source_not_copied"] | None = None) -> dict:
     store = request.app.state.ctx.store
     docs = store.list_documents(status=status or None, engine=engine or None, q=q or None, flag=flag)
     return {"documents": [serialize_document(d) for d in docs]}
@@ -53,7 +54,11 @@ def list_documents(request: Request, status: str | None = None, engine: str | No
 @router.get("/documents/{doc_id}")
 def get_document(doc_id: str, request: Request) -> dict:
     doc = _doc(request, doc_id)
-    return {"document": serialize_document(doc), "source_available": source_file(doc) is not None,
+    from aidoc.server.api.sources import copy_view
+    found = resolve_source(doc, store=request.app.state.ctx.store)
+    doc = request.app.state.ctx.store.get_document(doc_id) or doc          # a drift refresh may have updated it
+    return {"document": serialize_document(doc), "source_available": found is not None,
+            "source_kind": found.kind if found is not None else None, "source_copy": copy_view(doc),
             "output_available": output_available(doc), "sidecar": read_sidecar(Path(doc["output_dir"])),
             "preview": _preview_status(request, doc)}
 
@@ -293,15 +298,29 @@ def _is_link(p: Path) -> bool:
 
 @router.delete("/documents/orphaned")
 def delete_orphaned(request: Request) -> dict:
+    """Purged records take their source copies with them (spec 2026-10-29 §8): each document deletes only its own
+    copy path (a hardlink shared with a live document keeps the data); a copy that cannot be deleted (open
+    elsewhere) is listed in source_copies_kept and never blocks the purge."""
+    from aidoc.source_copy import is_present, remove_copy
     store = request.app.state.ctx.store
+    deleted_copies, freed, kept = 0, 0, []
     for doc in store.list_documents(status="orphaned"):
+        scp = doc.get("source_copy_path")
+        if scp:
+            try:
+                existed = is_present(scp)
+                freed += remove_copy(Path(scp))
+                deleted_copies += 1 if existed else 0
+            except OSError:
+                kept.append(doc["id"])
         wc = doc.get("work_copy_path")
         if wc:
             try:
                 fsops.remove_tree(Path(wc))
             except OSError:
                 pass
-    return {"deleted": store.delete_documents("orphaned")}
+    return {"deleted": store.delete_documents("orphaned"), "source_copies_deleted": deleted_copies,
+            "source_copy_bytes": freed, "source_copies_kept": kept}
 
 
 @router.post("/documents/rescan")

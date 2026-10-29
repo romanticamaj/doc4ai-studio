@@ -8,8 +8,19 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 
-from aidoc.config import _SECTIONS, VLM_RANGES, config_path, mcp_list_problem, save_config, vlm_problem
-from aidoc.server.auth import ApiError
+from aidoc.config import (
+    _SECTIONS,
+    VLM_RANGES,
+    config_path,
+    default_library_root,
+    mcp_list_problem,
+    root_dir_problem,
+    root_dir_writable,
+    save_config,
+    vlm_problem,
+)
+from aidoc.server.auth import ApiError, allow_local_paths
+from aidoc.source_copy import free_bytes
 
 router = APIRouter()
 
@@ -68,6 +79,8 @@ def _validate_mcp_lists(key: str, val, allow_drive_root: bool = False) -> None:
 
 def masked(ctx) -> dict:
     d = ctx.config.to_dict()
+    # general.output_dir is a legacy key: new conversions go to <Doc4AI folder>/out (user decision 2026-10-29)
+    d["general"].pop("output_dir", None)
     if d["server"].get("token") or ctx.token:
         d["server"]["token"] = "***"
     if d["vlm"].get("api_key"):
@@ -93,6 +106,21 @@ def _validate(body: dict, cfg) -> dict:
                 raise ApiError(403, "token_readonly")
             if (section, key) == ("vlm", "api_key") and val == "***":
                 continue                             # the masked value a settings form echoes back: unchanged
+            if (section, key) == ("general", "output_dir"):
+                if val == cur:
+                    continue                         # an older settings form echoes it back: unchanged
+                raise ApiError(422, "invalid_settings",
+                               detail="general.output_dir is no longer used: set general.root_dir (the Doc4AI "
+                                      "folder); results go to its out\\ folder")
+            if (section, key) == ("general", "root_dir"):
+                if not isinstance(val, str):
+                    raise ApiError(422, "invalid_settings", detail="general.root_dir must be str")
+                val = val.strip()
+                problem = root_dir_problem(val, data_dir=cfg.data_dir, envs_dir=_envs_dir())
+                if problem:
+                    raise ApiError(422, "invalid_settings", detail=problem)
+                clean.setdefault(section, {})[key] = val
+                continue
             if (section, key) == ("preview", "soffice_path"):
                 if val == cur:
                     continue                         # a settings form echoes the value back
@@ -167,6 +195,43 @@ def get_settings(request: Request) -> dict:
     return {"settings": masked(request.app.state.ctx)}
 
 
+@router.post("/settings/root-check")
+async def root_check(request: Request) -> dict:
+    """Live validation of a Doc4AI folder (spec 2026-10-29 §10.1): the resolved out\\ and source\\ paths and
+    the first problem; nothing is created (a probe is written and removed in the nearest existing folder)."""
+    ctx = request.app.state.ctx
+    _root_guard(request, ctx)
+    try:
+        body = await request.json()
+    except (ValueError, RecursionError):
+        body = None
+    value = body.get("root_dir") if isinstance(body, dict) else None
+    if not isinstance(value, str):
+        raise ApiError(422, "invalid_settings", detail="root_dir must be a string")
+    value = value.strip()
+    problem = root_dir_problem(value, data_dir=ctx.config.data_dir, envs_dir=_envs_dir())
+    root = default_library_root() if value == "" else Path(value)
+    if problem is None:
+        problem = await run_in_threadpool(root_dir_writable, root, create=False)
+    ok = problem is None
+    return {"ok": ok, "problem": problem, "root_dir": str(root),
+            "output_dir": str(root / "out") if ok or Path(value).is_absolute() or value == "" else None,
+            "source_dir": str(root / "source") if ok or Path(value).is_absolute() or value == "" else None,
+            "exists": root.is_dir() if ok else False, "free_bytes": free_bytes(root) if ok else None,
+            "default": value == ""}
+
+
+def _envs_dir():
+    from aidoc import paths
+    return paths.envs_dir()
+
+
+def _root_guard(request: Request, ctx) -> None:
+    """The Doc4AI folder is a local path (spec 2026-10-29 §3.5) and cannot be changed under an env override."""
+    if not allow_local_paths(request, ctx):
+        raise ApiError(403, "local_path_forbidden")
+
+
 @router.put("/settings")
 async def put_settings(request: Request) -> dict:
     ctx = request.app.state.ctx
@@ -174,7 +239,18 @@ async def put_settings(request: Request) -> dict:
         body = await request.json()
     except (ValueError, RecursionError):
         raise ApiError(422, "invalid_settings", detail="body is not JSON") from None
+    general = body.get("general") if isinstance(body, dict) else None
+    if isinstance(general, dict) and "root_dir" in general and general["root_dir"] != ctx.config.general.root_dir:
+        _root_guard(request, ctx)
+        if ctx.config.root_from_env():
+            raise ApiError(409, "root_env_override", detail="由環境變數 AIDOC_LIBRARY_ROOT 指定")
     clean = _validate(body, ctx.config)
+    new_root = (clean.get("general") or {}).get("root_dir")
+    if new_root is not None and new_root != ctx.config.general.root_dir:
+        target = default_library_root() if new_root == "" else Path(new_root)
+        problem = await run_in_threadpool(root_dir_writable, target, create=True)    # V5: out\ and source\ made
+        if problem:
+            raise ApiError(422, "invalid_settings", detail=problem)
     new = copy.deepcopy(ctx.config)
     for section, values in clean.items():
         for key, val in values.items():

@@ -481,7 +481,10 @@ class Store:
             sql += " AND (source_path LIKE ? OR output_dir LIKE ?)"
             args += [f"%{q}%", f"%{q}%"]
         rows = self._qa(sql + " ORDER BY created_at DESC", args)
-        if flag is not None:                       # spec 2026-10-01 §9.2: flags derive from the stored quality
+        if flag == "source_not_copied":            # spec 2026-10-29 §10.1
+            from aidoc.source_copy import not_copied
+            rows = [r for r in rows if not_copied(r)]
+        elif flag is not None:                     # spec 2026-10-01 §9.2: flags derive from the stored quality
             from aidoc.reassess import doc_flags
             rows = [r for r in rows if flag in doc_flags(r)]
         return rows

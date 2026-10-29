@@ -95,6 +95,11 @@ def _is_file(p: Path) -> bool:
         return False
 
 
+def is_present(path) -> bool:
+    """A cheap existence check of a recorded copy (no hashing; long-path safe)."""
+    return bool(path) and _is_file(Path(path))
+
+
 def _is_part(name: str) -> bool:
     return name.startswith(".") and name.endswith(".part")
 

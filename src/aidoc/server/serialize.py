@@ -6,6 +6,10 @@ from pathlib import Path
 from aidoc.models import TERMINAL_TASK, SegmentStatus
 
 _TERMINAL = {s.value for s in TERMINAL_TASK}
+# documents columns no API object shows flat (Web and MCP alike; spec 2026-10-29 §10.1): the Web shows the copy only
+# through the structured `source_copy` object, MCP never shows the absolute copy path or its error
+PRIVATE_DOC_FIELDS = ("work_copy_path", "work_copy_expires_at", "source_copy_path", "source_copy_error",
+                      "source_copy_size", "source_copy_mtime_ns", "source_copy_at")
 SEGMENT_KEYS = ("id", "idx", "page_start", "page_end", "status", "attempt")
 
 
@@ -57,9 +61,11 @@ def page_summary(quality: dict | None) -> dict | None:
 
 def serialize_document(doc: dict) -> dict:
     from aidoc.reassess import doc_flags
-    out = {k: v for k, v in doc.items() if k not in ("work_copy_path", "work_copy_expires_at")}
+    from aidoc.source_copy import is_present, not_copied
+    out = {k: v for k, v in doc.items() if k not in PRIVATE_DOC_FIELDS}
     out["stem"] = Path(doc["output_dir"]).name
-    out["flags"] = doc_flags(doc)
+    out["flags"] = doc_flags(doc) + (["source_not_copied"] if not_copied(doc) else [])
+    out["source_copy"] = {"status": doc.get("source_copy_status"), "present": is_present(doc.get("source_copy_path"))}
     out["page_summary"] = page_summary(doc.get("quality"))
     out["vlm"] = _vlm_summary(doc) if doc.get("engine") == "vlm" else None
     return out

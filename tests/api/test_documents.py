@@ -230,3 +230,87 @@ def test_reconvert_from_source_copy_is_a_real_copy(client, ctx, tmp_root, fixtur
     ctx.queue.process_next()
     assert client.get(f"/api/jobs/{r.json()['job']['id']}").json()["tasks"][0]["status"] == "done"
 
+
+# ---- spec 2026-10-29 §10.1 (plan Task 7)
+
+def test_detail_source_kind_and_copy(client, ctx, tmp_root, fixtures):
+    did = converted(client, ctx, tmp_root, fixtures)
+    d = client.get(f"/api/documents/{did}").json()
+    assert d["source_kind"] == "work_copy" and d["source_available"] is True
+    sc = d["source_copy"]
+    assert sc["status"] == "copied" and sc["present"] is True and sc["error"] is None
+    assert Path(sc["path"]) == ctx.config.source_root() / "text" / "text.pdf" and sc["size"] > 0 and sc["copied_at"]
+    shutil.rmtree(ctx.store.get_document(did)["work_copy_path"])
+    (tmp_root / "text.pdf").unlink()
+    d = client.get(f"/api/documents/{did}").json()
+    assert d["source_kind"] == "source_copy" and d["source_available"] is True
+    Path(sc["path"]).unlink()
+    d = client.get(f"/api/documents/{did}").json()
+    assert d["source_kind"] is None and d["source_copy"]["present"] is False
+
+
+def test_list_flag_source_not_copied(client, ctx, tmp_root, fixtures):
+    a = converted(client, ctx, tmp_root, fixtures)
+    b = converted(client, ctx, tmp_root, fixtures, name="sample.docx")
+    rows = {r["id"]: r for r in client.get("/api/documents").json()["documents"]}
+    assert rows[a]["source_copy"] == {"status": "copied", "present": True} and "source_not_copied" not in rows[a]["flags"]
+    ctx.store.set_source_copy(b, path=None, status="failed", error="no_space: full")
+    rows = {r["id"]: r for r in client.get("/api/documents").json()["documents"]}
+    assert "source_not_copied" in rows[b]["flags"] and rows[b]["source_copy"] == {"status": "failed", "present": False}
+    assert [r["id"] for r in client.get("/api/documents?flag=source_not_copied").json()["documents"]] == [b]
+
+
+def test_flat_private_fields_absent(client, ctx, tmp_root, fixtures):
+    did = converted(client, ctx, tmp_root, fixtures)
+    from aidoc.server.serialize import PRIVATE_DOC_FIELDS
+    for doc in (client.get("/api/documents").json()["documents"][0], client.get(f"/api/documents/{did}").json()["document"]):
+        assert not set(PRIVATE_DOC_FIELDS) & set(doc)
+
+
+def test_source_served_from_copy_over_long_path(client, ctx, tmp_root, fixtures):
+    """A4: a copy whose path is 300+ characters is served by GET /source (long-path safe end to end)."""
+    import os
+
+    from aidoc import fsops
+    did = converted(client, ctx, tmp_root, fixtures)
+    doc = ctx.store.get_document(did)
+    deep = ctx.config.source_root() / ("d" * 150) / ("f" * 150 + ".pdf")
+    assert len(str(deep)) >= 300
+    from aidoc.source_copy import copy_verified
+    size, mtime_ns = copy_verified(fixtures / "text.pdf", deep, doc["sha256"])
+    os.unlink(doc["source_copy_path"])
+    ctx.store.set_source_copy(did, path=str(deep), status="copied", error=None, size=size, mtime_ns=mtime_ns)
+    shutil.rmtree(doc["work_copy_path"])
+    (tmp_root / "text.pdf").unlink()
+    r = client.get(f"/api/documents/{did}/source")
+    assert r.status_code == 200 and hashlib.sha256(r.content).hexdigest() == doc["sha256"]
+    assert client.get(f"/api/documents/{did}").json()["source_kind"] == "source_copy"
+    assert os.path.isfile(fsops.long_path(deep))
+
+
+def test_purge_orphaned_deletes_their_copies(client, ctx, tmp_root, fixtures):
+    """A9: two orphans, one hardlinked with a live document -> 2 paths deleted, the live copy intact."""
+    import os
+
+    from aidoc.names import file_sha256
+    live = converted(client, ctx, tmp_root, fixtures)
+    shutil.copy(fixtures / "text.pdf", tmp_root / "copy.pdf")
+    job = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "copy.pdf")}]}).json()["job"]
+    ctx.queue.process_next()
+    twin = client.get(f"/api/jobs/{job['id']}").json()["tasks"][0]["document_id"]
+    other = converted(client, ctx, tmp_root, fixtures, name="sample.docx")
+    live_copy = Path(ctx.store.get_document(live)["source_copy_path"])
+    twin_copy = Path(ctx.store.get_document(twin)["source_copy_path"])
+    other_copy = Path(ctx.store.get_document(other)["source_copy_path"])
+    assert os.stat(live_copy).st_ino == os.stat(twin_copy).st_ino
+    other_size = other_copy.stat().st_size
+    for d in (twin, other):
+        shutil.rmtree(ctx.store.get_document(d)["output_dir"])
+    assert client.post("/api/documents/rescan").json()["orphaned"] == 2
+    s = client.get("/api/sources").json()["orphaned_copies"]
+    assert s["count"] == 2 and s["bytes"] > 0
+    r = client.delete("/api/documents/orphaned").json()
+    assert r["deleted"] == 2 and r["source_copies_deleted"] == 2 and r["source_copies_kept"] == []
+    assert r["source_copy_bytes"] == other_size            # the twin's data is still the live document's
+    assert not twin_copy.exists() and not other_copy.exists() and not other_copy.parent.exists()
+    assert file_sha256(live_copy) == ctx.store.get_document(live)["sha256"]
