@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import threading
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -392,3 +393,254 @@ def purge_stale_parts(roots: list[Path], now: float) -> int:
                 except OSError:
                     continue
     return n
+
+
+# ---------------------------------------------------------------- backfill, retry, summary (spec §7, §10.1)
+
+OUTCOMES = ("copied", "already_present", "missing_original", "sha_mismatch", "unreadable", "failed",
+            "skipped_orphaned")
+
+
+class BackfillRunning(Exception):
+    """Another backfill is running (single flight)."""
+
+
+class InsufficientDisk(Exception):
+    def __init__(self, needed: int, free: int):
+        super().__init__(f"insufficient disk: needed {needed}, free {free}")
+        self.needed, self.free = needed, free
+
+
+_BACKFILL_LOCK = threading.Lock()
+
+
+def candidates_for(store, doc: dict) -> list[tuple[Path, str]]:
+    """Files that may hold this document's content, in order (spec §7.2): its work copy, its original (an absolute
+    source_path), then other documents with the same sha256: their copy, work copy, original. Only paths that exist
+    are listed; none of them is trusted until its sha256 is checked."""
+    from aidoc.sources import _work_copy
+    out: list[tuple[Path, str]] = []
+    seen: set[str] = set()
+
+    def add(p: Path | None, kind: str) -> None:
+        if p is None:
+            return
+        key = os.path.normcase(str(p))
+        if key in seen or not _is_file(p):
+            return
+        seen.add(key)
+        out.append((Path(p), kind))
+
+    def original(d: dict) -> Path | None:
+        s = Path(str(d.get("source_path") or ""))
+        return s if s.is_absolute() else None
+
+    add(_work_copy(doc), "work_copy")
+    add(original(doc), "original")
+    for other in store.documents_by_sha(doc["sha256"]):
+        if other["id"] == doc["id"]:
+            continue
+        add(Path(other["source_copy_path"]) if other.get("source_copy_path") else None, "other_document")
+        add(_work_copy(other), "other_document")
+        add(original(other), "other_document")
+    return out
+
+
+def _check(path: Path, sha256: str) -> str:
+    """match | mismatch | unreadable (locked / no permission: worth retrying later, never a mismatch)."""
+    h = hashlib.sha256()
+    try:
+        with open(fsops.long_path(path), "rb") as f:
+            while block := f.read(1 << 20):
+                h.update(block)
+    except FileNotFoundError:
+        return "mismatch"
+    except OSError:
+        return "unreadable"
+    return "match" if h.hexdigest() == sha256 else "mismatch"
+
+
+def _set_status(store, doc: dict, emit, *, path, status, error, size=None, mtime_ns=None) -> None:
+    new_path = None if path is None else str(fsops.plain_path(Path(path)))
+    changed = (doc.get("source_copy_status"), doc.get("source_copy_error"), doc.get("source_copy_path")) != \
+        (status, error, new_path)
+    store.set_source_copy(doc["id"], path=new_path, status=status, error=error, size=size, mtime_ns=mtime_ns)
+    if changed and emit is not None:
+        emit("document.source_copy", {"document_id": doc["id"], "status": status, "error": error})
+
+
+def _fail_row(store, doc, emit, row, outcome: str, error: str, status: str = "failed") -> dict:
+    row.update(outcome=outcome, detail=error)
+    _set_status(store, doc, emit, path=None, status=status, error=error)
+    return row
+
+
+def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -> dict:
+    """One document through rows 0-5 of spec §7.2 -> {id, stem, outcome, from, size, detail}. Without dry_run the
+    DB, the sidecar's source_copy key and (on a status change) a document.source_copy event are written. dry_run
+    reads and hashes candidates but writes nothing at all."""
+    row = {"id": doc["id"], "stem": Path(doc["output_dir"]).name, "outcome": None, "from": None, "size": None,
+           "detail": None}
+    if doc.get("status") == "orphaned":
+        row["outcome"] = "skipped_orphaned"
+        return row
+    sha, root = doc["sha256"], config.source_root()
+    planned, plan_error = None, None
+    try:
+        planned = plan_path(store, root, output_dir=doc["output_dir"], source_display=doc["source_path"],
+                            sha256=sha, doc_id=doc["id"])
+    except CopyError as e:
+        plan_error = e
+    # 1: the recorded copy (or the planned target) already holds the content
+    rec = doc.get("source_copy_path")
+    present = Path(rec) if rec and file_matches(Path(rec), sha) else None
+    if present is None and planned is not None and planned.present:
+        present = planned.path
+    if present is not None:
+        size, mtime_ns = stat_copy(present)
+        row.update(outcome="already_present", size=size)
+        if not dry_run:
+            _set_status(store, doc, emit, path=present, status="copied", error=None, size=size, mtime_ns=mtime_ns)
+        return row
+    # 2-5: candidates, each sha-checked; never inferred from names or sizes ("never fabricate")
+    checks = [(p, kind, _check(p, sha)) for p, kind in candidates_for(store, doc)]
+    match = next(((p, kind) for p, kind, c in checks if c == "match"), None)
+    if match is not None:
+        src, kind = match
+        row["from"] = kind
+        row["size"] = os.stat(fsops.long_path(src)).st_size
+        if planned is None:
+            if dry_run:
+                row.update(outcome="failed", detail=plan_error.text())
+                return row
+            return _fail_row(store, doc, emit, row, "failed", plan_error.text())
+        if dry_run:
+            row["outcome"] = "copied"
+            return row
+        try:
+            if kind == "other_document":
+                link_or_copy(src, planned.path, sha)
+            else:
+                copy_verified(src, planned.path, sha)
+            size, mtime_ns = stat_copy(planned.path)
+        except CopyError as e:
+            return _fail_row(store, doc, emit, row, "unreadable" if e.code == "unreadable" else "failed", e.text())
+        except OSError as e:
+            return _fail_row(store, doc, emit, row, "failed", _dest_error(e, planned.path).text())
+        row.update(outcome="copied", size=size)
+        try:
+            _set_status(store, doc, emit, path=planned.path, status="copied", error=None, size=size,
+                        mtime_ns=mtime_ns)
+        except Exception:  # noqa: BLE001  unique-index race: the path is someone else's, the file is not ours to keep
+            try:
+                remove_copy(planned.path)
+            except OSError:
+                pass
+            return _fail_row(store, doc, emit, row, "failed", f"collision: {planned.path}")
+        if not write_sidecar_copy(Path(doc["output_dir"]), sidecar_info(root, planned.path, sha, size)):
+            row["detail"] = "sidecar not updated (missing or unreadable)"
+        return row
+    unreadable = [p for p, _k, c in checks if c == "unreadable"]
+    if unreadable:
+        row.update(outcome="unreadable", detail=f"unreadable: {unreadable[0]}")
+        if not dry_run:
+            _set_status(store, doc, emit, path=None, status="failed", error=row["detail"])
+        return row
+    if checks:
+        row.update(outcome="sha_mismatch", detail=f"sha_mismatch: {checks[0][0]}")
+        if not dry_run:
+            _set_status(store, doc, emit, path=None, status="unrecoverable", error=row["detail"])
+        return row
+    row.update(outcome="missing_original", detail="missing_original")
+    if not dry_run:
+        _set_status(store, doc, emit, path=None, status="unrecoverable", error="missing_original")
+    return row
+
+
+def free_bytes(p: Path) -> int | None:
+    """Free bytes on the volume of `p` (its nearest existing ancestor); None when unknown."""
+    anc = Path(p)
+    while not anc.exists() and anc.parent != anc:
+        anc = anc.parent
+    try:
+        return shutil.disk_usage(fsops.long_path(anc)).free
+    except OSError:
+        return None
+
+
+def unreferenced_files(store, source_root: Path) -> int:
+    """Files under the source root that no document references (reported, never deleted)."""
+    root = fsops.long_path(Path(source_root))
+    if not os.path.isdir(root):
+        return 0
+    refs = {os.path.normcase(str(fsops.plain_path(Path(d["source_copy_path"]))))
+            for d in store.list_documents() if d.get("source_copy_path")}
+    n = 0
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            if _is_part(name):
+                continue
+            p = fsops.plain_path(Path(dirpath) / name)
+            if os.path.normcase(str(p)) not in refs:
+                n += 1
+    return n
+
+
+def backfill(store, config, *, dry_run: bool, progress=None, emit=None) -> dict:
+    """spec §7: every document (oldest first) through ensure_copy; the §7.4 report. Single flight
+    (BackfillRunning). A real run first checks the disk: bytes to copy + reserve > free -> InsufficientDisk and
+    nothing is copied."""
+    import time as _time
+    if not _BACKFILL_LOCK.acquire(blocking=False):
+        raise BackfillRunning()
+    try:
+        started = _time.time()
+        root = config.source_root()
+        docs = sorted(store.list_documents(), key=lambda d: (d.get("created_at") or 0, d["id"]))
+        if not dry_run:
+            plan = [ensure_copy(store, config, d, dry_run=True) for d in docs]
+            needed = sum(r["size"] or 0 for r in plan if r["outcome"] == "copied")
+            free = free_bytes(root)
+            if needed and (free is None or needed + SOURCE_COPY_RESERVE_BYTES > free):
+                raise InsufficientDisk(needed + SOURCE_COPY_RESERVE_BYTES, free or 0)
+        rows = []
+        for i, d in enumerate(docs, 1):
+            current = store.get_document(d["id"]) or d
+            rows.append(ensure_copy(store, config, current, dry_run=dry_run, emit=emit))
+            if progress is not None:
+                progress({"dry_run": dry_run, "done": i, "total": len(docs)})
+        totals = {k: 0 for k in OUTCOMES}
+        for r in rows:
+            totals[r["outcome"]] += 1
+        moved = sum(r["size"] or 0 for r in rows if r["outcome"] == "copied")
+        report = {"dry_run": dry_run, "source_dir": str(root), "started_at": started, "finished_at": _time.time(),
+                  "totals": totals, "bytes_needed": moved if dry_run else 0, "bytes_copied": 0 if dry_run else moved,
+                  "free_bytes": free_bytes(root), "documents": rows,
+                  "unreferenced_files": unreferenced_files(store, root)}
+        if progress is not None:
+            progress({"dry_run": dry_run, "finished": True, "totals": totals})
+        return report
+    finally:
+        _BACKFILL_LOCK.release()
+
+
+def not_copied(doc: dict) -> bool:
+    """Flag source_not_copied: status is not copied, or it is but the file is gone (orphaned rows never count)."""
+    if doc.get("status") == "orphaned":
+        return False
+    if doc.get("source_copy_status") != "copied" or not doc.get("source_copy_path"):
+        return True
+    return not _is_file(Path(doc["source_copy_path"]))
+
+
+def summary(store, config) -> dict:
+    """GET /api/sources: counts over the documents that are not orphaned."""
+    docs = [d for d in store.list_documents() if d.get("status") != "orphaned"]
+    copied = [d for d in docs if not not_copied(d)]
+    root = config.source_root()
+    return {"root_dir": str(config.library_root()), "source_dir": str(root), "documents": len(docs),
+            "copied": len(copied), "not_copied": len(docs) - len(copied),
+            "failed": sum(1 for d in docs if d.get("source_copy_status") == "failed"),
+            "unrecoverable": sum(1 for d in docs if d.get("source_copy_status") == "unrecoverable"),
+            "file_missing": sum(1 for d in docs if d.get("source_copy_status") == "copied" and not_copied(d)),
+            "bytes": sum(int(d.get("source_copy_size") or 0) for d in copied), "free_bytes": free_bytes(root)}
