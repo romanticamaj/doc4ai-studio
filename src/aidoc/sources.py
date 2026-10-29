@@ -183,11 +183,8 @@ def _source_copy(doc: dict, store=None) -> Path | None:
         return None
     if st.st_size == doc.get("source_copy_size") and st.st_mtime_ns == doc.get("source_copy_mtime_ns"):
         return p
-    try:
-        ok = file_sha256(lp) == doc.get("sha256")
-    except OSError:
-        return None
-    if not ok:
+    # drifted: re-hashed, but once per (path, size, mtime) — every Document-view request resolves the source
+    if not doc.get("sha256") or not sha_matches_cached(p, doc["sha256"]):
         return None
     if store is not None and doc.get("id"):
         try:

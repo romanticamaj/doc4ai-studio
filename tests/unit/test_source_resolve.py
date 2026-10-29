@@ -131,3 +131,17 @@ def test_no_other_lookup_left():
     text = "\n".join(p.read_text(encoding="utf-8") for p in src)
     assert "_reconvert_source" not in text and "_source_pdf" not in text
     assert text.count("def document_source") == 1
+
+
+def test_repeated_lookups_never_rehash_an_unchanged_file(tmp_path, monkeypatch):
+    """Every Document-view request resolves the source: a drifted (here: edited) copy and the original are hashed once
+    per (path, size, mtime), not on every view."""
+    doc, orig, wc, copy = _setup(tmp_path)
+    (wc / "src.pdf").unlink()
+    copy.write_bytes(b"%PDF-1.4 someone edited the copy")
+    real, calls = sources.file_sha256, []
+    monkeypatch.setattr(sources, "file_sha256", lambda p: calls.append(str(p)) or real(p))
+    for _ in range(5):
+        assert resolve_source(doc).kind == "original"
+    assert len(calls) == 2                                         # the copy once, the original once
+    assert orig.is_file()
