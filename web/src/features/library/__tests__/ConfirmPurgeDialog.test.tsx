@@ -28,3 +28,8 @@ test("清除 waits while the numbers are loading", () => {
   expect(screen.getByRole("button", { name: "清除" })).toBeDisabled();
   expect(screen.getByText(/正在確認/)).toBeInTheDocument();
 });
+
+test("copies sharing their data with a remaining document are named; the size is what is freed", () => {
+  const t = purgeText(2, 2, 1024 * 1024, 1);
+  expect(t.body).toContain("（2 個檔案，1.0 MB，其中 1 個與仍在的文件共用內容，不會釋放空間）");
+});

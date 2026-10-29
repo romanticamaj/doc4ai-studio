@@ -321,7 +321,7 @@ export interface SourcesSummary {
   bytes: number;
   free_bytes: number | null;
   /** what 「清除」 of the orphaned records would delete too */
-  orphaned_copies?: { count: number; bytes: number };
+  orphaned_copies?: { count: number; bytes: number; shared?: number };
 }
 
 export type BackfillOutcome =

@@ -3,9 +3,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { formatBytes } from "@/lib/format";
 
 /** The text of the 「清除」 confirmation (spec 2026-10-29 §11.3); the second sentence only when copies go too. */
-export function purgeText(records: number, copies: number, bytes: number): { title: string; body: string } {
+export function purgeText(records: number, copies: number, bytes: number, shared = 0): { title: string; body: string } {
   const title = `清除 ${records} 筆紀錄？`;
-  const second = copies > 0 ? `也會刪除這些文件在 source\\ 的原始檔備份（${copies} 個檔案，${formatBytes(bytes)}）。` : "";
+  // bytes = space actually freed; a copy that shares its data with a document that stays frees nothing
+  const note = shared > 0 ? `，其中 ${shared} 個與仍在的文件共用內容，不會釋放空間` : "";
+  const second = copies > 0 ? `也會刪除這些文件在 source\\ 的原始檔備份（${copies} 個檔案，${formatBytes(bytes)}${note}）。` : "";
   return { title, body: `${second}轉換結果已經不在了，這個動作無法復原。` };
 }
 
@@ -16,6 +18,7 @@ export function ConfirmPurgeDialog({
   records,
   copies,
   bytes,
+  shared = 0,
   loading,
   pending,
   onConfirm,
@@ -25,12 +28,14 @@ export function ConfirmPurgeDialog({
   records: number;
   copies: number;
   bytes: number;
+  /** copies hardlinked with documents that stay (not in `bytes`) */
+  shared?: number;
   /** the copy numbers are being fetched: 清除 waits for them (the warning must be current) */
   loading?: boolean;
   pending?: boolean;
   onConfirm: () => void;
 }) {
-  const t = purgeText(records, copies, bytes);
+  const t = purgeText(records, copies, bytes, shared);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="confirm-purge">

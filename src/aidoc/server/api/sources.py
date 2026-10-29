@@ -1,11 +1,14 @@
 """Source copies over the API (spec 2026-10-29 §10.1): summary, backfill (with dry run), retry of one document."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from aidoc import source_copy
+from aidoc import fsops, source_copy
 from aidoc.server.auth import ApiError
 
 router = APIRouter()
@@ -28,8 +31,17 @@ def get_sources(request: Request) -> dict:
     # what 「清除 orphaned 紀錄」 would delete as well (the Library's confirmation dialog, spec §11.3)
     orphans = [d for d in ctx.store.list_documents(status="orphaned") if d.get("source_copy_path")]
     present = [d for d in orphans if source_copy.is_present(d["source_copy_path"])]
-    out["orphaned_copies"] = {"count": len(present), "bytes": sum(int(d.get("source_copy_size") or 0)
-                                                                  for d in present)}
+    # bytes = what deleting them frees: a copy hardlinked with a document that stays frees nothing ("shared")
+    inodes: dict[tuple[int, int], list] = {}
+    for d in present:
+        try:
+            st = os.stat(fsops.long_path(Path(d["source_copy_path"])))
+        except OSError:
+            continue
+        inodes.setdefault((st.st_dev, st.st_ino), []).append(st)
+    freed = sum(group[0].st_size for group in inodes.values() if group[0].st_nlink <= len(group))
+    shared = sum(len(group) for group in inodes.values() if group[0].st_nlink > len(group))
+    out["orphaned_copies"] = {"count": len(present), "bytes": freed, "shared": shared}
     return out
 
 

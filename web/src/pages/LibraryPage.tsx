@@ -117,6 +117,7 @@ export default function LibraryPage() {
         records={nOrphaned}
         copies={sources.data?.orphaned_copies?.count ?? 0}
         bytes={sources.data?.orphaned_copies?.bytes ?? 0}
+        shared={sources.data?.orphaned_copies?.shared ?? 0}
         loading={sources.isFetching || !sources.data}
         pending={purge.isPending}
         onConfirm={doPurge}

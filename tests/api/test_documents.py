@@ -308,7 +308,8 @@ def test_purge_orphaned_deletes_their_copies(client, ctx, tmp_root, fixtures):
         shutil.rmtree(ctx.store.get_document(d)["output_dir"])
     assert client.post("/api/documents/rescan").json()["orphaned"] == 2
     s = client.get("/api/sources").json()["orphaned_copies"]
-    assert s["count"] == 2 and s["bytes"] > 0
+    # the twin shares its data with the live document: deleting it frees nothing, so it is not in `bytes`
+    assert s["count"] == 2 and s["bytes"] == other_size and s["shared"] == 1
     r = client.delete("/api/documents/orphaned").json()
     assert r["deleted"] == 2 and r["source_copies_deleted"] == 2 and r["source_copies_kept"] == []
     assert r["source_copy_bytes"] == other_size            # the twin's data is still the live document's

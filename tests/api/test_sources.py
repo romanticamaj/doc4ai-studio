@@ -36,7 +36,7 @@ def test_summary_counts(client, ctx, tmp_root, fixtures):
     _pre_v7(ctx, b)
     s = client.get("/api/sources").json()
     assert (s["copied"], s["not_copied"], s["file_missing"]) == (1, 1, 0)
-    assert s["orphaned_copies"] == {"count": 0, "bytes": 0}
+    assert s["orphaned_copies"] == {"count": 0, "bytes": 0, "shared": 0}
     assert a
 
 
