@@ -1,5 +1,6 @@
 data/
 out/
+/source/
 .venv/
 envs/*/.venv/
 node_modules/
