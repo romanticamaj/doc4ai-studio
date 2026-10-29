@@ -50,5 +50,8 @@ test("the Doc4AI folder replaces 輸出目錄 and the work-copy hint names data/
   expect(document.getElementById("set-out")).toBeNull();
   expect(screen.getByText("轉換用的暫存副本（data\\work）保留天數；不影響 source\\ 裡的原始檔備份")).toBeInTheDocument();
   expect(document.getElementById("source-copies")).not.toBeNull();
+  expect(screen.getAllByRole("heading", { name: "原始檔備份" })).toHaveLength(1);            // one heading, not two
+  expect(screen.getAllByText("轉換結果").length).toBeGreaterThan(0);
+  expect(screen.queryByText("輸出目錄")).toBeNull();                                         // one term for out\\
   expect(await screen.findByTestId("storage-source-dir")).toHaveTextContent("C:/doc4ai/source");
 });

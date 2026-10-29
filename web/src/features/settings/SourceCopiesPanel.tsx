@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Archive } from "lucide-react";
-import { Panel, PanelHeader } from "@/components/Panel";
+import { Panel } from "@/components/Panel";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useBackfill, useBackfillProgress, useSourcesSummary } from "@/api/queries";
@@ -9,6 +8,7 @@ import { ApiError } from "@/api/client";
 import type { BackfillOutcome, BackfillReport, BackfillRow } from "@/api/types";
 import { describeError } from "@/lib/errors";
 import { formatBytes } from "@/lib/format";
+import { detailText } from "@/features/document/SourceCopyWarning";
 
 /** spec 2026-10-29 §11.1 result texts */
 export const OUTCOME_TEXT: Record<BackfillOutcome, string> = {
@@ -52,24 +52,16 @@ export function SourceCopiesPanel() {
 
   return (
     <Panel>
-      <PanelHeader
-        title={
-          <span className="inline-flex items-center gap-2">
-            <Archive className="size-4 text-muted-foreground" strokeWidth={1.75} /> 原始檔備份
-          </span>
-        }
-        description={
-          s ? (
-            <>
-              每份轉換的輸入檔都會在 <span className="font-mono">{s.source_dir}</span> 留一份經 sha256 驗證的備份。
-            </>
-          ) : undefined
-        }
-      />
       <div className="flex flex-col gap-3 p-4">
+        {s && (
+          <p className="text-xs text-muted-foreground">
+            每份轉換的輸入檔都會在 <span className="font-mono">{s.source_dir}</span> 留一份經 sha256 驗證的備份。
+          </p>
+        )}
         <p className="text-[13px] tabular" data-testid="source-copy-stats">
+          {/* four categories that do not overlap: 未備份 = not copied yet (null / failed), not the two after it */}
           {s
-            ? `已備份 ${s.copied} 份／未備份 ${s.not_copied} 份／無法還原 ${s.unrecoverable} 份／檔案遺失 ${s.file_missing} 份`
+            ? `已備份 ${s.copied} 份／未備份 ${Math.max(0, s.not_copied - s.unrecoverable - s.file_missing)} 份／無法還原 ${s.unrecoverable} 份／檔案遺失 ${s.file_missing} 份`
             : "—"}
           {s && <span className="ml-3 text-xs text-muted-foreground">共 {formatBytes(s.bytes)}，可用 {formatBytes(s.free_bytes)}</span>}
         </p>
@@ -117,8 +109,8 @@ export function SourceCopiesPanel() {
                     </TableCell>
                     <TableCell>{outcomeText(r, report.dry_run)}</TableCell>
                     <TableCell>{r.from ? FROM_TEXT[r.from] : "—"}</TableCell>
-                    <TableCell className="max-w-[22rem] truncate font-mono text-xs" title={r.detail ?? r.source ?? ""}>
-                      {r.detail ?? ""}
+                    <TableCell className="max-w-[22rem] truncate text-xs" title={r.detail ?? r.source ?? ""}>
+                      {detailText(r.detail)}
                     </TableCell>
                   </TableRow>
                 ))}

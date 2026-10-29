@@ -58,7 +58,7 @@ def get_document(doc_id: str, request: Request) -> dict:
     found = resolve_source(doc, store=request.app.state.ctx.store)
     doc = request.app.state.ctx.store.get_document(doc_id) or doc          # a drift refresh may have updated it
     return {"document": serialize_document(doc), "source_available": found is not None,
-            "source_kind": found.kind if found is not None else None, "source_copy": copy_view(doc),
+            "source_kind": found.kind if found is not None else None, "source_copy": copy_view(doc, request.app.state.ctx.config),
             "output_available": output_available(doc), "sidecar": read_sidecar(Path(doc["output_dir"])),
             "preview": _preview_status(request, doc)}
 

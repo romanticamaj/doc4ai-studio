@@ -64,11 +64,23 @@ async def post_backfill(request: Request, body: BackfillIn | None = None) -> dic
         raise ApiError(507, "insufficient_disk", needed=e.needed, free=e.free) from None
 
 
-def copy_view(doc: dict) -> dict:
+def redact_root(text: str | None, config) -> str | None:
+    """An error text with the Doc4AI folder prefix dropped (`<root>/source/x` -> `source/x`): the Document view shows
+    the real OS reason without the absolute folder path."""
+    if not text:
+        return text
+    root = str(config.library_root()).rstrip("/" + os.sep)
+    for prefix in (root + os.sep, root + "/"):
+        text = text.replace(prefix, "")
+    return text
+
+
+def copy_view(doc: dict, config=None) -> dict:
     """The structured `source_copy` of GET /documents/{id} (the flat columns stay private)."""
     path = doc.get("source_copy_path")
     present = bool(path) and source_copy.is_present(path)
-    return {"status": doc.get("source_copy_status"), "error": doc.get("source_copy_error"), "present": present,
+    error = redact_root(doc.get("source_copy_error"), config) if config is not None else doc.get("source_copy_error")
+    return {"status": doc.get("source_copy_status"), "error": error, "present": present,
             "path": path, "size": doc.get("source_copy_size"), "copied_at": doc.get("source_copy_at")}
 
 
@@ -89,7 +101,7 @@ async def retry_source_copy(doc_id: str, request: Request) -> dict:
         raise ApiError(409, "already_converting", task_id=busy)
     row = await run_in_threadpool(source_copy.ensure_copy, store, ctx.config, doc, dry_run=False,
                                   emit=_publisher(ctx))
-    view = copy_view(store.get_document(doc_id))
+    view = copy_view(store.get_document(doc_id), ctx.config)
     outcome, detail = row["outcome"], row.get("detail") or ""
     if outcome in ("copied", "already_present"):
         return {"outcome": outcome, "source_copy": view}

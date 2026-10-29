@@ -92,7 +92,7 @@ export default function SettingsPage() {
                 <Skeleton className="mt-3 h-10" />
               ) : (
                 <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-                  <dt className="text-muted-foreground">輸出目錄</dt>
+                  <dt className="text-muted-foreground">轉換結果</dt>
                   <dd className="truncate font-mono" title={sys.data?.output_dir}>
                     {sys.data?.output_dir ?? "—"}
                   </dd>

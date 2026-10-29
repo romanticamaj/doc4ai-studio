@@ -119,3 +119,13 @@ def test_retry_refused_while_converting(client, ctx, tmp_root, fixtures):
     client.post("/api/documents/reconvert", json={"ids": [did]})          # queued, not processed
     r = client.post(f"/api/documents/{did}/source-copy")
     assert r.status_code == 409 and r.json()["error"] == "already_converting"
+
+
+def test_copy_error_is_shown_relative_to_the_doc4ai_folder(client, ctx, tmp_root, fixtures):
+    """The Document view shows the real reason (the OS message) but never the absolute Doc4AI folder path."""
+    did = converted(client, ctx, tmp_root, fixtures)
+    root = str(ctx.config.library_root())
+    ctx.store.set_source_copy(did, path=None, status="failed",
+                              error=f"io_error: [errno 17] File exists: {root}\\source\\text")
+    sc = client.get(f"/api/documents/{did}").json()["source_copy"]
+    assert sc["error"] == "io_error: [errno 17] File exists: source\\text" and root not in sc["error"]

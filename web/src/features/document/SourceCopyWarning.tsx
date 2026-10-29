@@ -15,6 +15,21 @@ const REASONS: Record<string, string> = {
   missing_original: "原始檔不在了",
 };
 
+function split(error: string | null | undefined): { code: string; rest: string } {
+  const s = (error ?? "").trim();
+  const i = s.indexOf(":");
+  return i < 0 ? { code: s, rest: "" } : { code: s.slice(0, i).trim(), rest: s.slice(i + 1).trim() };
+}
+
+/** "<code>: <detail>" in words, the detail kept (a path or the OS message): the backfill table's 說明 column. */
+export function detailText(error: string | null | undefined): string {
+  if (!error) return "";
+  const { code, rest } = split(error);
+  const base = REASONS[code];
+  if (!base) return error;
+  return rest ? `${base}：${rest}` : base;
+}
+
 /** null when the copy is fine. */
 export function copyReason(sc: Pick<SourceCopyDetail, "status" | "error" | "present"> | undefined | null): string | null {
   if (!sc) return null;
@@ -34,6 +49,7 @@ export function SourceCopyWarning({ docId, sourceCopy }: { docId: string; source
       <TriangleAlert className="size-4 shrink-0 text-warn" />
       <span className="min-w-0 flex-1 truncate" title={sourceCopy?.error ?? undefined}>
         原始檔未備份：{reason}
+        {sourceCopy?.status === "failed" && split(sourceCopy.error).rest ? `（${split(sourceCopy.error).rest}）` : ""}
       </span>
       <Button
         size="sm"

@@ -49,7 +49,7 @@ function setup(answer: (dry: boolean) => Response | Promise<Response>) {
 test("renders the four counts", async () => {
   setup(() => new Response("{}"));
   await waitFor(() =>
-    expect(screen.getByTestId("source-copy-stats")).toHaveTextContent("已備份 18 份／未備份 7 份／無法還原 4 份／檔案遺失 2 份"),
+    expect(screen.getByTestId("source-copy-stats")).toHaveTextContent("已備份 18 份／未備份 1 份／無法還原 4 份／檔案遺失 2 份"),
   );
   expect(screen.getByTestId("source-copy-stats")).toHaveTextContent("3.0 MB");
 });
@@ -74,6 +74,8 @@ test("補齊備份 posts dry_run false and renders all seven outcome texts", asy
   for (const t of ["已備份", "已存在", "原始檔不在了", "原始檔已被修改（內容與轉換時不同）", "無法讀取（可能被其他程式開著）", "失敗", "略過（輸出已不存在）"]) {
     expect(text).toContain(t);
   }
+  expect(text).toContain("內容與轉換時不同：C:\\x.pdf");             // the 說明 column is translated, never a raw code
+  expect(text).not.toContain("sha_mismatch:");
 });
 
 test("409 says a backfill is already running", async () => {
