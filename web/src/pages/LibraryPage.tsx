@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { FileSearch, FileWarning, FolderX, LayoutGrid, Library, RefreshCw, Rows3, Search, X } from "lucide-react";
+import { Archive, FileSearch, FileWarning, FolderX, LayoutGrid, Library, RefreshCw, Rows3, Search, X } from "lucide-react";
 import { Page, PageHeader } from "@/components/layout/Page";
 import { Panel } from "@/components/Panel";
 import { StatusBadge, Tag } from "@/components/StatusBadge";
@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useDeleteOrphaned, useDocuments, useReconvert, useRescan } from "@/api/queries";
+import { useDeleteOrphaned, useDocuments, useReconvert, useRescan, useSourcesSummary } from "@/api/queries";
+import { ConfirmPurgeDialog } from "@/features/library/ConfirmPurgeDialog";
 import { ApiError } from "@/api/client";
 import type { Document } from "@/api/types";
 import { parseFilters, toQuery, toSearch, type Filters } from "@/features/library/filters";
@@ -43,6 +44,10 @@ export default function LibraryPage() {
   const rescan = useRescan();
   const purge = useDeleteOrphaned();
   const nOrphaned = orphaned.data?.length ?? 0;
+  const [confirmPurge, setConfirmPurge] = useState(false);
+  const sources = useSourcesSummary();
+  const notCopied = useDocuments({ flag: "source_not_copied" });
+  const nNotCopied = notCopied.data?.length ?? 0;
   const filtered = !!(f.q || f.engine || f.status || f.flag);
   const clear = { q: "", engine: "", status: "", flag: "" } as const;
   const incomplete = useDocuments({ flag: "page_map_incomplete" });
@@ -57,7 +62,14 @@ export default function LibraryPage() {
     );
   const doPurge = () =>
     purge.mutateAsync().then(
-      (r) => toast.success(`已清除 ${r.deleted} 筆紀錄`),
+      (r) => {
+        setConfirmPurge(false);
+        toast.success(
+          `已清除 ${r.deleted} 筆紀錄` +
+            (r.source_copies_deleted ? `，刪除 ${r.source_copies_deleted} 個原始檔備份` : "") +
+            (r.source_copies_kept?.length ? `；${r.source_copies_kept.length} 個備份刪不掉（可能被開著）` : ""),
+        );
+      },
       (e) => toast.error(describeError(e)),
     );
 
@@ -84,8 +96,35 @@ export default function LibraryPage() {
             <Button size="sm" variant="outline" onClick={() => set({ status: "orphaned" })}>
               查看
             </Button>
-            <Button size="sm" variant="outline" onClick={doPurge} disabled={purge.isPending}>
+            <Button size="sm" variant="outline" onClick={() => setConfirmPurge(true)} disabled={purge.isPending}>
               清除
+            </Button>
+          </div>
+        </div>
+      )}
+      <ConfirmPurgeDialog
+        open={confirmPurge}
+        onOpenChange={setConfirmPurge}
+        records={nOrphaned}
+        copies={sources.data?.orphaned_copies?.count ?? 0}
+        bytes={sources.data?.orphaned_copies?.bytes ?? 0}
+        pending={purge.isPending}
+        onConfirm={doPurge}
+      />
+
+      {nNotCopied > 0 && (
+        <div role="status" data-testid="source-copy-banner" className="mb-5 flex flex-col gap-3 rounded-[10px] border border-warn/30 bg-warn-soft px-4 py-3 sm:flex-row sm:items-center">
+          <Archive className="size-4 shrink-0 text-warn" />
+          <p className="flex-1 text-[13px]">
+            有 {nNotCopied} 份文件的原始檔沒有備份
+            <span className="text-muted-foreground">（原始檔被移走後就無法再顯示或重新轉換）。</span>
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => set({ flag: "source_not_copied" })}>
+              只看這些
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/settings#source-copies">前往補齊</Link>
             </Button>
           </div>
         </div>
@@ -153,6 +192,7 @@ export default function LibraryPage() {
               <SelectItem value="all">全部文件</SelectItem>
               <SelectItem value="page_map_incomplete">頁碼不完整</SelectItem>
               <SelectItem value="page_quality">有問題頁</SelectItem>
+              <SelectItem value="source_not_copied">未備份</SelectItem>
             </SelectContent>
           </Select>
           {filtered && (

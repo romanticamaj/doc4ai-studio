@@ -13,6 +13,7 @@ import type { DocumentDetail } from "@/api/types";
 import { MarkdownView } from "@/features/document/MarkdownView";
 import { PdfViewer } from "@/features/document/PdfViewer";
 import { OfficePreview } from "@/features/document/OfficePreview";
+import { SourceCopyWarning } from "@/features/document/SourceCopyWarning";
 import { RawSource } from "@/features/document/RawSource";
 import { useScrollSync } from "@/features/document/useScrollSync";
 import { GoToPage } from "@/features/document/GoToPage";
@@ -115,12 +116,18 @@ export default function DocumentPage() {
         <span className="truncate text-muted-foreground" title={doc.source_path}>
           {baseName(doc.source_path)}
         </span>
+        {d.source_kind === "source_copy" && showSource && (
+          <span data-testid="source-copy-label" className="shrink-0 text-[11px] text-muted-foreground">
+            顯示的是原始檔備份（原檔已不在原處）
+          </span>
+        )}
         {(kind === "pdf" || kind === "office") && pdfPages > 0 && (
           <span className="ml-auto shrink-0 text-muted-foreground tabular">
             {kind === "office" ? `PDF 預覽 · ${pdfPages} 頁` : `${pdfPages} 頁`}
           </span>
         )}
       </div>
+      {doc.status !== "orphaned" && <SourceCopyWarning docId={doc.id} sourceCopy={d.source_copy} />}
       {kind === "office" && d.preview ? (
         <OfficePreview
           docId={doc.id}
@@ -140,7 +147,7 @@ export default function DocumentPage() {
         />
       ) : !showSource ? (
         <div className="flex flex-1 items-center justify-center p-6">
-          <EmptyState icon={FileX2} className="border-0" title="原始檔已移除" description="原始檔與暫存的工作副本都已不存在。右側的轉換結果不受影響。" />
+          <EmptyState icon={FileX2} className="border-0" title="原始檔、工作副本與備份都不在了" description="右側的轉換結果不受影響。" />
         </div>
       ) : kind === "pdf" ? (
         <PdfViewer

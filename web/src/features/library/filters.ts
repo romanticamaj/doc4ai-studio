@@ -1,12 +1,12 @@
 import type { DocFlag } from "@/api/types";
 
 export type LibraryView = "cards" | "table";
-export type FlagFilter = "" | Extract<DocFlag, "page_map_incomplete" | "page_quality">;
+export type FlagFilter = "" | Extract<DocFlag, "page_map_incomplete" | "page_quality" | "source_not_copied">;
 export type Filters = { q: string; engine: string; status: string; flag: FlagFilter; view: LibraryView };
 
 const ENGINES = new Set(["markitdown", "docling", "mineru", "vlm"]);
 const STATUSES = new Set(["ok", "warn", "low", "orphaned"]);
-const FLAGS = new Set(["page_map_incomplete", "page_quality"]);
+const FLAGS = new Set(["page_map_incomplete", "page_quality", "source_not_copied"]);
 
 export function parseFilters(search: string): Filters {
   const p = new URLSearchParams(search);

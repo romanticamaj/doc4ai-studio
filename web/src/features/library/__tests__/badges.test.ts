@@ -31,3 +31,13 @@ test("the engine filter accepts vlm and the remote note follows the sidecar vlm 
   expect(vlmRemoteNote({ engine: "vlm", vlm: { backend: "openai", local_endpoint: true } })).toBeNull();
   expect(vlmRemoteNote({ engine: "docling", vlm: null })).toBeNull();
 });
+
+test("未備份 badge and the source_not_copied filter (spec 2026-10-29 §11.3)", () => {
+  expect(docBadges({ flags: ["source_not_copied"], page_summary: null } as never)).toEqual([
+    { key: "source_not_copied", label: "未備份", tone: "warn" },
+  ]);
+  const f = parseFilters("?flag=source_not_copied");
+  expect(f.flag).toBe("source_not_copied");
+  expect(toQuery(f)).toEqual({ flag: "source_not_copied" });
+  expect(toSearch(f)).toBe("?flag=source_not_copied");
+});

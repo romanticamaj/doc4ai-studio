@@ -11,7 +11,7 @@ const REASONS: Record<string, string> = {
   timeout: "LibreOffice 轉換逾時",
   conversion_failed: "LibreOffice 無法開啟或轉換這個檔案",
   too_large: "檔案超過預覽大小上限（aidoc.toml [preview] max_mb）",
-  source_missing: "原始檔與工作副本都已不存在",
+  source_missing: "原始檔、工作副本與備份都不在了",
   source_changed: "原始檔已和轉換時不同",
   disabled: "Office 預覽已在設定中關閉（[preview] enabled）",
 };

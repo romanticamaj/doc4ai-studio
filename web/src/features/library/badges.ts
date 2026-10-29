@@ -9,6 +9,8 @@ export function docBadges(doc: Pick<Document, "flags" | "page_summary">): DocBad
   if (flags.includes("page_map_incomplete")) out.push({ key: "page_map_incomplete", label: "頁碼不完整", tone: "danger" });
   if (flags.includes("page_quality"))
     out.push({ key: "page_quality", label: `${doc.page_summary?.unrepaired ?? 0} 頁有問題`, tone: "warn" });
+  // spec 2026-10-29 §11.3: the original has no verified copy under source\
+  if (flags.includes("source_not_copied")) out.push({ key: "source_not_copied", label: "未備份", tone: "warn" });
   return out;
 }
 
