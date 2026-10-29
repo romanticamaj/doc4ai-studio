@@ -62,7 +62,10 @@ def register_resources(mcp, ctx) -> None:
     @_guard
     def document_metadata(doc_id: str) -> str:
         row = D.doc_row(ctx, doc_id)
-        public = {k: v for k, v in row.items() if k not in ("work_copy_path", "work_copy_expires_at")}
+        # the shared private-field list (spec 2026-10-29 §10.2): no absolute work-copy or source-copy path, no copy
+        # error (it may name a path); source_copy_status stays
+        from aidoc.server.serialize import PRIVATE_DOC_FIELDS
+        public = {k: v for k, v in row.items() if k not in PRIVATE_DOC_FIELDS}
         return json.dumps({"document": public, "sidecar": read_sidecar(Path(row["output_dir"]))}, ensure_ascii=False)
 
     @mcp.resource("doc4ai://documents/{doc_id}/assets/{name}", name="document_asset", title="Document image",
