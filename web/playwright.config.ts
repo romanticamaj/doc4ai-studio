@@ -43,7 +43,12 @@ process.env.AIDOC_E2E_VLM_PORT = String(vlmPort);
 const vlmScenario = path.join(root, "vlm_scenario.json");
 fs.writeFileSync(vlmScenario, JSON.stringify({ default: "ok", model: "fake-vlm", require_key: "sk-test", pages: { "1": "AIDOC VLM CHECK 繁體中文 2026" } }));
 const config = path.join(root, "aidoc.toml");
-fs.writeFileSync(config, `[general]\noutput_dir = ${JSON.stringify(out.replace(/\\/g, "/"))}\n[server]\nport = ${port}\n`);
+// the run's own Web UI build: web/dist may be served by a running server of this checkout and is never rewritten
+const dist = path.join(root, "dist");
+// the Doc4AI folder (out/ + source/) is the run's temp dir, set as root_dir (not AIDOC_LIBRARY_ROOT, which would make
+// the Settings field read-only): never the platform default C:\doc4ai / ~/doc4ai. sources.spec.ts moves it to
+// <run dir>/lib through Settings; the aidoc.toml it saves is this temp one.
+fs.writeFileSync(config, `[general]\nroot_dir = ${JSON.stringify(root)}\n[server]\nport = ${port}\n`);
 
 // The bundled Chromium download is blocked on some networks; the system Edge/Chrome works the same.
 // PW_CHANNEL="" uses the bundled browser.
@@ -81,8 +86,9 @@ export default defineConfig({
     },
   ].filter((p) => (p.name === "real") === realOnly),
   webServer: realOnly ? undefined : [{
-    command: `uv run aidoc serve --port ${port}`,
-    cwd: path.resolve(here, ".."),
+    // --no-sync: a running server of this checkout holds the venv's aidoc.exe (a sync would fail to replace it)
+    command: `pnpm exec vite build --outDir ${JSON.stringify(dist)} --emptyOutDir --logLevel warn && uv run --no-sync --project .. aidoc serve --port ${port}`,
+    cwd: here,
     url: `http://127.0.0.1:${port}/`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -92,13 +98,13 @@ export default defineConfig({
       AIDOC_DATA: data,
       AIDOC_ENVS: path.join(root, "envs"), // the VLM connection test writes envs/vlm/.ready: never the project's
       AIDOC_CONFIG: config,
-      // the Doc4AI folder (out/ + source/) is the run's temp dir: never the platform default C:\doc4ai / ~/doc4ai
-      AIDOC_LIBRARY_ROOT: root,
+      AIDOC_WEB_DIST: dist,
+      AIDOC_LIBRARY_ROOT: "", // an inherited override would hide root_dir above
       PYTHONUTF8: "1",
     },
   }, {
     // a scripted OpenAI-compatible VLM endpoint on loopback (vlm.spec.ts: Settings → connection test)
-    command: `uv run python -m tests.fakes.vlm_server --port ${vlmPort} --scenario ${JSON.stringify(vlmScenario)}`,
+    command: `uv run --no-sync python -m tests.fakes.vlm_server --port ${vlmPort} --scenario ${JSON.stringify(vlmScenario)}`,
     cwd: path.resolve(here, ".."),
     url: `http://127.0.0.1:${vlmPort}/v1/models`,
     reuseExistingServer: false,

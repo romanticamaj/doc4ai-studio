@@ -1,10 +1,4 @@
-import { execSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-// aidoc serve serves web/dist: build it when it is missing (a stale build is the caller's responsibility).
-export default function globalSetup() {
-  const web = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  if (!fs.existsSync(path.join(web, "dist", "index.html"))) execSync("pnpm build", { cwd: web, stdio: "inherit" });
-}
+// The e2e server builds its own copy of the Web UI (playwright.config.ts webServer: vite build --outDir <run dir>)
+// and serves it with AIDOC_WEB_DIST, so nothing here touches web/dist: a server already running from this checkout
+// keeps serving the build it started with.
+export default function globalSetup() {}

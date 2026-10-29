@@ -8,7 +8,7 @@ const port = Number(process.env.AIDOC_E2E_PORT ?? 8781);
 
 function sdkCall(token: string): { code: number; out: string } {
   try {
-    const out = execFileSync("uv", ["run", "python", "tests/mcp/sdk_call.py", "--url", `http://127.0.0.1:${port}/mcp`, "--token", token, "--json"],
+    const out = execFileSync("uv", ["run", "--no-sync", "python", "tests/mcp/sdk_call.py", "--url", `http://127.0.0.1:${port}/mcp`, "--token", token, "--json"],
       { cwd: repo, encoding: "utf-8", timeout: 120_000, env: { ...process.env, PYTHONUTF8: "1" } });
     return { code: 0, out };
   } catch (e) {

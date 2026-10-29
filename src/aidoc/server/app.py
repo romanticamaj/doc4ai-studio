@@ -192,7 +192,9 @@ def create_app(ctx: ServerContext) -> FastAPI:
     @app.get("/health", include_in_schema=False)
     def health():
         return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})   # public; Docker HEALTHCHECK
-    _mount_web(app, Path(ctx.config.root) / "web" / "dist")
+    # AIDOC_WEB_DIST: another build of the Web UI (the e2e server builds its own, so a test run never rewrites the
+    # web/dist that a running server on the same checkout serves)
+    _mount_web(app, Path(os.environ.get("AIDOC_WEB_DIST") or Path(ctx.config.root) / "web" / "dist"))
     app.add_middleware(CompatLogMiddleware)          # innermost: logs each /v1 request with its real status
     app.add_middleware(EnvelopeMiddleware)
     app.add_middleware(CompressionMiddleware)       # outermost: compresses the enveloped JSON, never SSE / ranges
