@@ -229,3 +229,73 @@ def test_summary(lib):
     os.unlink(lib.store.get_document(lib.docs["d2"]["id"])["source_copy_path"])
     s = summary(lib.store, lib.cfg)
     assert s["copied"] == 3 and s["file_missing"] == 1 and s["source_dir"] == str(lib.cfg.source_root())
+
+
+# ---- fix round (verifier V1): a backup is never a hardlink to a user's file or to someone's work copy
+
+def _pre_v7_doc(store, d):
+    if d["source_copy_path"] and Path(d["source_copy_path"]).exists():
+        os.unlink(d["source_copy_path"])
+    store.set_source_copy(d["id"], path=None, status=None, error=None)
+    if d.get("work_copy_path"):
+        shutil.rmtree(d["work_copy_path"], ignore_errors=True)
+    store.update_document(d["id"], work_copy_path=None, work_copy_expires_at=None)
+
+
+def test_backfill_never_hardlinks_another_documents_original(tmp_root, fixtures, monkeypatch):
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    data = (fixtures / "text.pdf").read_bytes() + b"%same\n"
+    a_src = lb.place("alpha.pdf", content=data)
+    b_src = tmp_root / "user-docs" / "beta.pdf"
+    b_src.parent.mkdir()
+    b_src.write_bytes(data)
+    _, ta = lb.convert(a_src)
+    _, tb = lb.convert(b_src)
+    a, b = lb.doc(ta), lb.doc(tb)
+    for d in (a, b):
+        _pre_v7_doc(lb.store, lb.store.get_document(d["id"]))
+    a_src.unlink()                                   # A's own original is gone; B's original (the user's file) is not
+    row = ensure_copy(lb.store, lb.cfg, lb.store.get_document(a["id"]))
+    assert row["outcome"] == "copied" and row["from"] == "other_document"
+    cp = Path(lb.store.get_document(a["id"])["source_copy_path"])
+    assert not os.path.samefile(cp, b_src) and os.stat(b_src).st_nlink == 1
+    before = b_src.read_bytes()
+    with open(cp, "ab") as f:                        # editing the backup never reaches the user's file
+        f.write(b"edit in source folder\n")
+    assert b_src.read_bytes() == before
+    lb.store.close()
+
+
+def test_backfill_never_hardlinks_another_documents_work_copy(tmp_root, fixtures, monkeypatch):
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    data = (fixtures / "text.pdf").read_bytes() + b"%wc\n"
+    _, ta = lb.convert(lb.place("one.pdf", content=data))
+    _, tb = lb.convert(lb.place("two.pdf", content=data))
+    a, b = lb.doc(ta), lb.doc(tb)
+    _pre_v7_doc(lb.store, lb.store.get_document(a["id"]))
+    os.unlink(lb.store.get_document(b["id"])["source_copy_path"])     # B keeps only its work copy
+    lb.store.set_source_copy(b["id"], path=None, status=None, error=None)
+    (tmp_root / "in" / "one.pdf").unlink()
+    (tmp_root / "in" / "two.pdf").unlink()
+    row = ensure_copy(lb.store, lb.cfg, lb.store.get_document(a["id"]))
+    assert row["outcome"] == "copied" and row["from"] == "other_document"
+    cp = Path(lb.store.get_document(a["id"])["source_copy_path"])
+    wc = next(Path(b["work_copy_path"]).glob("src.*"))
+    assert not os.path.samefile(cp, wc) and os.stat(cp).st_nlink == 1
+    lb.store.close()
+
+
+def test_backfill_hardlinks_to_another_documents_verified_copy(tmp_root, fixtures, monkeypatch):
+    """spec §4.5: a retry / backfill for content that already has a verified copy shares that copy's data."""
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    data = (fixtures / "text.pdf").read_bytes() + b"%dedup\n"
+    _, ta = lb.convert(lb.place("first.pdf", content=data))
+    _, tb = lb.convert(lb.place("second.pdf", content=data))
+    a, b = lb.doc(ta), lb.doc(tb)
+    os.unlink(b["source_copy_path"])
+    lb.store.set_source_copy(b["id"], path=None, status=None, error=None)    # B lost its copy; its original is there
+    row = ensure_copy(lb.store, lb.cfg, lb.store.get_document(b["id"]))
+    assert row["outcome"] == "copied" and row["from"] == "other_document"
+    cb = lb.store.get_document(b["id"])["source_copy_path"]
+    assert os.path.samefile(cb, a["source_copy_path"]) and os.stat(cb).st_nlink == 2
+    lb.store.close()

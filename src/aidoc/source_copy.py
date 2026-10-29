@@ -508,8 +508,11 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
             _set_status(store, doc, emit, path=present, status="copied", error=None, size=size, mtime_ns=mtime_ns)
         return row
     # 2-5: candidates, each sha-checked; never inferred from names or sizes ("never fabricate")
+    # another document's verified copy of the same content comes first: it is the only file a backup may share its
+    # data with (a hardlink, spec §4.5). Work copies and originals — the user's own files — are always copied.
+    shared = verified_copy_of(store, sha, exclude_id=doc["id"])
     checks = [(p, kind, _check(p, sha)) for p, kind in candidates_for(store, doc)]
-    match = next(((p, kind) for p, kind, c in checks if c == "match"), None)
+    match = (shared, "other_document") if shared is not None else         next(((p, kind) for p, kind, c in checks if c == "match"), None)
     if match is not None:
         src, kind = match
         row["from"] = kind
@@ -523,10 +526,10 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
             row["outcome"] = "copied"
             return row
         try:
-            if kind == "other_document":
-                link_or_copy(src, planned.path, sha)
+            if shared is not None and src == shared:
+                link_or_copy(src, planned.path, sha)          # a verified source copy: hardlink allowed
             else:
-                copy_verified(src, planned.path, sha)
+                copy_verified(src, planned.path, sha)         # never a hardlink to a user's file or a work copy
             size, mtime_ns = stat_copy(planned.path)
         except CopyError as e:
             return _fail_row(store, doc, emit, row, "unreadable" if e.code == "unreadable" else "failed", e.text())
