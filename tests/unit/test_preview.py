@@ -242,9 +242,10 @@ def test_source_changed_is_not_converted(tmp_path):
     try:
         doc = _doc(tmp_path)
         Path(doc["source_path"]).write_bytes(b"something else")
-        m.request(doc)
-        st = _wait(m, doc)
-        assert st["status"] == "failed" and st["reason"] == "source_changed" and not log.exists()
+        # spec 2026-10-29 §6.2 (behaviour change): a rewritten original is no longer this document's source at
+        # all, so the request is refused before soffice runs (the converter's own sha check stays as a backstop)
+        st = m.request(doc)
+        assert st["status"] == "failed" and st["reason"] == "source_missing" and not log.exists()
     finally:
         m.stop()
 
@@ -304,3 +305,23 @@ def test_purge_removes_previews_of_unknown_documents(tmp_path):
 
 def test_fake_script_exists():
     assert FAKE.is_file() and shutil.which(sys.executable)
+
+
+def test_preview_uses_source_copy(tmp_path):
+    """spec 2026-10-29 §6.3: the original and the work copy are gone; the source copy is converted."""
+    m, log = _manager(tmp_path)
+    try:
+        doc = _doc(tmp_path)
+        src = Path(doc["source_path"])
+        copy = tmp_path / "lib" / "source" / "sample" / "sample.docx"
+        copy.parent.mkdir(parents=True)
+        shutil.copy(src, copy)
+        src.unlink()
+        st = copy.stat()
+        doc.update(source_copy_path=str(copy), source_copy_size=st.st_size, source_copy_mtime_ns=st.st_mtime_ns)
+        assert m.request(doc)["status"] == "pending"
+        assert _wait(m, doc)["status"] == "ready"
+        call = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
+        assert call["src"].endswith(".docx")
+    finally:
+        m.stop()

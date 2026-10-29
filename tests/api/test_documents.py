@@ -203,3 +203,26 @@ def test_files_revalidate_so_a_reconvert_is_never_shown_from_cache(client, ctx, 
         r = client.get(u, headers={"If-None-Match": first[u]})
         assert r.status_code == 200 and r.headers["etag"] != first[u], u
     assert "repaired" in client.get(urls[1]).text
+
+
+def test_reconvert_from_source_copy_is_a_real_copy(client, ctx, tmp_root, fixtures):
+    """spec 2026-10-29 §6.3: a source copy is staged into the new task's work dir as a real copy, never a hardlink
+    (editing a file under source/ must not reach the work dir)."""
+    import os
+    did = converted(client, ctx, tmp_root, fixtures)
+    doc = ctx.store.get_document(did)
+    copy = ctx.config.source_root() / "text" / "text.pdf"
+    copy.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(fixtures / "text.pdf", copy)
+    ctx.store.set_source_copy(did, path=str(copy), status="copied", error=None, size=copy.stat().st_size,
+                              mtime_ns=copy.stat().st_mtime_ns)
+    (tmp_root / "text.pdf").unlink()
+    shutil.rmtree(doc["work_copy_path"])
+    r = client.post("/api/documents/reconvert", json={"ids": [did]})
+    assert r.status_code == 201
+    task = client.get(f"/api/jobs/{r.json()['job']['id']}").json()["tasks"][0]
+    staged = Path(task["work_path"])
+    assert staged.is_file() and os.stat(staged).st_nlink == 1 and os.stat(copy).st_nlink == 1
+    ctx.queue.process_next()
+    assert client.get(f"/api/jobs/{r.json()['job']['id']}").json()["tasks"][0]["status"] == "done"
+

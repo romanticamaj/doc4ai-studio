@@ -17,12 +17,11 @@ from pydantic import BaseModel, Field
 
 from aidoc import fsops
 from aidoc.models import ConvertOptions
-from aidoc.names import file_sha256
 from aidoc.output import read_sidecar, sidecar_path
 from aidoc.server.auth import ApiError
 from aidoc.server.serialize import serialize_document, serialize_job
 from aidoc.server.transfer import etag_matches, file_etag
-from aidoc.sources import document_source
+from aidoc.sources import document_source, resolve_source
 
 router = APIRouter()
 
@@ -330,35 +329,19 @@ class ReconvertIn(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=500)
 
 
-def _reconvert_source(doc: dict) -> tuple[Path, bool] | None:
-    """(file, is_work_copy): the original when it is an absolute path that still has the document's content,
-    else the retained work copy with that content, else None."""
-    src = Path(doc["source_path"])
-    if src.is_absolute() and src.is_file():
-        try:
-            if file_sha256(src) == doc["sha256"]:
-                return src, False
-        except OSError:
-            pass
-    wc = doc.get("work_copy_path")
-    if wc and Path(wc).is_dir():
-        for f in sorted(Path(wc).glob("src.*")):
-            try:
-                if f.is_file() and file_sha256(f) == doc["sha256"]:
-                    return f, True
-            except OSError:
-                continue
-    return None
-
-
-def _link_or_copy(src: Path, dst: Path) -> None:
+def _stage_for_reconvert(src: Path, dst: Path, *, link: bool) -> None:
+    """Put the source into the new task's work dir. A work copy may be hardlinked (it is ours and never written
+    to); a source copy is always really copied (main spec §8.5: the user may edit files under source/, and a shared
+    inode would carry that into the work dir)."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(f".{dst.name}.tmp")
     tmp.unlink(missing_ok=True)
     try:
-        os.link(src, tmp)                    # the work copy is never written to: a hardlink is safe and instant
+        if not link:
+            raise OSError("a real copy is required")
+        os.link(src, tmp)
     except OSError:
-        shutil.copy2(src, tmp)
+        shutil.copyfile(src, tmp)
     os.replace(tmp, dst)
 
 
@@ -372,7 +355,7 @@ def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | N
         doc = store.get_document(doc_id)
         if doc is None:
             raise ApiError(404, "not_found", id=doc_id)
-        found = _reconvert_source(doc)
+        found = resolve_source(doc, store=store)        # work copy -> source copy -> original (index A27)
         if found is None:
             raise ApiError(410, "source_missing", id=doc_id)
         busy = store.busy_task_id(doc["sha256"], doc["output_dir"])
@@ -382,7 +365,7 @@ def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | N
             busy = live[0]["id"] if live else None
         if busy is not None:
             raise ApiError(409, "already_converting", id=doc_id, task_id=busy)
-        plan.append((doc, *found))
+        plan.append((doc, found.path, found.kind))
     cfg = ctx.config
     out_root = Path(plan[0][0]["output_dir"]).parent
     opts = ConvertOptions(output_dir=out_root, engine=engine, lang=plan[0][0].get("lang") or cfg.general.lang, force=True,
@@ -392,7 +375,7 @@ def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | N
     job_id = create_job(opts) if create_job is not None else store.create_job(opts, origin)
     task_ids = []
     try:
-        for doc, src, is_work_copy in plan:
+        for doc, src, kind in plan:
             st = src.stat()
             tid, reused = store.create_task(job_id, doc["source_path"], doc["sha256"], st.st_size, st.st_mtime,
                                             doc.get("lang") or opts.lang, doc["output_dir"])
@@ -402,9 +385,9 @@ def start_reconvert(ctx, ids: list[str], *, origin: str = "web", engine: str | N
                 store.requeue_task(tid, reset_segments=True)
                 store.update_task(tid, tried=[], attempt=0, engine=None, quality=None)
             work_path = None
-            if is_work_copy:                     # stage it into the new task's work dir, like an upload
+            if kind != "original":               # stage it into the new task's work dir, like an upload
                 work_path = cfg.data_dir / "work" / tid / f"src{src.suffix.lower()}"
-                _link_or_copy(src, work_path)
+                _stage_for_reconvert(src, work_path, link=kind == "work_copy")
                 store.update_task(tid, work_path=str(work_path))
             flags = {"force": True, "reconvert": True}
             if engine is None:

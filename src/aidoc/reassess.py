@@ -8,7 +8,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from aidoc.names import file_sha256
 from aidoc.output import read_sidecar
 from aidoc.quality import PAGE_CHECK_VERSION, assess
 
@@ -33,22 +32,6 @@ def doc_flags(doc: dict) -> list[str]:
     if _is_pdf_doc(doc) and (q.get("page_check") or 0) < PAGE_CHECK_VERSION:
         out.append("unassessed")
     return out
-
-
-def _source_pdf(doc: dict) -> Path | None:
-    wc = doc.get("work_copy_path")
-    if wc and Path(wc).is_dir():
-        for f in sorted(Path(wc).glob("src.*")):
-            if f.is_file() and f.suffix.lower() == ".pdf":
-                return f
-    src = Path(str(doc.get("source_path") or ""))
-    if src.is_absolute() and src.is_file() and src.suffix.lower() == ".pdf":
-        try:
-            if file_sha256(src) == doc.get("sha256"):
-                return src
-        except OSError:
-            return None
-    return None
 
 
 def _history(old: dict, sidecar: dict | None) -> tuple[list[dict], dict[int, str], str]:
@@ -96,9 +79,11 @@ def reassess_document(store, doc: dict, *, force: bool = False) -> dict | None:
     if not md_path.is_file():
         return None
     md = md_path.read_text(encoding="utf-8")
-    pdf = _source_pdf(doc)
+    from aidoc.sources import resolve_source
+    found = resolve_source(doc, pdf_only=True, store=store)     # work copy -> source copy -> original (A27)
+    pdf = found.path if found is not None else None
     if pdf is None:
-        # no original and no work copy: the page checks cannot run. Keep the old result (and its page_check), so the
+        # no work copy, source copy or original: the page checks cannot run. Keep the old result (and its page_check), so the
         # Library shows the document as "unassessed" instead of a fresh "ok" (verifier round)
         return None
     from aidoc.probe import probe_file

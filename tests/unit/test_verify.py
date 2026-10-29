@@ -184,3 +184,80 @@ def test_every_page_is_the_default_in_the_function_and_the_cli():
     from aidoc.cli import build_parser
     assert inspect.signature(verify_markdown).parameters["sample"].default == 0
     assert build_parser().parse_args(["verify", "x.md"]).sample == 0
+
+
+# ---- spec 2026-10-29 §6.3: `aidoc verify <output dir>` finds the PDF through the one resolver
+
+def _out_dir(root, stem, sha, extra=None):
+    import json as _json
+    out = root / "out" / stem
+    out.mkdir(parents=True)
+    (out / f"{stem}.md").write_text("<!-- page: 1 -->\n\nHello\n", encoding="utf-8")
+    (out / f"{stem}.json").write_text(_json.dumps({"source": "C:/gone/x.pdf", "sha256": sha, "pages": 1,
+                                                   **(extra or {})}), encoding="utf-8")
+    return out
+
+
+def test_library_pdf_reads_source_copy_from_v7_db(tmp_root, fixtures):
+    import shutil
+
+    from aidoc.names import file_sha256
+    from aidoc.store import Store
+    from aidoc.verify import resolve_inputs
+    sha = file_sha256(fixtures / "text.pdf")
+    out = _out_dir(tmp_root, "t", sha)
+    copy = tmp_root / "source" / "t" / "t.pdf"
+    copy.parent.mkdir(parents=True)
+    shutil.copy(fixtures / "text.pdf", copy)
+    s = Store(tmp_root / "data" / "aidoc.db")
+    did = s.upsert_document(sha256=sha, source_path="C:/gone/t.pdf", output_dir=str(out.resolve()), engine="fake",
+                            quality={"level": "ok"}, pages=1, lang="cht", aidoc_version="0", status="ok")
+    s.set_source_copy(did, path=str(copy), status="copied", error=None, size=copy.stat().st_size,
+                      mtime_ns=copy.stat().st_mtime_ns)
+    s.close()
+    _md, pdf, _prev, _pages, _name = resolve_inputs(out, None)
+    assert pdf == copy
+
+
+def test_library_pdf_still_works_on_v6_db(tmp_root, fixtures):
+    import shutil
+    import sqlite3
+
+    from aidoc.names import file_sha256
+    from aidoc.verify import _library_pdf
+    sha = file_sha256(fixtures / "text.pdf")
+    out = _out_dir(tmp_root, "t", sha)
+    wc = tmp_root / "data" / "work" / "t1"
+    wc.mkdir(parents=True)
+    shutil.copy(fixtures / "text.pdf", wc / "src.pdf")
+    con = sqlite3.connect(str(tmp_root / "data" / "aidoc.db"))        # a v6 file: no source_copy_* columns
+    con.executescript("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT); INSERT INTO meta VALUES('schema_version','6');"
+                      "CREATE TABLE documents(id TEXT PRIMARY KEY, sha256 TEXT NOT NULL, source_path TEXT NOT NULL, "
+                      "output_dir TEXT NOT NULL UNIQUE, engine TEXT NOT NULL, quality_json TEXT NOT NULL, pages INTEGER, "
+                      "lang TEXT NOT NULL, aidoc_version TEXT NOT NULL, created_at REAL NOT NULL, status TEXT NOT NULL, "
+                      "work_copy_path TEXT, work_copy_expires_at REAL);")
+    con.execute("INSERT INTO documents VALUES('d','" + sha + "','C:/gone/t.pdf',?,'fake','{}',1,'cht','0',1.0,'ok',?,NULL)",
+                (str(out.resolve()), str(wc)))
+    con.commit()
+    con.close()
+    assert _library_pdf(out, sha) == wc / "src.pdf"
+    con = sqlite3.connect(str(tmp_root / "data" / "aidoc.db"))
+    assert con.execute("SELECT value FROM meta").fetchone()[0] == "6"      # opened read-only: never migrated
+    con.close()
+
+
+def test_sidecar_only_finds_copy_relative_to_output(tmp_path, fixtures, monkeypatch):
+    import shutil
+
+    from aidoc.names import file_sha256
+    from aidoc.verify import resolve_inputs
+    monkeypatch.setenv("AIDOC_DATA", str(tmp_path / "no-data"))            # no Library database at all
+    sha = file_sha256(fixtures / "text.pdf")
+    lib = tmp_path / "moved" / "doc4ai"                                     # the whole folder moved elsewhere
+    out = _out_dir(lib, "t", sha, {"source_copy": {"path": "source/t/t.pdf", "sha256": sha, "size": 1}})
+    copy = lib / "source" / "t" / "t.pdf"
+    copy.parent.mkdir(parents=True)
+    shutil.copy(fixtures / "text.pdf", copy)
+    assert resolve_inputs(out, None)[1] == copy
+    copy.write_bytes(b"%PDF-1.4 tampered")                                  # sha-verified: a changed copy is not used
+    assert resolve_inputs(out, None)[1] is None

@@ -148,3 +148,22 @@ def test_history_wiped_by_an_earlier_regrade_is_recovered_from_the_sidecar(tmp_r
 
 def test_page_check_version_is_6():
     assert PAGE_CHECK_VERSION == 6          # 6: scan pages checked on the page image (T-002)
+
+
+def test_reassess_uses_source_copy_when_original_gone(tmp_root, fixtures, monkeypatch):
+    """spec 2026-10-29 §6.3: no work copy and no original, but a source copy -> the page checks run on the copy."""
+    from aidoc import sources
+    store = Store(tmp_root / "data" / "aidoc.db")
+    q = {"score": 1.0, "level": "ok", "reasons": [], "metrics": {}, "page_check": 1, "pages": []}
+    did = _paged_doc(store, tmp_root, fixtures, quality=q, work=False)
+    copy = tmp_root / "source" / "pf" / "pf.pdf"
+    copy.parent.mkdir(parents=True)
+    shutil.copy(fixtures / "paged_furniture.pdf", copy)
+    st = copy.stat()
+    store.set_source_copy(did, path=str(copy), status="copied", error=None, size=st.st_size, mtime_ns=st.st_mtime_ns)
+    used = []
+    real = sources.resolve_source
+    monkeypatch.setattr(sources, "resolve_source", lambda *a, **k: used.append(real(*a, **k)) or used[-1])
+    assert reassess_all(store, log=lambda s: None)["assessed"] == 1
+    assert [u.kind for u in used] == ["source_copy"]
+    assert store.get_document(did)["quality"]["page_check"] == PAGE_CHECK_VERSION

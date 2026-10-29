@@ -313,27 +313,52 @@ def summary_text(report: VerifyReport, lang: str = "cht") -> str:
 # ---- inputs of the CLI shell (the directory form reads the sidecar and, read-only, the Library database)
 
 def _library_pdf(output_dir: Path, sha256: str | None) -> Path | None:
-    """Work copy / original of a Library document by its output dir (sqlite opened read-only; the store is never
-    written)."""
+    """The PDF of a Library document by its output dir, through the one source lookup (work copy -> source copy ->
+    original). The database is opened read-only (`SELECT *`, so a v6 file without source_copy_* works too) and is
+    never written."""
     import sqlite3
 
     from aidoc import paths
+    from aidoc.sources import resolve_source
     db = paths.data_dir() / "aidoc.db"
     if not db.is_file():
         return None
     try:
         con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=5)
+        con.row_factory = sqlite3.Row
         try:
-            row = con.execute("SELECT sha256, source_path, work_copy_path FROM documents WHERE output_dir=?",
-                              (str(output_dir.resolve()),)).fetchone()
+            row = con.execute("SELECT * FROM documents WHERE output_dir=?", (str(output_dir.resolve()),)).fetchone()
         finally:
             con.close()
     except sqlite3.Error:
         return None
-    if row is None or (sha256 and row[0] != sha256):
+    if row is None or (sha256 and row["sha256"] != sha256):
         return None
-    from aidoc.reassess import _source_pdf
-    return _source_pdf({"sha256": row[0], "source_path": row[1], "work_copy_path": row[2]})
+    found = resolve_source({k: row[k] for k in row.keys()}, pdf_only=True)  # noqa: SIM118  sqlite3.Row
+    return found.path if found is not None else None
+
+
+def _sidecar_copy_pdf(output_dir: Path, sc: dict) -> Path | None:
+    """Sidecar only (spec 2026-10-29 §6.3): the source copy the sidecar names, relative to the Doc4AI folder the
+    output sits in (<out dir>/../../<path>), then relative to the current Doc4AI folder; sha-verified."""
+    info = sc.get("source_copy")
+    sha = sc.get("sha256")
+    if not isinstance(info, dict) or not info.get("path") or not sha:
+        return None
+    rel = Path(*str(info["path"]).split("/"))
+    if rel.is_absolute() or ".." in rel.parts or rel.suffix.lower() != ".pdf":
+        return None
+    from aidoc.config import load_config
+    from aidoc.sources import sha_matches_cached
+    cands = [Path(output_dir).resolve().parent.parent / rel]
+    try:
+        cands.append(load_config().library_root() / rel)
+    except Exception:  # noqa: BLE001, S110  a broken aidoc.toml only loses the second candidate
+        pass
+    for c in cands:
+        if c.is_file() and sha_matches_cached(c, sha):
+            return c
+    return None
 
 
 def resolve_inputs(path: Path, pdf: Path | None) -> tuple[str, Path | None, dict | None, int | None, str]:
@@ -362,6 +387,8 @@ def resolve_inputs(path: Path, pdf: Path | None) -> tuple[str, Path | None, dict
                 pdf = None
         if pdf is None:
             pdf = _library_pdf(path, sc.get("sha256"))
+        if pdf is None:
+            pdf = _sidecar_copy_pdf(path, sc)
     return md_path.read_text(encoding="utf-8-sig"), pdf, previous, sc.get("pages"), str(md_path)
 
 
@@ -371,8 +398,9 @@ class OutputMissing(FileNotFoundError):
 
 def document_inputs(doc: dict) -> tuple[str, Path | None, dict, int | None, str]:
     """(markdown, pdf, previous, pages, input name) of a Library document — shared by `POST /api/verify` and the
-    MCP tools. The PDF is the retained work copy or the sha-checked original; neither -> None (partial verify)."""
-    from aidoc.reassess import _source_pdf
+    MCP tools. The PDF comes from the one source lookup (work copy -> source copy -> original); none -> None
+    (partial verify)."""
+    from aidoc.sources import resolve_source
     out = Path(doc["output_dir"])
     md_path = out / f"{out.name}.md"
     if not md_path.is_file():
@@ -380,5 +408,7 @@ def document_inputs(doc: dict) -> tuple[str, Path | None, dict, int | None, str]
     q = doc.get("quality") or {}
     previous = {"engine": doc.get("engine"),
                 "quality": {k: q.get(k) for k in ("level", "score", "reasons", "pages_unrepaired")}}
-    pdf = _source_pdf(doc) if Path(str(doc.get("source_path") or "")).suffix.lower() == ".pdf" else None
+    is_pdf = Path(str(doc.get("source_path") or "")).suffix.lower() == ".pdf"
+    found = resolve_source(doc, pdf_only=True) if is_pdf else None
+    pdf = found.path if found is not None else None
     return md_path.read_text(encoding="utf-8-sig"), pdf, previous, doc.get("pages"), md_path.name
