@@ -66,3 +66,13 @@ def test_schema_v1_db_is_migrated(tmp_root):
     s = Store(db)
     assert s.get_task("t")["flags"] == {}
     s.close()
+
+
+def test_web_dist_override(ctx, tmp_path, monkeypatch):
+    """AIDOC_WEB_DIST serves another Web UI build (the e2e server's own), never touching <repo>/web/dist."""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>e2e build</title>", encoding="utf-8")
+    monkeypatch.setenv("AIDOC_WEB_DIST", str(dist))
+    with TestClient(create_app(ctx), base_url="http://127.0.0.1:8765") as c:
+        assert "e2e build" in c.get("/library").text
