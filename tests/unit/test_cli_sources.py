@@ -81,3 +81,27 @@ def test_exit_0_when_everything_is_copied(tmp_root, fixtures, monkeypatch, capsy
 def test_no_subcommand_is_usage(tmp_root, capsys):
     assert main(["sources"]) == 4
     assert "usage: aidoc sources" in capsys.readouterr().err
+
+
+def test_serverless_dry_run_writes_nothing(tmp_root, fixtures, monkeypatch, capsys):
+    """Verifier V3: the in-process --dry-run ran startup recovery first, which purged an expired work copy."""
+    import time
+
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    _st, t = lb.convert(lb.place("dry.pdf"))
+    d = lb.doc(t)
+    os.unlink(d["source_copy_path"])
+    lb.store.set_source_copy(d["id"], path=None, status=None, error=None)
+    lb.store.update_document(d["id"], work_copy_expires_at=time.time() - 10)
+    rows = lambda: [tuple(r) for r in lb.store.con.execute("SELECT * FROM documents ORDER BY id")]  # noqa: E731
+    before_rows = rows()
+
+    def tree():
+        return sorted((p.relative_to(tmp_root).as_posix(), p.stat().st_size, p.stat().st_mtime_ns)
+                      for p in tmp_root.rglob("*") if p.is_file() and not p.name.startswith("aidoc.db"))
+    before = tree()
+    assert main(["sources", "backfill", "--dry-run"]) == 0
+    assert "dry run" in capsys.readouterr().out
+    assert tree() == before and rows() == before_rows
+    assert Path(d["work_copy_path"]).is_dir()                    # the expired work copy is still there
+    lb.store.close()

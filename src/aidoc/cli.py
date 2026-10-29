@@ -483,7 +483,8 @@ def cmd_sources(args) -> int:
             if args.sources_cmd == "status":
                 out = source_copy.summary(store, cfg)
             else:
-                _recover(store, cfg)
+                if not args.dry_run:          # a dry run writes nothing: recovery (purges, requeues) is a write
+                    _recover(store, cfg)
                 try:
                     out = source_copy.backfill(store, cfg, dry_run=bool(args.dry_run))
                 except source_copy.InsufficientDisk as e:
