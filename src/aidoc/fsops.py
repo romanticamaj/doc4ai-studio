@@ -94,3 +94,56 @@ def replace_dir_three_step(tmp_dir: Path, final_dir: Path, trash_dir: Path) -> N
         remove_tree(trash_dir)                                      # step 3 (recovery cleans if this fails)
     except FsBusyError:
         pass
+
+
+# ---- long paths (spec 2026-10-29 §4.6): source copies can pass 260 characters; every copy I/O goes through these
+LONG_PATH_AT = 240
+_LONG_PREFIX = "\\" * 2 + "?\\"                  # \\?\
+_UNC_LONG_PREFIX = _LONG_PREFIX + "UNC\\"         # \\?\UNC\
+
+
+def long_path(p: Path) -> Path:
+    r"""Windows: an absolute path of LONG_PATH_AT characters or more gets the \\?\ prefix (no reliance on the
+    LongPathsEnabled registry switch); anything else is returned unchanged."""
+    s = str(p)
+    if os.name != "nt" or len(s) < LONG_PATH_AT or s.startswith(_LONG_PREFIX) or not os.path.isabs(s):
+        return Path(p)
+    s = os.path.normpath(s)
+    if s.startswith("\\\\"):
+        return Path(_UNC_LONG_PREFIX + s[2:])
+    return Path(_LONG_PREFIX + s)
+
+
+def plain_path(p: Path) -> Path:
+    r"""Strip a \\?\ prefix (the database and the sidecar store plain paths)."""
+    s = str(p)
+    if s.startswith(_UNC_LONG_PREFIX):
+        return Path("\\\\" + s[len(_UNC_LONG_PREFIX):])
+    if s.startswith(_LONG_PREFIX):
+        return Path(s[len(_LONG_PREFIX):])
+    return Path(p)
+
+
+def _existing_ancestor(p: Path) -> Path | None:
+    p = Path(p)
+    while True:
+        try:
+            if p.exists():
+                return p
+        except OSError:
+            pass
+        if p.parent == p:
+            return None
+        p = p.parent
+
+
+def same_volume(a: Path, b: Path) -> bool:
+    """True when `a` and `b` live on the same volume: st_dev of their nearest existing ancestors; when that cannot
+    be read, the drive letters are compared."""
+    ea, eb = _existing_ancestor(Path(a)), _existing_ancestor(Path(b))
+    if ea is not None and eb is not None:
+        try:
+            return os.stat(ea).st_dev == os.stat(eb).st_dev
+        except OSError:
+            pass
+    return os.path.splitdrive(os.path.abspath(a))[0].lower() == os.path.splitdrive(os.path.abspath(b))[0].lower()
