@@ -221,3 +221,22 @@ def test_retention_never_touches_copies(lib):
     recover_on_startup(lib.store, lib.cfg, log=lambda s: None)
     for d in docs:                                                     # A8: 3/3 still there and matching
         assert file_sha256(Path(d["source_copy_path"])) == d["sha256"]
+
+
+def test_expired_work_copy_is_kept_while_the_document_has_no_copy(lib, monkeypatch):
+    """Verifier V4: retention purged the work copy of a document whose source copy had failed: its last source."""
+    from aidoc.sources import purge_expired_work_copies
+    real = source_copy.shutil.disk_usage
+    monkeypatch.setattr(source_copy.shutil, "disk_usage", lambda p: type(real(p))(real(p).total, real(p).used, 10))
+    src = lib.place("only.pdf")
+    _st, t = lib.convert(src)
+    monkeypatch.setattr(source_copy.shutil, "disk_usage", real)
+    d = lib.doc(t)
+    assert d["source_copy_status"] == "failed"
+    src.unlink()
+    lib.store.update_document(d["id"], work_copy_expires_at=time.time() - 10)
+    assert purge_expired_work_copies(lib.store, time.time()) == 0
+    assert Path(d["work_copy_path"]).is_dir()                       # kept: the only file with this content
+    from aidoc.source_copy import ensure_copy
+    assert ensure_copy(lib.store, lib.cfg, lib.store.get_document(d["id"]))["outcome"] == "copied"
+    assert purge_expired_work_copies(lib.store, time.time()) == 1      # once copied, retention applies again

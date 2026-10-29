@@ -82,9 +82,13 @@ def test_purge_expired(tmp_root):
     store = Store(tmp_root / "data" / "aidoc.db"); w = tmp_root / "data" / "work" / "t"; w.mkdir(parents=True)
     (w / "src.pdf").write_bytes(b"x")
     keep = tmp_root / "data" / "work" / "k"; keep.mkdir(); (keep / "src.pdf").write_bytes(b"y")
-    store.upsert_document(sha256="a" * 64, source_path="a", output_dir="o", engine="e", quality={}, pages=1,
-                          lang="cht", aidoc_version="0.1.0", status="ok", work_copy_path=str(w),
-                          work_copy_expires_at=time.time() - 1)
+    a = store.upsert_document(sha256="a" * 64, source_path="a", output_dir="o", engine="e", quality={}, pages=1,
+                              lang="cht", aidoc_version="0.1.0", status="ok", work_copy_path=str(w),
+                              work_copy_expires_at=time.time() - 1)
+    copy = tmp_root / "source" / "o" / "a"                 # retention applies to documents with a source copy
+    copy.parent.mkdir(parents=True)
+    copy.write_bytes(b"x")
+    store.set_source_copy(a, path=str(copy), status="copied", error=None, size=1, mtime_ns=copy.stat().st_mtime_ns)
     store.upsert_document(sha256="b" * 64, source_path="b", output_dir="o2", engine="e", quality={}, pages=1,
                           lang="cht", aidoc_version="0.1.0", status="ok", work_copy_path=str(keep),
                           work_copy_expires_at=time.time() + 100)

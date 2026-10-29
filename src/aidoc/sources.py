@@ -90,11 +90,16 @@ _UNFINISHED = {"queued", "probing", "converting", "checking"}
 
 
 def purge_expired_work_copies(store, now: float) -> int:
-    """Delete work copies whose retention ended (spec §8.5, work_retention_days); returns how many."""
+    """Delete work copies whose retention ended (spec §8.5, work_retention_days); returns how many. A document
+    without a verified source copy keeps its work copy (it may be the last file with that content; verifier V4):
+    once 重試備份 / backfill copies it, retention applies again."""
+    from aidoc.source_copy import not_copied
     n = 0
     for doc in store.list_documents():
         path, exp = doc.get("work_copy_path"), doc.get("work_copy_expires_at")
         if not path or exp is None or exp >= now:
+            continue
+        if not_copied(doc):
             continue
         p = Path(path)
         task = store.get_task(p.name)                 # data/work/<task_id>: a retried task reuses it

@@ -93,7 +93,7 @@ def test_serverless_dry_run_writes_nothing(tmp_root, fixtures, monkeypatch, caps
     os.unlink(d["source_copy_path"])
     lb.store.set_source_copy(d["id"], path=None, status=None, error=None)
     lb.store.update_document(d["id"], work_copy_expires_at=time.time() - 10)
-    rows = lambda: [tuple(r) for r in lb.store.con.execute("SELECT * FROM documents ORDER BY id")]  # noqa: E731
+    rows = lambda: [tuple(r) for r in lb.store.con.execute("SELECT * FROM documents ORDER BY id")]
     before_rows = rows()
 
     def tree():
