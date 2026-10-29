@@ -21,4 +21,7 @@ def tmp_root(tmp_path, monkeypatch):
     monkeypatch.delenv("AIDOC_FAKE_ENGINES", raising=False)
     # use the repo's aidoc.toml (spike decisions live there)
     monkeypatch.setenv("AIDOC_CONFIG", str(REPO_ROOT / "aidoc.toml"))
+    # ... but never its Doc4AI folder: a live root_dir (e.g. D:\doc4ai) must not receive test copies
+    # (spec 2026-10-29 §12.4); the env override beats general.root_dir
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(root))
     return root

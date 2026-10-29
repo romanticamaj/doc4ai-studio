@@ -92,6 +92,8 @@ export default defineConfig({
       AIDOC_DATA: data,
       AIDOC_ENVS: path.join(root, "envs"), // the VLM connection test writes envs/vlm/.ready: never the project's
       AIDOC_CONFIG: config,
+      // the Doc4AI folder (out/ + source/) is the run's temp dir: never the platform default C:\doc4ai / ~/doc4ai
+      AIDOC_LIBRARY_ROOT: root,
       PYTHONUTF8: "1",
     },
   }, {

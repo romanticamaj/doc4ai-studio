@@ -1,19 +1,88 @@
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
+REPO = Path(__file__).resolve().parents[1]
+
+
+# ---- Doc4AI folder isolation (spec 2026-10-29 §12.4): no test may write into the repo's source/, the platform
+# default Doc4AI folder or the Doc4AI folder the repo's aidoc.toml names. Every test gets its own
+# AIDOC_LIBRARY_ROOT (tests of the resolution rules opt out with @pytest.mark.library_root_env), and the session
+# fails when any of those folders changed (or was created).
+
+@pytest.fixture(autouse=True)
+def _isolated_library_root(request, tmp_path, monkeypatch):
+    if request.node.get_closest_marker("library_root_env") is None:
+        monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_path / "library"))
+
+
+def _guarded_source_dirs() -> list[Path]:
+    from aidoc.config import default_library_root
+    # the repo's source/, the platform default Doc4AI folder (C:\doc4ai / ~/doc4ai, user decision 2026-10-29: it
+    # must not even be created by a test) and the root_dir the repo's aidoc.toml names
+    dirs = [REPO / "source", default_library_root()]
+    try:
+        if sys.version_info >= (3, 11):
+            import tomllib
+        else:  # pragma: no cover
+            import tomli as tomllib
+        with open(REPO / "aidoc.toml", "rb") as f:
+            rd = ((tomllib.load(f).get("general") or {}).get("root_dir") or "").strip()
+        if rd:
+            dirs.append(Path(rd) / "source")
+    except (OSError, ValueError):
+        pass
+    return dirs
+
+
+def _snapshot(d: Path) -> set[tuple[str, int, int]]:
+    out = set()
+    if not d.exists():
+        return out
+    out.add(("<exists>", 0, 0))                    # creating an empty folder counts as a change too
+    for dirpath, dirs, files in os.walk(d):
+        out.update((("<dir>/" + (Path(dirpath) / n).relative_to(d).as_posix()), 0, 0) for n in dirs)
+        for name in files:
+            p = Path(dirpath) / name
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            out.add((p.relative_to(d).as_posix(), st.st_size, st.st_mtime_ns))
+    return out
+
+
+def pytest_sessionstart(session):
+    session.config._aidoc_source_guard = {str(d): _snapshot(d) for d in _guarded_source_dirs()}
+
+
+def pytest_sessionfinish(session, exitstatus):
+    before = getattr(session.config, "_aidoc_source_guard", None)
+    if before is None:
+        return
+    changed = [d for d, snap in before.items() if _snapshot(Path(d)) != snap]
+    if changed:
+        msg = f"\nSOURCE-COPY ISOLATION GUARD: a test changed {', '.join(changed)} (spec 2026-10-29 §12.4)\n"
+        sys.stderr.write(msg)
+        tr = session.config.pluginmanager.get_plugin("terminalreporter")
+        if tr is not None:
+            tr.write_line(msg.strip(), red=True)
+        session.exitstatus = 1
 
 
 @pytest.fixture
 def tmp_root(tmp_path, monkeypatch):
-    """Isolated project root + data dir for a test."""
+    """Isolated project root + data dir for a test; its Doc4AI folder is the root itself (out/ and source/)."""
     root = tmp_path / "root"
     (root / "data").mkdir(parents=True)
     (root / "out").mkdir()
     monkeypatch.setenv("AIDOC_ROOT", str(root))
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(root))
     monkeypatch.setenv("AIDOC_DATA", str(root / "data"))
     monkeypatch.delenv("AIDOC_CONFIG", raising=False)
     monkeypatch.delenv("AIDOC_TOKEN", raising=False)

@@ -81,6 +81,8 @@ def env_for_config(config: str, out: Path | None = None) -> dict[str, str]:
         env["AIDOC_DATA"] = str(Path(out) / f"data-{config}")
         env["AIDOC_MODELS"] = str(paths.models_dir())
         env["AIDOC_CONFIG"] = str(Path(out) / f"aidoc-{config}.toml")
+        # the run's own Doc4AI folder: benchmark source copies never land in the user's library (C:\doc4ai)
+        env["AIDOC_LIBRARY_ROOT"] = str(Path(out) / f"lib-{config}")
     return env
 
 

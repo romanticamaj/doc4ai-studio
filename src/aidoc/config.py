@@ -16,9 +16,21 @@ else:  # pragma: no cover
     import tomli as tomllib
 
 
+ROOT_DIR_MAX = 200          # leaves room for \source\<159>\<150 + suffix> (spec 2026-10-29 §3.4 V6)
+LIBRARY_ROOT_ENV = "AIDOC_LIBRARY_ROOT"
+
+
+def default_library_root() -> Path:
+    """The Doc4AI folder when none is set (user decision 2026-10-29): C:\\doc4ai on Windows, ~/doc4ai elsewhere."""
+    if sys.platform == "win32":
+        return Path("C:\\doc4ai")
+    return Path("~/doc4ai").expanduser()
+
+
 @dataclass
 class General:
     output_dir: str = "out"
+    root_dir: str = ""                 # Doc4AI folder; "" = parent of output_dir (spec 2026-10-29 §3.2)
     lang: str = "cht"
     work_retention_days: int = 7
     enable_audio: bool = False
@@ -256,6 +268,114 @@ def _check_mcp(cfg: AidocConfig, where: Path) -> None:
                                 f"mcp.allow_drive_root): any file on that drive can be converted by path")
 
 
+# ---- Doc4AI folder validation (spec 2026-10-29 §3.4): one rule set for load_config and the API.
+# The messages are the UI texts; the API passes them through unchanged.
+ROOT_MSG_ABSOLUTE = "必須是本機的絕對路徑"
+ROOT_MSG_LOCAL = "必須是本機的絕對路徑（不支援網路路徑、\\\\?\\ 或 \\\\.\\ 路徑）"
+ROOT_MSG_DRIVE = "不能是整個磁碟"
+ROOT_MSG_INTERNAL = "不能放在 Doc4AI 的內部資料夾（data\\）裡"
+ROOT_MSG_TOO_LONG = f"路徑太長（最多 {ROOT_DIR_MAX} 個字元）"
+ROOT_MSG_UNWRITABLE = "無法寫入這個資料夾"
+
+
+def _norm(p: Path | str) -> str:
+    return os.path.normcase(os.path.realpath(str(p)))
+
+
+def _inside(child: str, parent: str) -> bool:
+    try:
+        return os.path.commonpath([child, parent]) == parent
+    except ValueError:                       # different drives
+        return False
+
+
+def root_dir_problem(value: str, *, data_dir: Path, envs_dir: Path) -> str | None:
+    """V1-V4 and V6 of spec 2026-10-29 §3.4 (static checks; no filesystem writes). "" is always fine."""
+    if not isinstance(value, str):
+        return ROOT_MSG_ABSOLUTE
+    if value == "":
+        return None
+    if len(value) > ROOT_DIR_MAX:                                           # V6
+        return ROOT_MSG_TOO_LONG
+    if value.replace("\\", "/").startswith("//"):                           # V2: UNC, \\?\, \\.\
+        return ROOT_MSG_LOCAL
+    p = Path(value)
+    if not p.is_absolute():                                                 # V1
+        return ROOT_MSG_ABSOLUTE
+    if p.parent == p or Path(_norm(p)).parent == Path(_norm(p)):            # V3
+        return ROOT_MSG_DRIVE
+    inner = [_norm(p), _norm(p / "out"), _norm(p / "source")]
+    for internal in (_norm(data_dir), _norm(envs_dir)):                     # V4
+        if any(_inside(x, internal) for x in inner):
+            return ROOT_MSG_INTERNAL
+    data = _norm(data_dir)
+    if any(_inside(data, x) for x in inner[1:]):
+        return ROOT_MSG_INTERNAL
+    return None
+
+
+def _probe(d: Path) -> None:
+    probe = d / f".aidoc-probe-{os.urandom(4).hex()}"
+    with open(probe, "xb") as f:
+        f.write(b"aidoc")
+    probe.unlink()
+
+
+def root_dir_writable(root: Path, *, create: bool) -> str | None:
+    """V5. create=True (PUT /settings): make root/out and root/source and write + delete a probe file in each.
+    create=False (root-check, load): nothing is created; the nearest existing ancestor must accept a probe file
+    (written and removed)."""
+    root = Path(root)
+    try:
+        if create:
+            for sub in ("out", "source"):
+                d = root / sub
+                d.mkdir(parents=True, exist_ok=True)
+                _probe(d)
+            return None
+        anc = root
+        while not anc.exists():
+            if anc.parent == anc:
+                return ROOT_MSG_UNWRITABLE
+            anc = anc.parent
+        if not anc.is_dir():
+            return f"{ROOT_MSG_UNWRITABLE}（{anc} 不是資料夾）"
+        if anc == root:
+            _probe(anc)                      # the folder exists: files must be writable in it
+        else:
+            # it would be created here: a folder must be creatable (C:\ lets users make folders, not files)
+            d = anc / f".aidoc-probe-{os.urandom(4).hex()}"
+            d.mkdir()
+            _probe(d)
+            d.rmdir()
+        return None
+    except OSError as e:
+        return f"{ROOT_MSG_UNWRITABLE}（{e.strerror or e}）"
+
+
+def _check_general(cfg: AidocConfig, where: Path, raw_general: dict) -> None:
+    """[general] root_dir and AIDOC_LIBRARY_ROOT: fatal problems refuse to start, the rest are warnings
+    (spec 2026-10-29 §3.4). Loading never writes anything (no probe file): the folder is created on first use."""
+    rd = cfg.general.root_dir
+    if not isinstance(rd, str):
+        raise ConfigError(f"{where}: general.root_dir must be a string")
+    envs = paths.envs_dir()
+    for label, value in (("general.root_dir", rd), (LIBRARY_ROOT_ENV, os.environ.get(LIBRARY_ROOT_ENV, "").strip())):
+        problem = root_dir_problem(value, data_dir=cfg.data_dir, envs_dir=envs)
+        if problem:
+            src = where if label == "general.root_dir" else "environment"
+            raise ConfigError(f"{src}: {label} = {value!r}: {problem}")
+    if "output_dir" in raw_general:            # the one-line migration note (user decision 2026-10-29)
+        cfg.warnings.append(f"general.output_dir = {cfg.general.output_dir!r} is no longer used: new conversions "
+                            f"go to {cfg.output_root()} (Doc4AI folder {cfg.library_root()}); converted documents "
+                            f"stay where they are")
+    anc = cfg.library_root()
+    while not anc.exists() and anc.parent != anc:
+        anc = anc.parent
+    if not anc.is_dir():
+        cfg.warnings.append(f"Doc4AI folder {cfg.library_root()}: {ROOT_MSG_UNWRITABLE}（{anc} 不是資料夾）")
+
+
 _SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp,
              "preview": Preview, "compat": Compat, "vlm": Vlm}
 
@@ -274,9 +394,34 @@ class AidocConfig:
     data_dir: Path = field(default_factory=paths.data_dir)
     warnings: list[str] = field(default_factory=list)            # load-time problems that were ignored
 
+    # ---- the Doc4AI folder (spec 2026-10-29 §3.2): computed on every call, so a hot-applied setting counts at once
+    def root_from_env(self) -> bool:
+        return bool(os.environ.get(LIBRARY_ROOT_ENV, "").strip())
+
+    def root_configured(self) -> bool:
+        return self.root_from_env() or bool((self.general.root_dir or "").strip())
+
+    def _configured_root(self) -> Path | None:
+        env = os.environ.get(LIBRARY_ROOT_ENV, "").strip()
+        if env:
+            return Path(env)
+        rd = (self.general.root_dir or "").strip()
+        return Path(rd) if rd else None
+
+    def library_root(self) -> Path:
+        """AIDOC_LIBRARY_ROOT > general.root_dir > the platform default (C:\\doc4ai, ~/doc4ai): user decision
+        2026-10-29, which replaced the spec's "parent of output_dir" rule."""
+        root = self._configured_root()
+        return root if root is not None else default_library_root()
+
     def output_root(self) -> Path:
-        p = Path(self.general.output_dir)
-        return p if p.is_absolute() else self.root / p
+        """Where new jobs write: always <root>/out. general.output_dir is a legacy key that is no longer used for new
+        conversions (existing documents keep their absolute output_dir)."""
+        return self.library_root() / "out"
+
+    def source_root(self) -> Path:
+        """Where source copies are written (the value at the time of writing; spec 2026-10-29 §4.4)."""
+        return self.library_root() / "source"
 
     def to_dict(self) -> dict:
         return {name: asdict(getattr(self, name)) for name in _SECTIONS}
@@ -306,6 +451,7 @@ def load_config(path: Path | None = None) -> AidocConfig:
         if section not in _SECTIONS:
             raise ValueError(f"unknown config section {section}")
         setattr(cfg, section, _build(section, _SECTIONS[section], data))
+    _check_general(cfg, p, raw.get("general") or {})
     _check_mcp(cfg, p)
     _check_vlm(cfg, p)
     return cfg

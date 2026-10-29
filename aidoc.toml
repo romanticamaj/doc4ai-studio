@@ -1,5 +1,6 @@
 [general]
-output_dir = "out"            # relative to project root
+# root_dir = ""                # Doc4AI folder (absolute path): out\ and source\ go under it; empty = C:\doc4ai (Windows), ~/doc4ai
+output_dir = "out"            # legacy: no longer used for new conversions (they go to <Doc4AI folder>\out)
 lang = "cht"
 work_retention_days = 7
 enable_audio = false

@@ -48,7 +48,8 @@ default-groups = ["dev", "bench"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: needs installed engine envs and a GPU"]
+markers = ["slow: needs installed engine envs and a GPU",
+           "library_root_env: the test manages AIDOC_LIBRARY_ROOT itself (no isolated library root)"]
 addopts = "-m 'not slow'"
 timeout = 300
 
