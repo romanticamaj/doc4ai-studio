@@ -286,7 +286,10 @@ export function useRescan() {
       api.post<{ orphaned: number; assessed: number; page_map_incomplete: number; page_quality: number }>(
         "/api/documents/rescan",
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["documents"] });
+      qc.invalidateQueries({ queryKey: qk.sources() });       // newly orphaned records change what 清除 deletes
+    },
   });
 }
 

@@ -22,3 +22,9 @@ test("only 清除 inside the dialog confirms; 取消 closes", async () => {
   await userEvent.click(screen.getByRole("button", { name: "清除" }));
   expect(onConfirm).toHaveBeenCalledTimes(1);
 });
+
+test("清除 waits while the numbers are loading", () => {
+  render(<ConfirmPurgeDialog open loading records={2} copies={0} bytes={0} onOpenChange={() => {}} onConfirm={() => {}} />);
+  expect(screen.getByRole("button", { name: "清除" })).toBeDisabled();
+  expect(screen.getByText(/正在確認/)).toBeInTheDocument();
+});

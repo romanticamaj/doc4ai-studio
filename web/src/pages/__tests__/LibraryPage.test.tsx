@@ -120,3 +120,36 @@ test("without copies the second sentence is absent", async () => {
   expect(dialog).toHaveTextContent("清除 1 筆紀錄？");
   expect(dialog).not.toHaveTextContent("原始檔備份");
 });
+
+test("the confirmation always shows fresh copy numbers: they are fetched when it opens (browser B1)", async () => {
+  let sourcesCalls = 0;
+  const doc = (id: string) => ({
+    id, sha256: "x", source_path: `C:/in/${id}.pdf`, output_dir: `C:/out/${id}`, engine: "docling", pages: 1, lang: "cht",
+    aidoc_version: "0.1.0", created_at: 1, status: "orphaned", stem: id, flags: [], page_summary: null,
+    quality: { score: 1, level: "ok", reasons: [], metrics: {} }, source_copy: { status: "copied", present: true },
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.startsWith("/api/sources")) {
+      sourcesCalls += 1;   // the first answer predates 重新掃描: no orphans yet
+      const n = sourcesCalls === 1 ? 0 : 2;
+      return new Response(JSON.stringify({ root_dir: "C:/doc4ai", source_dir: "C:/doc4ai/source", documents: 0, copied: 0, not_copied: 0, failed: 0, unrecoverable: 0, file_missing: 0, bytes: 0, free_bytes: 1, orphaned_copies: { count: n, bytes: n * 1024 * 1024 } }), { status: 200 });
+    }
+    if (url.includes("status=orphaned")) return new Response(JSON.stringify({ documents: [doc("o1"), doc("o2")] }), { status: 200 });
+    return new Response(JSON.stringify({ documents: [] }), { status: 200 });
+  });
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={["/library"]}>
+        <Routes>
+          <Route path="/library" element={<LibraryPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(sourcesCalls).toBe(1));
+  await userEvent.click(await screen.findByRole("button", { name: "清除" }));
+  const dialog = await screen.findByTestId("confirm-purge");
+  await waitFor(() => expect(dialog).toHaveTextContent("也會刪除這些文件在 source\\ 的原始檔備份（2 個檔案，2.0 MB）"));
+  expect(within(dialog).getByRole("button", { name: "清除" })).toBeEnabled();
+});

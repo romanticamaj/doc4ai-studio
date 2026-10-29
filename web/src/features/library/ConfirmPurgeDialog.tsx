@@ -16,6 +16,7 @@ export function ConfirmPurgeDialog({
   records,
   copies,
   bytes,
+  loading,
   pending,
   onConfirm,
 }: {
@@ -24,6 +25,8 @@ export function ConfirmPurgeDialog({
   records: number;
   copies: number;
   bytes: number;
+  /** the copy numbers are being fetched: 清除 waits for them (the warning must be current) */
+  loading?: boolean;
   pending?: boolean;
   onConfirm: () => void;
 }) {
@@ -33,13 +36,13 @@ export function ConfirmPurgeDialog({
       <DialogContent data-testid="confirm-purge">
         <DialogHeader>
           <DialogTitle>{t.title}</DialogTitle>
-          <DialogDescription>{t.body}</DialogDescription>
+          <DialogDescription>{loading ? "正在確認要一併刪除的原始檔備份…" : t.body}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button variant="destructive" disabled={pending} onClick={onConfirm}>
+          <Button variant="destructive" disabled={pending || loading} onClick={onConfirm}>
             清除
           </Button>
         </DialogFooter>

@@ -96,7 +96,16 @@ export default function LibraryPage() {
             <Button size="sm" variant="outline" onClick={() => set({ status: "orphaned" })}>
               查看
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setConfirmPurge(true)} disabled={purge.isPending}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                // a destructive action shows numbers fetched now, never a cached answer from before 重新掃描 (B1)
+                void sources.refetch();
+                setConfirmPurge(true);
+              }}
+              disabled={purge.isPending}
+            >
               清除
             </Button>
           </div>
@@ -108,6 +117,7 @@ export default function LibraryPage() {
         records={nOrphaned}
         copies={sources.data?.orphaned_copies?.count ?? 0}
         bytes={sources.data?.orphaned_copies?.bytes ?? 0}
+        loading={sources.isFetching || !sources.data}
         pending={purge.isPending}
         onConfirm={doPurge}
       />
