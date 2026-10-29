@@ -346,3 +346,32 @@ def test_plain_and_long_path_round_trip():
     if sys.platform == "win32":
         assert str(lp).startswith("\\\\?\\")
     assert fsops.plain_path(lp) == p and fsops.long_path(Path("C:\\short")) == Path("C:\\short")
+
+
+def test_copy_never_overwrites_a_file_that_appeared_meanwhile(tmp_path, monkeypatch):
+    """Verifier V2: another writer placed the target between planning and writing -> collision, theirs untouched."""
+    src = tmp_path / "a.pdf"
+    src.write_bytes(b"mine")
+    dst = tmp_path / "source" / "a" / "a.pdf"
+    real = source_copy._write_part
+
+    def racing(s, tmp):
+        real(s, tmp)
+        dst.write_bytes(b"theirs")                   # lands after our temp file, before our placement
+    monkeypatch.setattr(source_copy, "_write_part", racing)
+    with pytest.raises(CopyError) as e:
+        copy_verified(src, dst, _sha(b"mine"))
+    assert e.value.code == "collision" and dst.read_bytes() == b"theirs"
+    assert [p.name for p in dst.parent.iterdir()] == ["a.pdf"]          # no temp left
+
+
+def test_link_never_overwrites_either(tmp_path):
+    a = tmp_path / "s" / "one" / "one.pdf"
+    a.parent.mkdir(parents=True)
+    a.write_bytes(b"data")
+    dst = tmp_path / "s" / "two" / "two.pdf"
+    dst.parent.mkdir(parents=True)
+    dst.write_bytes(b"theirs")
+    with pytest.raises(CopyError) as e:
+        link_or_copy(a, dst, _sha(b"data"))
+    assert e.value.code == "collision" and dst.read_bytes() == b"theirs"

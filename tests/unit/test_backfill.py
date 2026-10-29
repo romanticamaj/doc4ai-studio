@@ -299,3 +299,36 @@ def test_backfill_hardlinks_to_another_documents_verified_copy(tmp_root, fixture
     cb = lb.store.get_document(b["id"])["source_copy_path"]
     assert os.path.samefile(cb, a["source_copy_path"]) and os.stat(cb).st_nlink == 2
     lb.store.close()
+
+
+def test_backfill_racing_a_conversion_for_the_same_target_keeps_the_conversions_copy(tmp_root, fixtures, monkeypatch):
+    """Verifier V2: B (backfill, another out root, same stem) plans source/rep/rep.pdf; before B writes, conversion A
+    lands its copy there. B must neither overwrite nor delete A's file."""
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    pdf = (fixtures / "text.pdf").read_bytes()
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root / "old"))
+    _, tb = lb.convert(lb.place("rep.pdf", content=pdf + b"%B\n"))
+    b = lb.doc(tb)
+    _pre_v7_doc(lb.store, lb.store.get_document(b["id"]))
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root))
+    from aidoc.config import load_config
+    cfg = load_config()
+    a_src = tmp_root / "in2" / "rep.pdf"
+    a_src.parent.mkdir()
+    a_src.write_bytes(pdf + b"%A\n")
+    real_plan = source_copy.plan_path
+    state = {}
+
+    def plan(store, root, **kw):
+        res = real_plan(store, root, **kw)
+        if kw.get("doc_id") == b["id"] and not state:
+            _, ta = lb.convert(a_src)                    # another worker converts A meanwhile
+            state["a"] = lb.doc(ta)
+        return res
+    monkeypatch.setattr(source_copy, "plan_path", plan)
+    row = ensure_copy(lb.store, cfg, lb.store.get_document(b["id"]))
+    a = lb.store.get_document(state["a"]["id"])
+    assert a["source_copy_status"] == "copied" and source_copy.file_matches(Path(a["source_copy_path"]), a["sha256"])
+    assert row["outcome"] == "failed" and row["detail"].startswith("collision")
+    assert lb.store.get_document(b["id"])["source_copy_status"] == "failed"         # B retries later
+    lb.store.close()

@@ -187,9 +187,30 @@ def _write_part(src: Path, tmp: Path) -> None:
         fin.close()
 
 
+def _place(tmp: Path, dst: Path) -> None:
+    """Move the verified temp file to `dst` without ever overwriting: a file another writer put there meanwhile
+    (a conversion and a backfill planning the same name) makes this a collision and stays untouched (verifier V2).
+    A hardlink is atomic and refuses an existing name; where links are not supported, Windows' rename refuses one
+    too."""
+    ltmp, ldst = fsops.long_path(tmp), fsops.long_path(dst)
+    try:
+        os.link(ltmp, ldst)
+    except FileExistsError:
+        raise CopyError("collision", f"{dst} was created by another writer meanwhile") from None
+    except OSError:
+        if os.name != "nt" and os.path.lexists(ldst):
+            raise CopyError("collision", f"{dst} was created by another writer meanwhile") from None
+        try:
+            fsops.retry_fs(lambda: os.rename(ltmp, ldst))      # Windows: never replaces an existing file
+        except FileExistsError:
+            raise CopyError("collision", f"{dst} was created by another writer meanwhile") from None
+        return
+    os.unlink(ltmp)
+
+
 def copy_verified(src: Path, dst: Path, expected_sha: str) -> tuple[int, int]:
     """Copy `src` to `dst` atomically and verified: a temp file in dst's folder, its sha256 computed by reading the
-    written file again, then os.replace. Keeps the original's mtime. Returns (size, mtime_ns of dst).
+    written file again, then a non-overwriting placement (_place). Keeps the original's mtime. Returns (size, mtime_ns of dst).
     Raises CopyError(no_space | unreadable | sha_mismatch | io_error); no temp file is ever left behind."""
     src, dst = Path(src), fsops.plain_path(Path(dst))
     try:
@@ -213,7 +234,7 @@ def copy_verified(src: Path, dst: Path, expected_sha: str) -> tuple[int, int]:
         if not file_matches(tmp, expected_sha):
             raise CopyError("sha_mismatch", f"{src} (the copy does not have the document's sha256)")
         try:
-            fsops.retry_fs(lambda: os.replace(fsops.long_path(tmp), fsops.long_path(dst)))
+            _place(tmp, dst)
             os.utime(fsops.long_path(dst), ns=(st.st_atime_ns, st.st_mtime_ns))
             out = os.stat(fsops.long_path(dst))
         except OSError as e:
@@ -241,6 +262,8 @@ def link_or_copy(existing: Path, dst: Path, expected_sha: str) -> str:
     try:
         os.link(fsops.long_path(existing), fsops.long_path(dst))
         return "linked"
+    except FileExistsError:
+        raise CopyError("collision", f"{dst} was created by another writer meanwhile") from None
     except OSError:
         pass                                               # other volume, FAT/exFAT, no permission: copy
     copy_verified(existing, dst, expected_sha)
@@ -539,7 +562,7 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
         try:
             _set_status(store, doc, emit, path=planned.path, status="copied", error=None, size=size,
                         mtime_ns=mtime_ns)
-        except Exception:  # noqa: BLE001  unique-index race: the path is someone else's, the file is not ours to keep
+        except Exception:  # noqa: BLE001  unique-index race: the file is ours (placement never overwrites), drop it
             try:
                 remove_copy(planned.path)
             except OSError:
