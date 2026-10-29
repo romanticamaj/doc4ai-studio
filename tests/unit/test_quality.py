@@ -231,8 +231,8 @@ def test_a_run_of_three_misplaced_pages_is_misaligned(monkeypatch, tmp_path):
     """A local shift misplaces consecutive pages; the legitimate misses on the real books were isolated (longest run
     over every page: 2 in the orthopaedic book, 1 in Head First Android)."""
     import aidoc.quality as qm
-    result = dict(sampled=40, decidable=39, aligned=35, ratio=0.8974, misplaced=[5, 6, 7, 8], max_misplaced_run=4,
-                  excluded_pages=0)
+    result = {"sampled": 40, "decidable": 39, "aligned": 35, "ratio": 0.8974, "misplaced": [5, 6, 7, 8],
+              "max_misplaced_run": 4, "excluded_pages": 0}
     monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: dict(result))
     md = _doc([GOOD_EN] * 40)
     for quick in (True, False):

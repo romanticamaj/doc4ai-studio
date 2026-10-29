@@ -289,7 +289,7 @@ def make_html(path):
         f"<tr><td>1</td><td>2</td></tr></table></body></html>", encoding="utf-8")
 
 
-_FURNITURE_WORDS = ("patient joint muscle tendon ligament examination movement passive active resisted painful "
+_FURNITURE_WORDS = ("patient joint muscle tendon ligament examination movement passive active resisted painful "  # noqa: SIM905  one readable string
                     "capsular pattern lesion treatment injection friction massage manipulation traction posture "
                     "shoulder elbow wrist hip knee ankle spine nerve root dura sign test history onset "
                     "gradual sudden morning evening stiffness swelling warmth weakness range limited full").split()

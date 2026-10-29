@@ -69,7 +69,7 @@ def test_source_copy_with_wrong_sha_is_skipped(tmp_path):
 
 
 def test_source_copy_trusted_by_size_and_mtime(tmp_path, monkeypatch):
-    doc, orig, wc, copy = _setup(tmp_path)
+    doc, _orig, wc, _copy = _setup(tmp_path)
     (wc / "src.pdf").unlink()
     calls = []
     monkeypatch.setattr(sources, "file_sha256", lambda p: calls.append(p) or "x")
@@ -79,7 +79,7 @@ def test_source_copy_trusted_by_size_and_mtime(tmp_path, monkeypatch):
 def test_source_copy_drift_rehashed_and_refreshed(tmp_path):
     store = Store(tmp_path / "db" / "aidoc.db")
     data = b"%PDF-1.4 drift"
-    doc, orig, wc, copy = _setup(tmp_path, data)
+    doc, _orig, wc, copy = _setup(tmp_path, data)
     did = store.upsert_document(sha256=doc["sha256"], source_path=doc["source_path"], output_dir="C:\\out\\a",
                                 engine="fake", quality={"level": "ok"}, pages=1, lang="cht", aidoc_version="0",
                                 status="ok")
@@ -93,7 +93,7 @@ def test_source_copy_drift_rehashed_and_refreshed(tmp_path):
 
 
 def test_pdf_only(tmp_path):
-    doc, orig, wc, copy = _setup(tmp_path, b"PK docx bytes", ".docx")
+    doc, _orig, _wc, _copy = _setup(tmp_path, b"PK docx bytes", ".docx")
     assert resolve_source(doc).kind == "work_copy"
     assert resolve_source(doc, pdf_only=True) is None
 

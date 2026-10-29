@@ -94,7 +94,7 @@ def test_flag_reasons_cover_every_page_level_reason():
 
 def test_bench_runs_have_their_own_doc4ai_folder(tmp_path):
     """Root cause of a guard hit (2026-10-29): bench subprocesses inherited no library root and wrote source copies
-    into the platform default C:\doc4ai. Each config now gets <out>/lib-<config>."""
+    into the platform default C:/doc4ai. Each config now gets <out>/lib-<config>."""
     from bench.run import env_for_config
     env = env_for_config("auto", tmp_path)
     assert env["AIDOC_LIBRARY_ROOT"] == str(tmp_path / "lib-auto")
