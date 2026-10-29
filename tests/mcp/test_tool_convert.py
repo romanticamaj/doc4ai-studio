@@ -98,7 +98,13 @@ def test_convert_document_wait_and_progress(mcp_server, mcp_env, fixtures):
     async def progress(p, total, message):
         seen.append((p, total, message))
     import threading
-    threading.Timer(0.5, mcp_env.ctx.queue.process_next).start()          # the worker is off in tests: run one task
+    import time
+
+    def run_one() -> None:                    # the worker is off in tests: run the one task once the tool queued it
+        deadline = time.time() + 20           # (a fixed 0.5 s timer lost the race under a loaded full-suite run)
+        while time.time() < deadline and mcp_env.ctx.queue.process_next() is None:
+            time.sleep(0.1)
+    threading.Thread(target=run_one, daemon=True).start()
     out = _out(mcp_call(mcp_server, raw, "convert_document", {"filename": "text.pdf", "content_base64": _b64(fixtures / "text.pdf"),
                                                               "wait_seconds": 20}, progress=progress))
     assert out["status"] == "done" and out["doc_id"]
