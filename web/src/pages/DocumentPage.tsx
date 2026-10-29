@@ -135,6 +135,7 @@ export default function DocumentPage() {
           version={doc.created_at}
           sourceUrl={sourceUrl}
           ext={extOf(doc.source_path)}
+          sourceAvailable={showSource}
           renderPdf={(url) => (
             <PdfViewer
               ref={left}

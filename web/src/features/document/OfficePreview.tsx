@@ -31,6 +31,7 @@ export function OfficePreview({
   version,
   sourceUrl,
   ext,
+  sourceAvailable = true,
   renderPdf,
 }: {
   docId: string;
@@ -38,6 +39,8 @@ export function OfficePreview({
   version: number | string;
   sourceUrl: string;
   ext: string;
+  /** false: no work copy, source copy or original resolves — a download would only fetch a 410 body (B2) */
+  sourceAvailable?: boolean;
   renderPdf: (url: string) => React.ReactNode;
 }) {
   const request = useRequestPreview(docId);
@@ -49,12 +52,16 @@ export function OfficePreview({
     }
   }, [preview.status, request]);
 
-  const download = (
+  const download = sourceAvailable ? (
     <Button variant="outline" size="sm" asChild>
       <a href={sourceUrl} download>
         <Download /> 下載原始檔
       </a>
     </Button>
+  ) : (
+    <span data-testid="source-gone-note" className="self-center text-xs text-muted-foreground">
+      原始檔、工作副本與備份都不在了，無法下載原始檔
+    </span>
   );
 
   if (preview.status === "ready") {

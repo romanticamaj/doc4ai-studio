@@ -64,3 +64,17 @@ test("a failed conversion can be retried and keeps the original downloadable", a
   const init = fetchSpy.mock.calls[0][1] as RequestInit;
   expect(JSON.parse(String(init.body))).toEqual({ retry: true });
 });
+
+test("no source left: no 下載原始檔 (it would download a 410 body), and it says why (browser B2)", () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("{}", { status: 202 }));
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <OfficePreview docId="d1" preview={{ status: "failed", reason: "soffice_missing" }} version={1} sourceUrl="/api/documents/d1/source"
+          ext="docx" sourceAvailable={false} renderPdf={() => null} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(screen.queryByRole("link", { name: /下載原始檔/ })).not.toBeInTheDocument();
+  expect(screen.getByTestId("source-gone-note")).toHaveTextContent("原始檔、工作副本與備份都不在了");
+});
