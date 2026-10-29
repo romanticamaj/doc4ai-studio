@@ -484,8 +484,8 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
     """One document through rows 0-5 of spec §7.2 -> {id, stem, outcome, from, size, detail}. Without dry_run the
     DB, the sidecar's source_copy key and (on a status change) a document.source_copy event are written. dry_run
     reads and hashes candidates but writes nothing at all."""
-    row = {"id": doc["id"], "stem": Path(doc["output_dir"]).name, "outcome": None, "from": None, "size": None,
-           "detail": None}
+    row = {"id": doc["id"], "stem": Path(doc["output_dir"]).name, "source": doc.get("source_path"),
+           "outcome": None, "from": None, "size": None, "detail": None}
     if doc.get("status") == "orphaned":
         row["outcome"] = "skipped_orphaned"
         return row

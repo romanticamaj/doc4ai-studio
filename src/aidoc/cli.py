@@ -73,6 +73,19 @@ def build_parser() -> argparse.ArgumentParser:
     vf.add_argument("--sample", type=int, default=0, help="alignment spot-check pages (default 0 = every page)")
     vf.add_argument("--lang", choices=["cht", "en"], default="cht", help="wording of the summary / HTML")
     vf.add_argument("--allow-unverifiable", action="store_true", help="exit 0 instead of 3 when unverifiable")
+    so = sub.add_parser("sources", help="source copies under the Doc4AI folder: status, backfill",
+                        description="Exit codes (backfill): 0 every document has a verified copy, 3 some cannot be "
+                                    "recovered (original gone or changed), 1 unreadable / failed / server error, "
+                                    "4 usage.")
+    so_sub = so.add_subparsers(dest="sources_cmd")
+    for name, help_ in (("status", "counts of copied / not copied documents"),
+                        ("backfill", "copy what can still be proven (sha256) for converted documents")):
+        sp = so_sub.add_parser(name, help=help_)
+        if name == "backfill":
+            sp.add_argument("--dry-run", action="store_true", help="report only; write nothing")
+        sp.add_argument("--json", action="store_true", help="print the JSON report")
+        sp.add_argument("--token", help="API token of a running server (default: AIDOC_TOKEN, aidoc.toml server.token)")
+    so.set_defaults(token=None, json=False, dry_run=False)
     s = sub.add_parser("setup", help="install an engine env, download models, self-check")
     s.add_argument("engine", choices=ENGINE_CHOICES + ["all"])
     return p
@@ -395,6 +408,102 @@ def _server_error_text(e, server=None) -> str:
     return f"error: {e} {e.body if isinstance(e.body, dict) else ''}".rstrip()
 
 
+# ---- aidoc sources status|backfill (spec 2026-10-29 §7.4, §10.3)
+EXIT_SOURCES_OK, EXIT_SOURCES_FAILED, EXIT_SOURCES_UNRECOVERABLE, EXIT_USAGE = 0, 1, 3, 4
+_OUTCOME_LABELS = (("copied", "copied"), ("already_present", "already present"),
+                   ("missing_original", "missing original"), ("sha_mismatch", "sha mismatch"),
+                   ("unreadable", "unreadable"), ("failed", "failed"), ("skipped_orphaned", "skipped (orphaned)"))
+
+
+def sources_exit_code(report: dict) -> int:
+    """1 (unreadable / failed) > 3 (missing original / sha mismatch) > 0."""
+    t = report.get("totals") or {}
+    if t.get("unreadable") or t.get("failed"):
+        return EXIT_SOURCES_FAILED
+    if t.get("missing_original") or t.get("sha_mismatch"):
+        return EXIT_SOURCES_UNRECOVERABLE
+    return EXIT_SOURCES_OK
+
+
+def _backfill_text(report: dict) -> str:
+    t = report["totals"]
+    head = f"source copies{' (dry run: nothing written)' if report.get('dry_run') else ''}: {report['source_dir']}"
+    lines = [head, "  " + "   ".join(f"{label} {t.get(k, 0)}" for k, label in _OUTCOME_LABELS)]
+    for key, label, note in (("missing_original", "missing original", ""),
+                             ("sha_mismatch", "sha mismatch", " (changed since conversion)"),
+                             ("unreadable", "unreadable", " (in use by another program?)"),
+                             ("failed", "failed", "")):
+        rows = [r for r in report["documents"] if r["outcome"] == key]
+        if not rows:
+            continue
+        lines.append(f"  {label}:")
+        for r in rows:
+            where = r.get("source") or ""
+            extra = f"  [{r['detail']}]" if key == "failed" and r.get("detail") else ""
+            lines.append(f"    {r['stem']:<18} {where}{note}{extra}")
+    if report.get("unreferenced_files"):
+        lines.append(f"  unreferenced files under the source folder: {report['unreferenced_files']} (kept)")
+    return "\n".join(lines)
+
+
+def _status_text(s: dict) -> str:
+    mb = (s.get("bytes") or 0) / 1e6
+    free = s.get("free_bytes")
+    return (f"source copies: {s['source_dir']}\n"
+            f"  documents {s['documents']}   copied {s['copied']}   not copied {s['not_copied']}   failed "
+            f"{s['failed']}   unrecoverable {s['unrecoverable']}   file missing {s['file_missing']}   "
+            f"size {mb:.1f} MB   free {'-' if free is None else f'{free / 1e9:.1f} GB'}")
+
+
+def cmd_sources(args) -> int:
+    from aidoc import client as client_mod
+    from aidoc.config import load_config
+    if args.sources_cmd not in ("status", "backfill"):
+        print("usage: aidoc sources {status,backfill} [--dry-run] [--json] [--token T]", file=sys.stderr)
+        return EXIT_USAGE
+    cfg = load_config()
+    server = client_mod.find_server(cfg, args.token)
+    if server is not None:                   # spec §7.1: the server owns the queue and the events
+        print(f"forwarding to server {server.base_url}", file=sys.stderr, flush=True)
+        try:
+            out = server.sources_summary() if args.sources_cmd == "status" else \
+                server.sources_backfill(bool(getattr(args, "dry_run", False)))
+        except (client_mod.ServerError, httpx_errors()) as e:
+            print(_server_error_text(e, server), file=sys.stderr)
+            return EXIT_SOURCES_FAILED
+        finally:
+            server.close()
+    else:
+        from aidoc import source_copy
+        from aidoc.clilock import CliRunLock
+        run_lock = CliRunLock(cfg.data_dir)
+        run_lock.acquire()
+        store = open_store(cfg)
+        try:
+            if args.sources_cmd == "status":
+                out = source_copy.summary(store, cfg)
+            else:
+                _recover(store, cfg)
+                try:
+                    out = source_copy.backfill(store, cfg, dry_run=bool(args.dry_run))
+                except source_copy.InsufficientDisk as e:
+                    print(f"error: insufficient disk for the copies: needed {e.needed} bytes, free {e.free}",
+                          file=sys.stderr)
+                    return EXIT_SOURCES_FAILED
+                except source_copy.BackfillRunning:
+                    print("error: a backfill is already running", file=sys.stderr)
+                    return EXIT_SOURCES_FAILED
+        finally:
+            store.close()
+            run_lock.release()
+    out = {k: v for k, v in out.items() if k != "workspace"}
+    if args.json:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    else:
+        print(_status_text(out) if args.sources_cmd == "status" else _backfill_text(out))
+    return EXIT_SOURCES_OK if args.sources_cmd == "status" else sources_exit_code(out)
+
+
 def cmd_cancel(args) -> int:
     from aidoc import client as client_mod
     from aidoc.config import load_config
@@ -540,6 +649,8 @@ def _main(argv: list[str] | None) -> int:
         return cmd_serve(args)
     if args.cmd == "verify":
         return cmd_verify(args)
+    if args.cmd == "sources":
+        return cmd_sources(args)
     return 0
 
 

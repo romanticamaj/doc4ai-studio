@@ -73,6 +73,15 @@ class ServerClient:
         # the server hashes every input before answering: no read timeout for big batches
         return self._json(self._http.post("/api/jobs", json=body, timeout=httpx.Timeout(30.0, read=None)))["job"]
 
+    def sources_summary(self) -> dict:
+        """GET /api/sources (spec 2026-10-29 §10.1)."""
+        return self._json(self._http.get("/api/sources"))
+
+    def sources_backfill(self, dry_run: bool) -> dict:
+        """POST /api/sources/backfill: it hashes and copies every document, so there is no read timeout."""
+        return self._json(self._http.post("/api/sources/backfill", json={"dry_run": bool(dry_run)},
+                                          timeout=httpx.Timeout(30.0, read=None)))
+
     def get_job(self, job_id: str) -> dict:
         return self._json(self._http.get(f"/api/jobs/{job_id}"))
 
