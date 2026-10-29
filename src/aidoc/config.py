@@ -323,8 +323,9 @@ def _probe(d: Path) -> None:
 
 def root_dir_writable(root: Path, *, create: bool) -> str | None:
     """V5. create=True (PUT /settings): make root/out and root/source and write + delete a probe file in each.
-    create=False (root-check, load): nothing is created; the nearest existing ancestor must accept a probe file
-    (written and removed)."""
+    create=False (root-check): an existing root must accept a probe file (written and removed inside it); for a
+    root that does not exist yet nothing at all is written — its nearest existing ancestor must be a writable
+    folder (os.access)."""
     root = Path(root)
     try:
         if create:
@@ -342,12 +343,12 @@ def root_dir_writable(root: Path, *, create: bool) -> str | None:
             return f"{ROOT_MSG_UNWRITABLE}（{anc} 不是資料夾）"
         if anc == root:
             _probe(anc)                      # the folder exists: files must be writable in it
-        else:
-            # it would be created here: a folder must be creatable (C:\ lets users make folders, not files)
-            d = anc / f".aidoc-probe-{os.urandom(4).hex()}"
-            d.mkdir()
-            _probe(d)
-            d.rmdir()
+            return None
+        # not there yet: nothing is written outside the target (an unset field checks C:\doc4ai, and a probe must
+        # never land in the drive root); the folder is created by PUT /settings or on first use, which report
+        # their own errors with the path
+        if not os.access(anc, os.W_OK):
+            return f"{ROOT_MSG_UNWRITABLE}（{anc}）"
         return None
     except OSError as e:
         return f"{ROOT_MSG_UNWRITABLE}（{e.strerror or e}）"

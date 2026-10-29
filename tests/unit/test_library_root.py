@@ -108,3 +108,16 @@ def test_root_is_normalized(tmp_root, tmp_path, monkeypatch):
     monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(lib) + "\\x\\..")
     cfg = load_config()
     assert cfg.library_root() == lib and cfg.source_root() == lib / "source"
+
+
+def test_root_check_of_a_missing_folder_writes_nothing_anywhere(tmp_path, monkeypatch):
+    """The live check of an unset field (C:/doc4ai) must not create a probe in the drive root: no folder and no
+    file is created for a root that does not exist yet; only an existing root gets a probe file inside it."""
+    import aidoc.config as C
+    writes = []
+    monkeypatch.setattr(C.Path, "mkdir", lambda self, *a, **k: writes.append(("mkdir", self)))
+    monkeypatch.setattr(C, "_probe", lambda d: writes.append(("probe", d)))
+    assert root_dir_writable(tmp_path / "new" / "lib", create=False) is None
+    assert writes == []
+    assert root_dir_writable(tmp_path, create=False) is None
+    assert writes == [("probe", tmp_path)]
