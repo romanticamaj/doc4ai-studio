@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { reconvertAll } from "@/features/library/reconvertAll";
 import type {
+  BackfillProgress,
+  BackfillReport,
   Document,
   DocumentDetail,
   PreviewState,
@@ -10,7 +13,10 @@ import type {
   JobCreateBody,
   JobDetail,
   QueueInfo,
+  RootCheck,
   Settings,
+  SourceCopyDetail,
+  SourcesSummary,
   SettingsPatch,
   SystemInfo,
   Task,
@@ -28,7 +34,81 @@ export const qk = {
   system: () => ["system"] as const,
   settings: () => ["settings"] as const,
   vlmUsage: (days: number) => ["system", "vlm-usage", days] as const,
+  sources: () => ["sources", "summary"] as const,
+  sourcesProgress: () => ["sources", "progress"] as const,
+  rootCheck: (v: string) => ["settings", "root-check", v] as const,
 };
+
+/** Settings → Doc4AI 資料夾: the live check waits this long after the last keystroke (spec 2026-10-29 §11.1). */
+export const ROOT_CHECK_DEBOUNCE_MS = 400;
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
+/** POST /api/settings/root-check for the typed value, ROOT_CHECK_DEBOUNCE_MS after typing stops. */
+export function useRootCheck(value: string, enabled = true) {
+  const debounced = useDebounced(value, ROOT_CHECK_DEBOUNCE_MS);
+  const settled = debounced === value;
+  const q = useQuery({
+    queryKey: qk.rootCheck(debounced),
+    queryFn: () => api.post<RootCheck>("/api/settings/root-check", { root_dir: debounced }),
+    enabled: enabled && settled,
+    staleTime: 5_000,
+    retry: false,
+  });
+  return { ...q, settled };
+}
+
+export function useSourcesSummary() {
+  return useQuery({
+    queryKey: qk.sources(),
+    queryFn: ({ signal }) => api.get<SourcesSummary>("/api/sources", signal),
+  });
+}
+
+/** The latest sources.backfill progress event (set by applyEvent). */
+export function useBackfillProgress() {
+  return useQuery<BackfillProgress | null>({
+    queryKey: qk.sourcesProgress(),
+    queryFn: () => null,
+    enabled: false,
+    initialData: null,
+  });
+}
+
+export function useBackfill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dryRun: boolean) => api.post<BackfillReport>("/api/sources/backfill", { dry_run: dryRun }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: qk.sources() });
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+/** 「重試備份」 of one document (POST /api/documents/{id}/source-copy). */
+export function useRetrySourceCopy(docId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ outcome: string; source_copy: SourceCopyDetail }>(`/api/documents/${docId}/source-copy`),
+    onSuccess: (r) => {
+      qc.setQueryData<DocumentDetail>(qk.document(docId), (old) => (old ? { ...old, source_copy: r.source_copy } : old));
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: qk.document(docId) });
+      qc.invalidateQueries({ queryKey: ["documents", "list"] });
+      qc.invalidateQueries({ queryKey: qk.sources() });
+    },
+  });
+}
 
 function qs(params: Record<string, string | undefined>): string {
   const u = new URLSearchParams();
@@ -188,8 +268,14 @@ export function useVlmUsage(days = 30, enabled = true) {
 export function useDeleteOrphaned() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.del<{ deleted: number }>("/api/documents/orphaned"),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents"] }),
+    mutationFn: () =>
+      api.del<{ deleted: number; source_copies_deleted: number; source_copy_bytes: number; source_copies_kept: string[] }>(
+        "/api/documents/orphaned",
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["documents"] });
+      qc.invalidateQueries({ queryKey: qk.sources() });
+    },
   });
 }
 

@@ -89,4 +89,4 @@ async def retry_source_copy(doc_id: str, request: Request) -> dict:
         raise ApiError(409, "orphaned")
     if detail.startswith("no_space"):
         raise ApiError(507, "insufficient_disk", detail=detail, source_copy=view)
-    raise ApiError(500, "copy_failed", outcome=outcome, error=detail, source_copy=view)
+    raise ApiError(500, "copy_failed", outcome=outcome, detail=detail, source_copy=view)

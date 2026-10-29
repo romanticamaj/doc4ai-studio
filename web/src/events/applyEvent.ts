@@ -184,6 +184,16 @@ export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = def
       qc.setQueryData<DocumentDetail>(qk.document(document_id), (old) => (old ? { ...old, preview: preview as PreviewState } : old));
       return;
     }
+    case "document.source_copy": {
+      const p = ev.payload as EventPayloads["document.source_copy"];
+      qc.invalidateQueries({ queryKey: qk.document(p.document_id) });
+      qc.invalidateQueries({ queryKey: ["documents", "list"] });
+      qc.invalidateQueries({ queryKey: qk.sources() });
+      return;
+    }
+    case "sources.backfill":
+      qc.setQueryData(qk.sourcesProgress(), ev.payload as EventPayloads["sources.backfill"]);
+      return;
     case "mcp.call": {
       const call = ev.payload as unknown as McpCall;
       for (const [key, data] of qc.getQueriesData<{ pages: McpCallsPage[]; pageParams: unknown[] }>({ queryKey: ["mcp", "calls"] })) {

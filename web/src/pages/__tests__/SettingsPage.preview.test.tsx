@@ -10,7 +10,7 @@ function setup(libreoffice: unknown) {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     if (String(input).includes("/api/settings")) return new Response(JSON.stringify({ error: "x" }), { status: 500 });
     return new Response(
-      JSON.stringify({ engines: {}, gpu: null, queue: { paused: false, length: 0, running_task_id: null }, disk_free: 1, output_dir: "out", version: "0.1.0", long_paths_enabled: true, libreoffice }),
+      JSON.stringify({ engines: {}, gpu: null, queue: { paused: false, length: 0, running_task_id: null }, disk_free: 1, output_dir: "C:/doc4ai/out", version: "0.1.0", long_paths_enabled: true, libreoffice, root_dir: "C:/doc4ai", root_configured: false, root_from_env: false, root_default: "C:/doc4ai", source_dir: "C:/doc4ai/source", source_disk_free: 1 }),
       { status: 200 },
     );
   });

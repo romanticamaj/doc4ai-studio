@@ -63,6 +63,14 @@ export function describeError(e: unknown): string {
         return "scope 不能修改，請輪替或重建";
       case "unknown_endpoint":
         return "不是這台伺服器的 MCP 位址";
+      case "backfill_running":
+        return "已有補齊在進行中";
+      case "root_env_override":
+        return "Doc4AI 資料夾由環境變數 AIDOC_LIBRARY_ROOT 指定，不能在這裡變更";
+      case "output_dir_unwritable":
+        return `無法建立或寫入 Doc4AI 資料夾：${b.path}`;
+      case "copy_failed":
+        return `備份失敗：${b.detail ?? b.outcome ?? ""}`;
       case "network_error":
         return "連不上伺服器，請確認 aidoc serve 仍在執行";
       default:

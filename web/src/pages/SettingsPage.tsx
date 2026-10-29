@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -15,13 +15,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useSettings, useSystem, useUpdateSettings } from "@/api/queries";
 import { ApiError, getToken, setToken } from "@/api/client";
-import type { EngineName, Settings } from "@/api/types";
+import type { EngineName, Settings, SystemInfo } from "@/api/types";
 import { useEventStream } from "@/events/EventStreamProvider";
 import { EngineCard } from "@/features/settings/EngineCard";
 import { VlmSettingsCard } from "@/features/settings/VlmSettingsCard";
 import { NumberField } from "@/features/settings/NumberField";
 import { ListField } from "@/features/settings/ListField";
 import { diffSettings } from "@/features/settings/diffSettings";
+import { RootDirField } from "@/features/settings/RootDirField";
+import { SourceCopiesPanel } from "@/features/settings/SourceCopiesPanel";
 import { describeError } from "@/lib/errors";
 import { formatBytes, gb } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -96,6 +98,12 @@ export default function SettingsPage() {
                   </dd>
                   <dt className="text-muted-foreground">可用空間</dt>
                   <dd className="tabular">{formatBytes(sys.data?.disk_free)}</dd>
+                  <dt className="text-muted-foreground">原始檔備份</dt>
+                  <dd className="truncate font-mono" title={sys.data?.source_dir} data-testid="storage-source-dir">
+                    {sys.data?.source_dir ?? "—"}
+                  </dd>
+                  <dt className="text-muted-foreground">可用空間</dt>
+                  <dd className="tabular">{formatBytes(sys.data?.source_disk_free)}</dd>
                   <dt className="text-muted-foreground">aidoc</dt>
                   <dd className="font-mono">{sys.data?.version ?? "—"}</dd>
                   {sys.data && !sys.data.long_paths_enabled && (
@@ -141,10 +149,19 @@ export default function SettingsPage() {
           {settings.isError && !unauthorized ? (
             <ErrorState title="無法讀取設定" error={settings.error} onRetry={() => settings.refetch()} />
           ) : settings.data ? (
-            <SettingsForm original={settings.data} />
+            <SettingsForm original={settings.data} sys={sys.data} />
           ) : (
             <Skeleton className="h-72 rounded-[10px]" />
           )}
+        </section>
+
+        <section aria-labelledby="source-copies-h" id="source-copies">
+          <SectionTitle
+            id="source-copies-h"
+            title="原始檔備份"
+            description="原始檔被移走或刪掉之後，文件檢視、verify、重新轉換改用這裡的備份。補齊只複製 sha256 對得上的檔案，找不到的會列出來。"
+          />
+          <SourceCopiesPanel />
         </section>
 
         <section aria-labelledby="vlm-h" id="vlm">
@@ -190,11 +207,15 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
   );
 }
 
-function SettingsForm({ original }: { original: Settings }) {
+function SettingsForm({ original, sys }: { original: Settings; sys: SystemInfo | undefined }) {
   const [edited, setEdited] = useState<Settings>(original);
+  const [rootOk, setRootOk] = useState(true);
+  const onRootValidity = useCallback((ok: boolean) => setRootOk(ok), []);
   const update = useUpdateSettings();
   useEffect(() => setEdited(original), [original]);
   const patch = diffSettings(original, edited);
+  if (patch.general) delete (patch.general as Record<string, unknown>).output_dir;     // legacy: never sent
+  if (patch.general && !Object.keys(patch.general).length) delete patch.general;
   const dirty = Object.keys(patch).length > 0;
 
   const set = <S extends keyof Settings, K extends keyof Settings[S]>(section: S, key: K, value: Settings[S][K]) =>
@@ -211,7 +232,7 @@ function SettingsForm({ original }: { original: Settings }) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (dirty) void save();
+          if (dirty && rootOk) void save();
         }}
       >
         <div className="divide-y px-4">
@@ -240,10 +261,16 @@ function SettingsForm({ original }: { original: Settings }) {
               ))}
             </div>
           </Field>
-          <Field label="輸出目錄" hint="相對路徑以專案根目錄為準" htmlFor="set-out">
-            <Input id="set-out" value={edited.general.output_dir} onChange={(e) => set("general", "output_dir", e.target.value)} className="font-mono text-[12.5px]" spellCheck={false} />
+          <Field label="Doc4AI 資料夾" hint="轉換結果放在 out\，原始檔備份放在 source\。變更只影響之後的轉換，已轉換的文件留在原處。" htmlFor="set-root">
+            <RootDirField
+              value={edited.general.root_dir ?? ""}
+              saved={original.general.root_dir ?? ""}
+              sys={sys}
+              onChange={(v) => set("general", "root_dir", v)}
+              onValidity={onRootValidity}
+            />
           </Field>
-          <Field label="工作副本保留天數" hint="轉換成功後保留原始檔副本的天數" htmlFor="set-days">
+          <Field label="工作副本保留天數" hint="轉換用的暫存副本（data\work）保留天數；不影響 source\ 裡的原始檔備份" htmlFor="set-days">
             <NumberField id="set-days" min={0} max={3650} value={edited.general.work_retention_days} onValue={(n) => set("general", "work_retention_days", n)} className="w-28 tabular" />
           </Field>
           <Field label="MinerU tier" hint="standard 較慢，公式與表格略好" htmlFor="set-tier">
@@ -305,7 +332,7 @@ function SettingsForm({ original }: { original: Settings }) {
           <Button type="button" variant="ghost" size="sm" disabled={!dirty} onClick={() => setEdited(original)}>
             <RotateCcw /> 還原
           </Button>
-          <Button type="submit" size="sm" disabled={!dirty || update.isPending}>
+          <Button type="submit" size="sm" disabled={!dirty || !rootOk || update.isPending}>
             {update.isPending ? "儲存中…" : "儲存"}
           </Button>
         </div>

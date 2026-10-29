@@ -8,7 +8,7 @@ import SettingsPage from "@/pages/SettingsPage";
 afterEach(() => vi.restoreAllMocks());
 
 const settings = {
-  general: { output_dir: "out", lang: "cht", work_retention_days: 7, enable_audio: false },
+  general: { root_dir: "", lang: "cht", work_retention_days: 7, enable_audio: false },
   engines: { mineru_tier: "basic", docling_ocr: "rapidocr", docling_page_batch_size: 16 },
   limits: { upload_max_bytes: 1, timeout_per_page_s: 60, timeout_min_s: 120, timeout_per_mb_s: 30, timeout_max_no_pages_s: 1800, startup_timeout_s: 900, disk_space_factor: 3 },
   server: { host: "127.0.0.1", port: 8765, token: "" },
@@ -25,7 +25,7 @@ test("the MCP section edits [mcp] and sends only the changed keys", async () => 
       return new Response(JSON.stringify({ settings }), { status: 200 });
     }
     if (url.includes("/api/settings")) return new Response(JSON.stringify({ settings }), { status: 200 });
-    return new Response(JSON.stringify({ engines: {}, gpu: null, queue: { paused: false, length: 0, running_task_id: null }, disk_free: 1, output_dir: "out", version: "0.1.0", long_paths_enabled: true }), { status: 200 });
+    return new Response(JSON.stringify({ engines: {}, gpu: null, queue: { paused: false, length: 0, running_task_id: null }, disk_free: 1, output_dir: "C:/doc4ai/out", version: "0.1.0", long_paths_enabled: true, root_dir: "C:/doc4ai", root_configured: false, root_from_env: false, root_default: "C:/doc4ai", source_dir: "C:/doc4ai/source", source_disk_free: 1 }), { status: 200 });
   });
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><SettingsPage /></MemoryRouter></QueryClientProvider>);
   await waitFor(() => expect(screen.getByRole("heading", { name: "MCP" })).toBeInTheDocument());
@@ -36,4 +36,19 @@ test("the MCP section edits [mcp] and sends only the changed keys", async () => 
   await userEvent.click(screen.getAllByRole("button", { name: "儲存" }).at(-1)!);
   await waitFor(() => expect(puts).toHaveLength(1));
   expect(puts[0]).toEqual({ mcp: { local_path_roots: ["D:\\docs"], response_token_budget: 6000 } });
+});
+
+test("the Doc4AI folder replaces 輸出目錄 and the work-copy hint names data/work (spec 2026-10-29 §11.1)", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes("/api/settings")) return new Response(JSON.stringify({ settings }), { status: 200 });
+    if (url.includes("/api/sources")) return new Response(JSON.stringify({ root_dir: "C:/doc4ai", source_dir: "C:/doc4ai/source", documents: 0, copied: 0, not_copied: 0, failed: 0, unrecoverable: 0, file_missing: 0, bytes: 0, free_bytes: 1 }), { status: 200 });
+    return new Response(JSON.stringify({ engines: {}, gpu: null, queue: { paused: false, length: 0, running_task_id: null }, disk_free: 1, output_dir: "C:/doc4ai/out", version: "0.1.0", long_paths_enabled: true, root_dir: "C:/doc4ai", root_configured: false, root_from_env: false, root_default: "C:/doc4ai", source_dir: "C:/doc4ai/source", source_disk_free: 1 }), { status: 200 });
+  });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><SettingsPage /></MemoryRouter></QueryClientProvider>);
+  expect(await screen.findByLabelText("Doc4AI 資料夾")).toHaveAttribute("id", "set-root");
+  expect(document.getElementById("set-out")).toBeNull();
+  expect(screen.getByText("轉換用的暫存副本（data\\work）保留天數；不影響 source\\ 裡的原始檔備份")).toBeInTheDocument();
+  expect(document.getElementById("source-copies")).not.toBeNull();
+  expect(await screen.findByTestId("storage-source-dir")).toHaveTextContent("C:/doc4ai/source");
 });

@@ -13,7 +13,7 @@ export type TaskStatus =
   | "cancelled";
 export type SegmentStatus = "queued" | "converting" | "done" | "failed";
 export type DocStatus = "ok" | "warn" | "low" | "orphaned";
-export type DocFlag = "page_map_incomplete" | "page_quality" | "unassessed";
+export type DocFlag = "page_map_incomplete" | "page_quality" | "unassessed" | "source_not_copied";
 export type EngineName = "markitdown" | "docling" | "mineru" | "vlm";
 export type Lang = "cht" | "en";
 export type ErrorKind = "transient" | "engine" | "input";
@@ -155,6 +155,8 @@ export interface Document {
   stem: string;
   flags: DocFlag[];
   page_summary: PageSummary | null;
+  /** spec 2026-10-29 §10.1: the source copy under <Doc4AI folder>\source (status null = not backfilled yet) */
+  source_copy?: { status: SourceCopyStatus | null; present: boolean };
   /** VLM-converted documents only (from the sidecar): where the pages went */
   vlm?: { backend: string | null; endpoint_host: string | null; local_endpoint: boolean | null; model: string | null } | null;
 }
@@ -182,9 +184,25 @@ export type PreviewState =
   | { status: "ready"; pages: number | null }
   | { status: "failed"; reason: string };
 
+export type SourceCopyStatus = "copied" | "failed" | "unrecoverable";
+export type SourceKind = "work_copy" | "source_copy" | "original";
+
+export interface SourceCopyDetail {
+  status: SourceCopyStatus | null;
+  /** "<code>: <detail>"; code = no_space | unreadable | sha_mismatch | collision | io_error | missing_original */
+  error: string | null;
+  present: boolean;
+  path: string | null;
+  size: number | null;
+  copied_at: number | null;
+}
+
 export interface DocumentDetail {
   document: Document;
   source_available: boolean;
+  /** which file the Document view shows (null = none left) */
+  source_kind?: SourceKind | null;
+  source_copy?: SourceCopyDetail;
   output_available: boolean;
   sidecar: Sidecar | null;
   /** null for sources that are not Office files */
@@ -271,10 +289,78 @@ export interface SystemInfo {
   version: string;
   long_paths_enabled: boolean;
   libreoffice?: { found: boolean; path: string | null; version: string | null; configured: boolean };
+  /** the Doc4AI folder in effect (spec 2026-10-29 §10.1); unset = root_default (C:\doc4ai / ~/doc4ai) */
+  root_dir?: string;
+  root_configured?: boolean;
+  root_from_env?: boolean;
+  root_default?: string;
+  source_dir?: string;
+  source_disk_free?: number | null;
 }
 
+export interface RootCheck {
+  ok: boolean;
+  problem: string | null;
+  root_dir: string;
+  output_dir: string | null;
+  source_dir: string | null;
+  exists: boolean;
+  free_bytes: number | null;
+  default?: boolean;
+}
+
+export interface SourcesSummary {
+  root_dir: string;
+  source_dir: string;
+  documents: number;
+  copied: number;
+  not_copied: number;
+  failed: number;
+  unrecoverable: number;
+  file_missing: number;
+  bytes: number;
+  free_bytes: number | null;
+  /** what 「清除」 of the orphaned records would delete too */
+  orphaned_copies?: { count: number; bytes: number };
+}
+
+export type BackfillOutcome =
+  | "copied"
+  | "already_present"
+  | "missing_original"
+  | "sha_mismatch"
+  | "unreadable"
+  | "failed"
+  | "skipped_orphaned";
+
+export interface BackfillRow {
+  id: string;
+  stem: string;
+  source?: string | null;
+  outcome: BackfillOutcome;
+  from: "work_copy" | "original" | "other_document" | null;
+  size: number | null;
+  detail: string | null;
+}
+
+export interface BackfillReport {
+  dry_run: boolean;
+  source_dir: string;
+  started_at: number;
+  finished_at: number;
+  totals: Record<BackfillOutcome, number>;
+  bytes_needed: number;
+  bytes_copied: number;
+  free_bytes: number | null;
+  documents: BackfillRow[];
+  unreferenced_files: number;
+}
+
+export type BackfillProgress = { dry_run: boolean; done: number; total: number } | { dry_run: boolean; finished: true; totals: Record<BackfillOutcome, number> };
+
 export interface Settings {
-  general: { output_dir: string; lang: Lang; work_retention_days: number; enable_audio: boolean };
+  /** output_dir is legacy (no longer sent by the server, user decision 2026-10-29) */
+  general: { root_dir: string; output_dir?: string; lang: Lang; work_retention_days: number; enable_audio: boolean };
   engines: { mineru_tier: "basic" | "standard"; docling_ocr: "easyocr" | "rapidocr"; docling_page_batch_size: number };
   limits: {
     upload_max_bytes: number;
@@ -360,6 +446,8 @@ export interface EventPayloads {
   "mcp.client": McpClient & { state: "new" | "active" | "idle" };
   "mcp.token": { id: string; name: string; prefix: string; action: "created" | "updated" | "revoked" | "rotated" };
   "document.preview": { document_id: string } & PreviewState;
+  "document.source_copy": { document_id: string; task_id?: string; status: SourceCopyStatus | null; error: string | null };
+  "sources.backfill": BackfillProgress;
   resync: Record<string, never>;
 }
 export type EventKind = keyof EventPayloads;
@@ -377,6 +465,8 @@ export const EVENT_KINDS: EventKind[] = [
   "mcp.client",
   "mcp.token",
   "document.preview",
+  "document.source_copy",
+  "sources.backfill",
   "resync",
 ];
 
