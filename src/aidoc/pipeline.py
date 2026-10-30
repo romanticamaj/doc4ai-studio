@@ -596,25 +596,26 @@ def _sidecar_copy(source_root: Path, copied, sha256: str) -> dict | None:
 
 
 def _rollback_copy(ctx: PipelineContext, copied) -> None:
-    """The output write failed: a copy this conversion created goes too (no orphan files); an existing one stays."""
-    if copied is None or not copied.created:
-        return
-    from aidoc.source_copy import remove_copy
-    try:
-        remove_copy(copied.path)
-    except OSError as e:
-        ctx.log(f"source copy rollback failed: {e}")
+    """The output write failed: a copy this conversion created goes too (no orphan files); an existing one — or one
+    another document adopted meanwhile (verifier V5) — stays."""
+    from aidoc.source_copy import discard_copy
+    discard_copy(ctx.store, copied)
 
 
 def _record_source_copy(ctx: PipelineContext, doc_id: str, copied, error, output_dir: Path, *,
-                        sidecar_written: bool) -> None:
-    """DB status, task log and the `document.source_copy` event (spec 2026-10-29 §5.4)."""
+                        sidecar_written: bool):
+    """DB status, task log and the `document.source_copy` event (spec 2026-10-29 §5.4); returns the copy finally
+    recorded (None when none)."""
     from aidoc import source_copy as sc
-    status, text = sc.record_copy(ctx.store, doc_id, copied, error)
-    if status != "copied" and copied is not None:           # recorded as a collision after all: do not keep it
-        _rollback_copy(ctx, copied)
-        if sidecar_written:
-            sc.write_sidecar_copy(output_dir, None)
+    doc = ctx.store.get_document(doc_id) or {}
+    first = copied
+    # record_copy never removes a file a document owns; on a collision with a copy another document adopted
+    # meanwhile it takes its own path hardlinked to that verified copy (verifier V5)
+    status, text, copied = sc.record_copy(ctx.store, doc_id, copied, error, adopt={
+        "source_root": ctx.config.source_root(), "output_dir": str(output_dir),
+        "source_display": doc.get("source_path", ""), "sha256": doc.get("sha256", "")})
+    if sidecar_written and copied is not first:               # adopted elsewhere, or not copied after all
+        sc.write_sidecar_copy(output_dir, _sidecar_copy(ctx.config.source_root(), copied, doc.get("sha256", "")))
     if status == "failed":
         code, _, msg = (text or "").partition(": ")
         ctx.log(f"source copy failed ({code}): {msg or code}")
@@ -623,6 +624,7 @@ def _record_source_copy(ctx: PipelineContext, doc_id: str, copied, error, output
     if ctx.emit is not None:
         ctx.emit("document.source_copy", {"document_id": doc_id, "task_id": ctx.task_id, "status": status,
                                           "error": text})
+    return copied
 
 
 def _cache_hit_copy(ctx: PipelineContext, hit: dict, output_dir: Path) -> None:
@@ -634,8 +636,8 @@ def _cache_hit_copy(ctx: PipelineContext, hit: dict, output_dir: Path) -> None:
     if doc is None or (doc.get("source_copy_status") == "copied" and sc.copy_trusted(doc)):
         return
     copied, error = _source_copy_for(ctx, {"source_path": doc["source_path"], "sha256": doc["sha256"]}, output_dir)
-    _record_source_copy(ctx, doc["id"], copied, error, output_dir, sidecar_written=False)
-    if ctx.store.get_document(doc["id"]).get("source_copy_status") == "copied":
+    copied = _record_source_copy(ctx, doc["id"], copied, error, output_dir, sidecar_written=False)
+    if copied is not None:
         sc.write_sidecar_copy(output_dir, _sidecar_copy(ctx.config.source_root(), copied, doc["sha256"]))
 
 

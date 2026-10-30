@@ -352,20 +352,61 @@ def make_copy(store, source_root: Path, *, doc_id: str | None, output_dir: str, 
     return CopyResult(planned.path, size, mtime_ns, True, how)
 
 
-def record_copy(store, doc_id: str, result: CopyResult | None, error: CopyError | None) -> tuple[str, str | None]:
-    """Write the outcome to the documents row; (status, error text). A path another document already owns (a race
-    the planner could not see) is recorded as a collision."""
-    import sqlite3
-    if result is not None:
+# Every write of a documents.source_copy_* row, and every removal of a copy file this process placed, happens under
+# this lock: "who owns this path" is checked and acted on in one step (verifier V5).
+RECORD_LOCK = threading.RLock()
+
+
+def discard_copy(store, result: CopyResult | None) -> bool:
+    """Remove a copy this call created — unless a document owns that path by now (another writer adopted the
+    verified file meanwhile; then it is theirs and stays). True when the file was removed."""
+    if result is None or not result.created:
+        return False
+    with RECORD_LOCK:
+        if store.document_by_source_copy(str(result.path)) is not None:
+            return False
         try:
-            store.set_source_copy(doc_id, path=str(fsops.plain_path(result.path)), status="copied", error=None,
-                                  size=result.size, mtime_ns=result.mtime_ns)
-            return "copied", None
-        except sqlite3.IntegrityError:
-            error = CopyError("collision", f"{result.path} belongs to another document")
-    text = error.text() if error is not None else "io_error: unknown"
-    store.set_source_copy(doc_id, path=None, status="failed", error=text)
-    return "failed", text
+            remove_copy(result.path)
+        except OSError:
+            return False
+        return True
+
+
+def record_copy(store, doc_id: str, result: CopyResult | None, error: CopyError | None, *,
+                adopt: dict | None = None) -> tuple[str, str | None, CopyResult | None]:
+    """Write the outcome to the documents row -> (status, error text, the copy finally recorded).
+
+    The path can be taken in the meantime (unique index): another document — a backfill or retry that found this
+    very file already present — owns it now. The file is then theirs and is never removed; with `adopt`
+    ({source_root, output_dir, source_display, sha256}) this document takes its own path next to it, hardlinked to
+    that verified copy (make_copy re-plans: the owned path is occupied). Otherwise, or when adopting fails, it is a
+    collision, and a file this call created that nobody owns is removed."""
+    import sqlite3
+    with RECORD_LOCK:
+        if result is not None:
+            try:
+                store.set_source_copy(doc_id, path=str(fsops.plain_path(result.path)), status="copied", error=None,
+                                      size=result.size, mtime_ns=result.mtime_ns)
+                return "copied", None, result
+            except sqlite3.IntegrityError:
+                owner = store.document_by_source_copy(str(result.path))
+                error = CopyError("collision", f"{result.path} belongs to another document")
+                if owner is not None and owner["id"] != doc_id and adopt is not None:
+                    try:
+                        mine = make_copy(store, adopt["source_root"], doc_id=doc_id, output_dir=adopt["output_dir"],
+                                         source_display=adopt["source_display"], sha256=adopt["sha256"], src=None)
+                        store.set_source_copy(doc_id, path=str(fsops.plain_path(mine.path)), status="copied",
+                                              error=None, size=mine.size, mtime_ns=mine.mtime_ns)
+                        return "copied", None, mine
+                    except CopyError as e:
+                        error = e
+                    except sqlite3.IntegrityError:
+                        pass
+                if owner is None:
+                    discard_copy(store, result)
+        text = error.text() if error is not None else "io_error: unknown"
+        store.set_source_copy(doc_id, path=None, status="failed", error=text)
+        return "failed", text, None
 
 
 # ---------------------------------------------------------------- sidecar (spec §9.2)
@@ -492,7 +533,8 @@ def _set_status(store, doc: dict, emit, *, path, status, error, size=None, mtime
     new_path = None if path is None else str(fsops.plain_path(Path(path)))
     changed = (doc.get("source_copy_status"), doc.get("source_copy_error"), doc.get("source_copy_path")) != \
         (status, error, new_path)
-    store.set_source_copy(doc["id"], path=new_path, status=status, error=error, size=size, mtime_ns=mtime_ns)
+    with RECORD_LOCK:
+        store.set_source_copy(doc["id"], path=new_path, status=status, error=error, size=size, mtime_ns=mtime_ns)
     if changed and emit is not None:
         emit("document.source_copy", {"document_id": doc["id"], "status": status, "error": error})
 
@@ -558,17 +600,18 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
             return _fail_row(store, doc, emit, row, "unreadable" if e.code == "unreadable" else "failed", e.text())
         except OSError as e:
             return _fail_row(store, doc, emit, row, "failed", _dest_error(e, planned.path).text())
+        placed = CopyResult(planned.path, size, mtime_ns, True, "copied")
+        status, text, final = record_copy(store, doc["id"], placed, None,
+                                          adopt={"source_root": root, "output_dir": doc["output_dir"],
+                                                 "source_display": doc["source_path"], "sha256": sha})
+        if emit is not None and status != doc.get("source_copy_status"):
+            emit("document.source_copy", {"document_id": doc["id"], "status": status, "error": text})
+        if status != "copied":
+            row.update(outcome="failed", detail=text)
+            return row
+        size = final.size
         row.update(outcome="copied", size=size)
-        try:
-            _set_status(store, doc, emit, path=planned.path, status="copied", error=None, size=size,
-                        mtime_ns=mtime_ns)
-        except Exception:  # noqa: BLE001  unique-index race: the file is ours (placement never overwrites), drop it
-            try:
-                remove_copy(planned.path)
-            except OSError:
-                pass
-            return _fail_row(store, doc, emit, row, "failed", f"collision: {planned.path}")
-        if not write_sidecar_copy(Path(doc["output_dir"]), sidecar_info(root, planned.path, sha, size)):
+        if not write_sidecar_copy(Path(doc["output_dir"]), sidecar_info(root, final.path, sha, size)):
             row["detail"] = "sidecar not updated (missing or unreadable)"
         return row
     unreadable = [p for p, _k, c in checks if c == "unreadable"]

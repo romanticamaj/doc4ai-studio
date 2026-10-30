@@ -240,3 +240,38 @@ def test_expired_work_copy_is_kept_while_the_document_has_no_copy(lib, monkeypat
     from aidoc.source_copy import ensure_copy
     assert ensure_copy(lib.store, lib.cfg, lib.store.get_document(d["id"]))["outcome"] == "copied"
     assert purge_expired_work_copies(lib.store, time.time()) == 1      # once copied, retention applies again
+
+
+def test_rollback_never_deletes_a_copy_another_document_adopted(lib, monkeypatch, tmp_root):
+    """Verifier V5: conversion A places X; before A records X, backfill of B (same content, same name) finds X
+    already present and records it. A's record collides: X is B's now and must stay; A adopts the verified copy."""
+    from aidoc.config import load_config
+    from aidoc.source_copy import ensure_copy, file_matches
+    pdf = (lib.fixtures / "text.pdf").read_bytes() + b"%V5\n"
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root / "old"))
+    _, tb = lib.convert(lib.place("rep.pdf", content=pdf))
+    b = lib.doc(tb)
+    os.unlink(b["source_copy_path"])
+    lib.store.set_source_copy(b["id"], path=None, status=None, error=None)
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root))
+    cfg = load_config()
+    a_src = tmp_root / "in2" / "rep.pdf"
+    a_src.parent.mkdir()
+    a_src.write_bytes(pdf)
+    real_record = source_copy.record_copy
+    seen = {}
+
+    def record(store, doc_id, result, error, **kw):
+        if result is not None and "b" not in seen:
+            seen["b"] = ensure_copy(store, cfg, store.get_document(b["id"]))
+        return real_record(store, doc_id, result, error, **kw)
+    monkeypatch.setattr(source_copy, "record_copy", record)
+    _, ta = lib.convert(a_src)
+    bb, aa = lib.store.get_document(b["id"]), lib.doc(ta)
+    assert seen["b"]["outcome"] == "already_present"
+    assert bb["source_copy_status"] == "copied" and file_matches(Path(bb["source_copy_path"]), bb["sha256"])
+    assert aa["source_copy_status"] == "copied" and file_matches(Path(aa["source_copy_path"]), aa["sha256"])
+    assert aa["source_copy_path"] != bb["source_copy_path"]
+    assert os.path.samefile(aa["source_copy_path"], bb["source_copy_path"])      # adopted: shares the verified data
+    side = read_sidecar(Path(aa["output_dir"]))
+    assert side["source_copy"]["path"] == Path(aa["source_copy_path"]).relative_to(tmp_root).as_posix()
