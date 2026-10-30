@@ -381,32 +381,55 @@ def record_copy(store, doc_id: str, result: CopyResult | None, error: CopyError 
     ({source_root, output_dir, source_display, sha256}) this document takes its own path next to it, hardlinked to
     that verified copy (make_copy re-plans: the owned path is occupied). Otherwise, or when adopting fails, it is a
     collision, and a file this call created that nobody owns is removed."""
-    import sqlite3
+    adopt_now = False
+    if result is not None:
+        status = _record_checked(store, doc_id, result)
+        if status == "copied":
+            return "copied", None, result
+        error = CopyError("collision", f"{result.path} belongs to another document") if status == "taken" else \
+            CopyError("io_error", f"{result.path} vanished before it was recorded")
+        adopt_now = status == "taken" and adopt is not None
+    if adopt_now:
+        # the heavy part (planning, hashing, a hardlink or a cross-volume copy) runs without RECORD_LOCK; only the
+        # final re-check + record below takes it (verifier V9)
+        try:
+            mine = make_copy(store, adopt["source_root"], doc_id=doc_id, output_dir=adopt["output_dir"],
+                             source_display=adopt["source_display"], sha256=adopt["sha256"], src=None)
+        except CopyError as e:
+            error, mine = e, None
+        if mine is not None:
+            if _record_checked(store, doc_id, mine) == "copied":
+                return "copied", None, mine
+            discard_copy(store, mine)
     with RECORD_LOCK:
-        if result is not None:
-            try:
-                store.set_source_copy(doc_id, path=str(fsops.plain_path(result.path)), status="copied", error=None,
-                                      size=result.size, mtime_ns=result.mtime_ns)
-                return "copied", None, result
-            except sqlite3.IntegrityError:
-                owner = store.document_by_source_copy(str(result.path))
-                error = CopyError("collision", f"{result.path} belongs to another document")
-                if owner is not None and owner["id"] != doc_id and adopt is not None:
-                    try:
-                        mine = make_copy(store, adopt["source_root"], doc_id=doc_id, output_dir=adopt["output_dir"],
-                                         source_display=adopt["source_display"], sha256=adopt["sha256"], src=None)
-                        store.set_source_copy(doc_id, path=str(fsops.plain_path(mine.path)), status="copied",
-                                              error=None, size=mine.size, mtime_ns=mine.mtime_ns)
-                        return "copied", None, mine
-                    except CopyError as e:
-                        error = e
-                    except sqlite3.IntegrityError:
-                        pass
-                if owner is None:
-                    discard_copy(store, result)
         text = error.text() if error is not None else "io_error: unknown"
         store.set_source_copy(doc_id, path=None, status="failed", error=text)
         return "failed", text, None
+
+
+def _record_checked(store, doc_id: str, result: CopyResult) -> str:
+    """Record `result` as this document's copy in one locked step: the file must still be there with the size and
+    mtime just verified (a concurrent discard_copy may have removed it), and the path must be free. Returns
+    "copied", "taken" (another document owns the path; the file is theirs and stays) or "gone" (a file this call
+    created that nobody owns is discarded)."""
+    import sqlite3
+    with RECORD_LOCK:
+        try:
+            ok = stat_copy(result.path) == (result.size, result.mtime_ns)
+        except OSError:
+            ok = False
+        if not ok:
+            return "gone"
+        try:
+            store.set_source_copy(doc_id, path=str(fsops.plain_path(result.path)), status="copied", error=None,
+                                  size=result.size, mtime_ns=result.mtime_ns)
+            return "copied"
+        except sqlite3.IntegrityError:
+            owner = store.document_by_source_copy(str(result.path))
+            if owner is None or owner["id"] == doc_id:
+                discard_copy(store, result)
+                return "gone"
+            return "taken"
 
 
 # ---------------------------------------------------------------- sidecar (spec §9.2)
@@ -529,11 +552,24 @@ def _check(path: Path, sha256: str) -> str:
     return "match" if h.hexdigest() == sha256 else "mismatch"
 
 
+class _Vanished(Exception):
+    """The verified file changed or disappeared before it could be recorded."""
+
+
 def _set_status(store, doc: dict, emit, *, path, status, error, size=None, mtime_ns=None) -> None:
     new_path = None if path is None else str(fsops.plain_path(Path(path)))
     changed = (doc.get("source_copy_status"), doc.get("source_copy_error"), doc.get("source_copy_path")) != \
         (status, error, new_path)
     with RECORD_LOCK:
+        if status == "copied" and new_path is not None:
+            # re-checked inside the lock: the file hashed a moment ago must still be the same file (size + mtime),
+            # or a concurrent discard_copy removed it (verifier V9)
+            try:
+                same = stat_copy(Path(new_path)) == (size, mtime_ns)
+            except OSError:
+                same = False
+            if not same:
+                raise _Vanished(new_path)
         store.set_source_copy(doc["id"], path=new_path, status=status, error=error, size=size, mtime_ns=mtime_ns)
     if changed and emit is not None:
         emit("document.source_copy", {"document_id": doc["id"], "status": status, "error": error})
@@ -567,17 +603,32 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
     if present is None and planned is not None and planned.present:
         present = planned.path
     if present is not None:
-        size, mtime_ns = stat_copy(present)
-        row.update(outcome="already_present", size=size)
-        if not dry_run:
-            _set_status(store, doc, emit, path=present, status="copied", error=None, size=size, mtime_ns=mtime_ns)
-        return row
+        try:
+            size, mtime_ns = stat_copy(present)
+            if not dry_run:
+                _set_status(store, doc, emit, path=present, status="copied", error=None, size=size,
+                            mtime_ns=mtime_ns)
+            row.update(outcome="already_present", size=size)
+            return row
+        except (OSError, _Vanished):
+            # gone between the check and the record: plan again and copy from a candidate (rows 2-5)
+            doc = store.get_document(doc["id"]) or doc
+            try:
+                planned = plan_path(store, root, output_dir=doc["output_dir"], source_display=doc["source_path"],
+                                    sha256=sha, doc_id=doc["id"])
+                plan_error = None
+            except CopyError as e:
+                planned, plan_error = None, e
+            if planned is not None and planned.present:
+                planned = None
+                plan_error = CopyError("collision", "the planned place changed while recording")
     # 2-5: candidates, each sha-checked; never inferred from names or sizes ("never fabricate")
     # another document's verified copy of the same content comes first: it is the only file a backup may share its
     # data with (a hardlink, spec §4.5). Work copies and originals — the user's own files — are always copied.
     shared = verified_copy_of(store, sha, exclude_id=doc["id"])
     checks = [(p, kind, _check(p, sha)) for p, kind in candidates_for(store, doc)]
-    match = (shared, "other_document") if shared is not None else         next(((p, kind) for p, kind, c in checks if c == "match"), None)
+    match = (shared, "other_document") if shared is not None else (
+        next(((p, kind) for p, kind, c in checks if c == "match"), None))
     if match is not None:
         src, kind = match
         row["from"] = kind

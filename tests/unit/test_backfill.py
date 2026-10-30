@@ -358,3 +358,69 @@ def test_unreferenced_files_compare_real_paths(tmp_root, fixtures, monkeypatch):
                              size=d["source_copy_size"], mtime_ns=d["source_copy_mtime_ns"])
     assert unreferenced_files(lb.store, lb.cfg.source_root()) == 0
     lb.store.close()
+
+
+def test_already_present_is_rechecked_under_the_lock_before_recording(tmp_root, fixtures, monkeypatch):
+    """Verifier V9/P6: B's backfill finds X already present; before B records it, A (whose output write failed)
+    discards X — nobody owned it yet. B must not record 'copied' for a file that is gone."""
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    pdf = (fixtures / "text.pdf").read_bytes() + b"%P6\n"
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root / "old"))
+    _, tb = lb.convert(lb.place("rep.pdf", content=pdf))
+    b = lb.doc(tb)
+    _pre_v7_doc(lb.store, lb.store.get_document(b["id"]))
+    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root))
+    from aidoc.config import load_config
+    cfg = load_config()
+    a_src = tmp_root / "in2" / "rep.pdf"
+    a_src.parent.mkdir()
+    a_src.write_bytes(pdf)
+    placed = source_copy.make_copy(lb.store, cfg.source_root(), doc_id=None, output_dir=str(cfg.output_root() / "rep"),
+                                   source_display=str(a_src), sha256=b["sha256"], src=a_src)
+    real_set = source_copy._set_status
+    state = {}
+
+    def set_status(store, doc, emit, **kw):
+        if "x" not in state:
+            state["x"] = source_copy.discard_copy(store, placed)        # A's output write failed meanwhile
+        return real_set(store, doc, emit, **kw)
+    monkeypatch.setattr(source_copy, "_set_status", set_status)
+    ensure_copy(lb.store, cfg, lb.store.get_document(b["id"]))
+    bb = lb.store.get_document(b["id"])
+    assert state["x"] is True
+    assert bb["source_copy_status"] != "copied" or source_copy.file_matches(Path(bb["source_copy_path"]), bb["sha256"])
+    lb.store.close()
+
+
+def test_adopting_does_its_copy_outside_the_record_lock(tmp_root, fixtures, monkeypatch):
+    """Verifier V9 (stall): the adopt path's make_copy (hashing, maybe a cross-volume copy) must not hold
+    RECORD_LOCK; only the final check + record does."""
+    import threading as _t
+
+    from aidoc.source_copy import CopyResult, record_copy
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    _, ta = lb.convert(lb.place("own.pdf"))
+    a = lb.doc(ta)
+    _, tb = lb.convert(lb.place("other.pdf", fixture="sample.docx"))
+    b = lb.doc(tb)
+    free = {}
+    real_make = source_copy.make_copy
+
+    def make(*args, **kw):
+        def probe():
+            free["ok"] = source_copy.RECORD_LOCK.acquire(timeout=0.5)
+            if free["ok"]:
+                source_copy.RECORD_LOCK.release()
+        th = _t.Thread(target=probe)
+        th.start()
+        th.join()
+        return real_make(*args, **kw)
+    monkeypatch.setattr(source_copy, "make_copy", make)
+    # B tries to record A's path (collision with an owner) and adopts
+    st = os.stat(a["source_copy_path"])
+    taken = CopyResult(Path(a["source_copy_path"]), st.st_size, st.st_mtime_ns, False, "present")
+    record_copy(lb.store, b["id"], taken, None, adopt={"source_root": lb.cfg.source_root(), "output_dir": b["output_dir"],
+                                                       "source_display": b["source_path"], "sha256": b["sha256"]})
+    assert free.get("ok") is True
+    assert source_copy.file_matches(Path(a["source_copy_path"]), a["sha256"])   # theirs, untouched
+    lb.store.close()
