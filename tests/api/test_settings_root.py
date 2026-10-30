@@ -99,3 +99,16 @@ def test_output_dir_is_no_longer_exposed(api):
     assert api.put("/api/settings", json={"general": {"output_dir": "out"}}).status_code == 200   # echo: ignored
     r = api.put("/api/settings", json={"general": {"output_dir": "D:\\elsewhere"}})
     assert r.status_code == 422 and "root_dir" in r.json()["detail"]
+
+
+def test_root_check_never_claims_a_missing_folder_writable(api, tmp_path, monkeypatch):
+    """Verifier V6: os.access only reads the read-only attribute on Windows (C:/Program Files/x looked writable).
+    A folder that does not exist yet is reported as unchecked; the real probe happens on save."""
+    import os as _os
+    monkeypatch.setattr(_os, "access", lambda *a, **k: True)          # what Windows says for C:/Program Files
+    r = api.post("/api/settings/root-check", json={"root_dir": str(tmp_path / "new" / "lib")}).json()
+    assert r["ok"] is True and r["writable"] is None and r["exists"] is False
+    assert r["nearest_existing"] == str(tmp_path)
+    assert "儲存時會建立並檢查寫入權限" in r["note"]
+    existing = api.post("/api/settings/root-check", json={"root_dir": str(tmp_path)}).json()
+    assert existing["ok"] is True and existing["writable"] is True and existing["note"] is None

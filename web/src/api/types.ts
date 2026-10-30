@@ -307,6 +307,10 @@ export interface RootCheck {
   exists: boolean;
   free_bytes: number | null;
   default?: boolean;
+  /** true only after a real probe inside an existing folder; null = not checked yet (it is created on save) */
+  writable?: boolean | null;
+  nearest_existing?: string | null;
+  note?: string | null;
 }
 
 export interface SourcesSummary {

@@ -14,6 +14,7 @@ from aidoc.config import (
     config_path,
     default_library_root,
     mcp_list_problem,
+    nearest_existing,
     root_dir_problem,
     root_dir_writable,
     save_config,
@@ -214,7 +215,13 @@ async def root_check(request: Request) -> dict:
     if problem is None:
         problem = await run_in_threadpool(root_dir_writable, root, create=False)
     ok = problem is None
-    return {"ok": ok, "problem": problem, "root_dir": str(root),
+    exists = ok and root.is_dir()
+    anc = nearest_existing(root) if ok else None
+    # writable is only claimed after a real probe inside an existing folder (verifier V6); a folder that does not
+    # exist yet is created and probed when the setting is saved
+    note = None if not ok or exists else f"資料夾還不存在（最近的現有資料夾：{anc}）；儲存時會建立並檢查寫入權限"
+    return {"ok": ok, "problem": problem, "root_dir": str(root), "writable": True if exists else None,
+            "nearest_existing": str(anc) if anc is not None else None, "note": note,
             "output_dir": str(root / "out") if ok or Path(value).is_absolute() or value == "" else None,
             "source_dir": str(root / "source") if ok or Path(value).is_absolute() or value == "" else None,
             "exists": root.is_dir() if ok else False, "free_bytes": free_bytes(root) if ok else None,

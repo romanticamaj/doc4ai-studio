@@ -105,3 +105,10 @@ test("no request before 400 ms of idle typing", async () => {
   await waitFor(() => expect(calls).toEqual(["D:\\doc4ai"]));
   expect(ROOT_CHECK_DEBOUNCE_MS).toBe(400);
 });
+
+test("a folder that does not exist yet is not shown as writable: the note says it is checked on save", async () => {
+  mockCheck((v) => ({ ok: true, problem: null, root_dir: v, output_dir: `${v}/out`, source_dir: `${v}/source`,
+    writable: null, note: "資料夾還不存在（最近的現有資料夾：C:/Program Files）；儲存時會建立並檢查寫入權限" }) as never);
+  renderField({ initial: "C:/Program Files/x" });
+  expect(await screen.findByTestId("root-dir-note")).toHaveTextContent("儲存時會建立並檢查寫入權限");
+});

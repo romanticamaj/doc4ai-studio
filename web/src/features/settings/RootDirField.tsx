@@ -66,6 +66,11 @@ export function RootDirField({
           尚未設定：使用預設的 Doc4AI 資料夾（<span className="font-mono">{fallback}</span>）
         </p>
       )}
+      {!problem && changed && check.data?.note && (
+        <p className="text-xs text-muted-foreground" data-testid="root-dir-note">
+          {check.data.note}
+        </p>
+      )}
       {problem ? (
         <p role="alert" className="flex items-start gap-1.5 text-xs text-danger" data-testid="root-dir-problem">
           <TriangleAlert className="mt-px size-3.5 shrink-0" /> {problem}
