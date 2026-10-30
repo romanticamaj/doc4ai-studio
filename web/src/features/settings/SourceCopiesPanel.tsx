@@ -8,7 +8,7 @@ import { ApiError } from "@/api/client";
 import type { BackfillOutcome, BackfillReport, BackfillRow } from "@/api/types";
 import { describeError } from "@/lib/errors";
 import { formatBytes } from "@/lib/format";
-import { detailText } from "@/features/document/SourceCopyWarning";
+import { rowDetail } from "@/features/document/SourceCopyWarning";
 
 /** spec 2026-10-29 §11.1 result texts */
 export const OUTCOME_TEXT: Record<BackfillOutcome, string> = {
@@ -110,7 +110,7 @@ export function SourceCopiesPanel() {
                     <TableCell>{outcomeText(r, report.dry_run)}</TableCell>
                     <TableCell>{r.from ? FROM_TEXT[r.from] : "—"}</TableCell>
                     <TableCell className="max-w-[22rem] truncate text-xs" title={r.detail ?? r.source ?? ""}>
-                      {detailText(r.detail)}
+                      {rowDetail(r.outcome, r.detail)}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -21,7 +21,7 @@ function report(dry: boolean): BackfillReport {
     dry_run: dry, source_dir: summary.source_dir, started_at: 0, finished_at: 1, bytes_needed: 0, bytes_copied: 0, free_bytes: 1,
     unreferenced_files: 0,
     totals: Object.fromEntries(OUTCOMES.map((o) => [o, 1])) as Record<BackfillOutcome, number>,
-    documents: OUTCOMES.map((o, i) => ({ id: `d${i}`, stem: `doc-${o}`, outcome: o, from: o === "copied" ? "work_copy" : null, size: 1, detail: o === "sha_mismatch" ? "sha_mismatch: C:\\x.pdf" : null })),
+    documents: OUTCOMES.map((o, i) => ({ id: `d${i}`, stem: `doc-${o}`, outcome: o, from: o === "copied" ? "work_copy" : null, size: 1, detail: o === "sha_mismatch" ? "sha_mismatch: C:\\x.pdf" : o === "missing_original" ? "missing_original" : null })),
   };
 }
 
@@ -74,7 +74,10 @@ test("補齊備份 posts dry_run false and renders all seven outcome texts", asy
   for (const t of ["已備份", "已存在", "原始檔不在了", "原始檔已被修改（內容與轉換時不同）", "無法讀取（可能被其他程式開著）", "失敗", "略過（輸出已不存在）"]) {
     expect(text).toContain(t);
   }
-  expect(text).toContain("內容與轉換時不同：C:\\x.pdf");             // the 說明 column is translated, never a raw code
+  // 說明 adds what 結果 does not say: the path, never the reason again, never a raw code
+  const cell = (stem: string) => within(table).getByText(stem).closest("tr")!.querySelectorAll("td")[3].textContent;
+  expect(cell("doc-sha_mismatch")).toBe("C:\\x.pdf");
+  expect(cell("doc-missing_original")).toBe("");
   expect(text).not.toContain("sha_mismatch:");
 });
 

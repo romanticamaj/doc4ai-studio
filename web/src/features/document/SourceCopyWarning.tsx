@@ -30,6 +30,14 @@ export function detailText(error: string | null | undefined): string {
   return rest ? `${base}：${rest}` : base;
 }
 
+/** The backfill table's 說明 for a row: when 結果 already names the reason (原始檔不在了, 已被修改, 無法讀取) only the
+ *  extra detail (a path) is left, so the reason is never shown twice; other codes are translated. */
+export function rowDetail(outcome: string, error: string | null | undefined): string {
+  if (!error) return "";
+  const { code, rest } = split(error);
+  return code === outcome ? rest : detailText(error);
+}
+
 /** null when the copy is fine. */
 export function copyReason(sc: Pick<SourceCopyDetail, "status" | "error" | "present"> | undefined | null): string | null {
   if (!sc) return null;
