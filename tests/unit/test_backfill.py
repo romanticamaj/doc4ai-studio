@@ -424,3 +424,95 @@ def test_adopting_does_its_copy_outside_the_record_lock(tmp_root, fixtures, monk
     assert free.get("ok") is True
     assert source_copy.file_matches(Path(a["source_copy_path"]), a["sha256"])   # theirs, untouched
     lb.store.close()
+
+
+# ---- live backfill bug (2026-10-31): the same content under the same stem in several output roots
+
+def _same_stem_docs(lb, fixtures, tmp_root, n: int, *, tag: bytes = b"%same-stem\n") -> list[dict]:
+    """n documents with one sha256 and one stem, each converted into its own output root (like sample.docx
+    converted three times into different out folders), then put back into the pre-v7 state."""
+    from aidoc.batch import register_source
+    from aidoc.config import load_config
+    from aidoc.engines.registry import get_engines
+    from aidoc.models import ConvertOptions
+    from aidoc.pipeline import run_task
+    data = (fixtures / "text.pdf").read_bytes() + tag
+    docs = []
+    for i in range(n):
+        src = tmp_root / f"orig{i}" / "sample.pdf"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_bytes(data)
+        cfg = load_config()
+        opts = ConvertOptions(output_dir=tmp_root / f"outroot{i}")
+        tid, _ = register_source(lb.store, lb.store.create_job(opts, "cli"), src, opts)
+        run_task(lb.store, tid, get_engines(cfg), cfg)
+        t = lb.store.get_task(tid)
+        docs.append(lb.store.find_document(t["sha256"], t["output_dir"]))
+    # the conversions follow the same naming rule: each one got its own copy (hardlinked to the first)
+    paths = [d["source_copy_path"] for d in docs]
+    assert all(d["source_copy_status"] == "copied" for d in docs) and len({os.path.normcase(p) for p in paths}) == n
+    for d in docs:
+        _pre_v7_doc(lb.store, lb.store.get_document(d["id"]))
+    shutil.rmtree(tmp_root / "source", ignore_errors=True)
+    return docs
+
+
+def test_backfill_gives_every_same_stem_same_content_document_its_own_hardlinked_copy(tmp_root, fixtures, monkeypatch):
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    docs = _same_stem_docs(lb, fixtures, tmp_root, 4)
+    assert len({Path(d["output_dir"]).name for d in docs}) == 1 and len({d["sha256"] for d in docs}) == 1
+    dry = backfill(lb.store, lb.cfg, dry_run=True)
+    real = backfill(lb.store, lb.cfg, dry_run=False)
+    assert [(r["id"], r["outcome"]) for r in dry["documents"]] == [(r["id"], r["outcome"]) for r in real["documents"]]
+    assert real["totals"]["copied"] == 4 and real["totals"]["failed"] == 0
+    paths = [lb.store.get_document(d["id"])["source_copy_path"] for d in docs]
+    assert len({os.path.normcase(p) for p in paths}) == 4                       # four distinct paths
+    inodes = {os.stat(p).st_ino for p in paths}
+    assert len(inodes) == 1 and os.stat(paths[0]).st_nlink == 4                 # one file's data, hardlinked
+    assert all(source_copy.file_matches(Path(p), docs[0]["sha256"]) for p in paths)
+    lb.store.close()
+
+
+def test_dry_run_outcomes_equal_the_run_on_a_mixed_batch(tmp_root, fixtures, monkeypatch):
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    same = _same_stem_docs(lb, fixtures, tmp_root, 3)
+    _, t = lb.convert(lb.place("unique.pdf", content=(fixtures / "text.pdf").read_bytes() + b"%u\n"))
+    uniq = lb.doc(t)
+    _pre_v7_doc(lb.store, lb.store.get_document(uniq["id"]))
+    _, t = lb.convert(lb.place("gone.pdf", content=(fixtures / "text.pdf").read_bytes() + b"%g\n"))
+    gone = lb.doc(t)
+    _pre_v7_doc(lb.store, lb.store.get_document(gone["id"]))
+    (tmp_root / "in" / "gone.pdf").unlink()
+    dry = backfill(lb.store, lb.cfg, dry_run=True)
+    real = backfill(lb.store, lb.cfg, dry_run=False)
+    assert [(r["id"], r["outcome"]) for r in dry["documents"]] == [(r["id"], r["outcome"]) for r in real["documents"]]
+    assert dry["totals"] == real["totals"]
+    assert real["totals"]["copied"] == 4 and real["totals"]["missing_original"] == 1 and real["totals"]["failed"] == 0
+    assert len(same) == 3
+    lb.store.close()
+
+
+def test_failed_collisions_are_retried_by_the_next_backfill(tmp_root, fixtures, monkeypatch):
+    """The 22 live documents left `failed: collision ...` by the old naming are copied by a normal backfill."""
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    docs = _same_stem_docs(lb, fixtures, tmp_root, 3)
+    for d in docs:
+        lb.store.set_source_copy(d["id"], path=None, status="failed", error="collision: C:/doc4ai/source/x is taken")
+    r = backfill(lb.store, lb.cfg, dry_run=False)
+    assert r["totals"]["copied"] == 3
+    assert all(lb.store.get_document(d["id"])["source_copy_status"] == "copied" for d in docs)
+    lb.store.close()
+
+
+def test_plan_path_derives_further_free_names(tmp_path):
+    from aidoc.source_copy import plan_path
+    from aidoc.store import Store
+    s = Store(tmp_path / "db" / "aidoc.db")
+    root = tmp_path / "source"
+    sha = "c" * 64
+    for d in ("rep", f"rep-{sha[:8]}", f"rep-{sha[:8]}-2"):
+        (root / d).mkdir(parents=True)
+        (root / d / "rep.pdf").write_bytes(b"someone else")
+    p = plan_path(s, root, output_dir="C:/out/rep", source_display="rep.pdf", sha256=sha, doc_id=None)
+    assert p.path == root / f"rep-{sha[:8]}-3" / "rep.pdf" and not p.present
+    s.close()

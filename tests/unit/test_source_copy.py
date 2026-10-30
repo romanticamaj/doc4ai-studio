@@ -231,16 +231,18 @@ def test_plan_ignores_part_files_and_own_db_path(tmp_path, store):
     assert p.path == root / "a" / "a.pdf" and not p.present
 
 
-def test_plan_collision_when_both_taken(tmp_path, store):
+def test_plan_collision_only_when_every_place_is_taken(tmp_path, store, monkeypatch):
+    """A collision remains only for the impossible case: all PLACE_TRIES names taken (here 3)."""
+    monkeypatch.setattr(source_copy, "PLACE_TRIES", 3)
     root = tmp_path / "source"
     sha = _sha(b"mine")
-    for d in ("a", f"a-{sha[:8]}"):
+    for d in ("a", f"a-{sha[:8]}", f"a-{sha[:8]}-2"):
         (root / d).mkdir(parents=True)
         (root / d / "a.pdf").write_bytes(b"someone else")
     with pytest.raises(CopyError) as e:
         plan_path(store, root, output_dir="C:\\out\\a", source_display="a.pdf", sha256=sha, doc_id=None)
     assert e.value.code == "collision"
-    assert all((root / d / "a.pdf").read_bytes() == b"someone else" for d in ("a", f"a-{sha[:8]}"))
+    assert all((root / d / "a.pdf").read_bytes() == b"someone else" for d in ("a", f"a-{sha[:8]}", f"a-{sha[:8]}-2"))
 
 
 def test_link_dedup_shares_data_on_ntfs(tmp_path):

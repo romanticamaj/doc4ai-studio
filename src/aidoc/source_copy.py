@@ -106,8 +106,15 @@ def _is_part(name: str) -> bool:
 
 # ---------------------------------------------------------------- planning (spec §4.3)
 
-def _occupied(store, target: Path, sha256: str, doc_id: str | None) -> bool | None:
+def path_key(p) -> str:
+    """One spelling per physical path (the rule of the ownership checks)."""
+    return os.path.normcase(os.path.realpath(str(fsops.plain_path(Path(p)))))
+
+
+def _occupied(store, target: Path, sha256: str, doc_id: str | None, reserved: set | None = None) -> bool | None:
     """None: free (copy there); True: occupied (try the next place); False: the target already holds the content."""
+    if reserved is not None and path_key(target) in reserved:
+        return True                                        # an earlier document of this backfill run takes it
     owner = store.document_by_source_copy(str(target)) if store is not None else None
     if owner is not None and owner["id"] != doc_id:
         return True
@@ -126,22 +133,35 @@ def _occupied(store, target: Path, sha256: str, doc_id: str | None) -> bool | No
     return None
 
 
+PLACE_TRIES = 1000          # source/<dir>, <dir>-<sha8>, <dir>-<sha8>-2 … -999: only then is it a collision
+
+
+def _places(stem: str, sha256: str):
+    yield stem
+    yield f"{stem}-{sha8(sha256)}"
+    for n in range(2, PLACE_TRIES):
+        yield f"{stem}-{sha8(sha256)}-{n}"
+
+
 def plan_path(store, source_root: Path, *, output_dir: str, source_display: str, sha256: str,
-              doc_id: str | None) -> Planned:
-    """Where this document's copy goes: source/<output dir name>/<file>, else source/<dir>-<sha8>/<file> when the
-    first place is occupied; both occupied -> CopyError("collision"). Nothing is written."""
+              doc_id: str | None, reserved: set | None = None) -> Planned:
+    """Where this document's copy goes: source/<output dir name>/<file>; when that is occupied (another file,
+    another document's copy — also one with the same content, e.g. the same file converted into several output
+    roots), the next free of <dir>-<sha8>, <dir>-<sha8>-2, -3, … Every document gets a free place; "collision" only
+    when PLACE_TRIES places are all taken. `reserved` (path_key set): places earlier documents of the same backfill
+    run take, so a dry run plans exactly like the real run. Nothing is written."""
     source_root = fsops.plain_path(Path(source_root))
     name = copy_name(source_display)
     stem = Path(str(output_dir)).name or "source"
-    places = [stem, f"{stem}-{sha8(sha256)}"]
-    for d in places:
-        target = source_root / d / name
-        state = _occupied(store, target, sha256, doc_id)
+    last = None
+    for d in _places(stem, sha256):
+        target = last = source_root / d / name
+        state = _occupied(store, target, sha256, doc_id, reserved)
         if state is None:
             return Planned(target, False)
         if state is False:
             return Planned(target, True)
-    raise CopyError("collision", f"{source_root / places[-1] / name} is taken")
+    raise CopyError("collision", f"{last} is taken (and {PLACE_TRIES - 1} other places)")
 
 
 # ---------------------------------------------------------------- the copy (spec §5.2)
@@ -581,7 +601,15 @@ def _fail_row(store, doc, emit, row, outcome: str, error: str, status: str = "fa
     return row
 
 
-def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -> dict:
+def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None, reserved: set | None = None) -> dict:
+    row = _ensure_copy(store, config, doc, dry_run=dry_run, emit=emit, reserved=reserved)
+    if reserved is not None and row.get("_path") is not None:
+        reserved.add(path_key(row["_path"]))
+    row.pop("_path", None)
+    return row
+
+
+def _ensure_copy(store, config, doc: dict, *, dry_run: bool, emit, reserved: set | None) -> dict:
     """One document through rows 0-5 of spec §7.2 -> {id, stem, outcome, from, size, detail}. Without dry_run the
     DB, the sidecar's source_copy key and (on a status change) a document.source_copy event are written. dry_run
     reads and hashes candidates but writes nothing at all."""
@@ -594,7 +622,7 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
     planned, plan_error = None, None
     try:
         planned = plan_path(store, root, output_dir=doc["output_dir"], source_display=doc["source_path"],
-                            sha256=sha, doc_id=doc["id"])
+                            sha256=sha, doc_id=doc["id"], reserved=reserved)
     except CopyError as e:
         plan_error = e
     # 1: the recorded copy (or the planned target) already holds the content
@@ -608,14 +636,14 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
             if not dry_run:
                 _set_status(store, doc, emit, path=present, status="copied", error=None, size=size,
                             mtime_ns=mtime_ns)
-            row.update(outcome="already_present", size=size)
+            row.update(outcome="already_present", size=size, _path=present)
             return row
         except (OSError, _Vanished):
             # gone between the check and the record: plan again and copy from a candidate (rows 2-5)
             doc = store.get_document(doc["id"]) or doc
             try:
                 planned = plan_path(store, root, output_dir=doc["output_dir"], source_display=doc["source_path"],
-                                    sha256=sha, doc_id=doc["id"])
+                                    sha256=sha, doc_id=doc["id"], reserved=reserved)
                 plan_error = None
             except CopyError as e:
                 planned, plan_error = None, e
@@ -639,7 +667,7 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
                 return row
             return _fail_row(store, doc, emit, row, "failed", plan_error.text())
         if dry_run:
-            row["outcome"] = "copied"
+            row.update(outcome="copied", _path=planned.path)     # reserved: later documents plan around it
             return row
         try:
             if shared is not None and src == shared:
@@ -661,7 +689,7 @@ def ensure_copy(store, config, doc: dict, *, dry_run: bool = False, emit=None) -
             row.update(outcome="failed", detail=text)
             return row
         size = final.size
-        row.update(outcome="copied", size=size)
+        row.update(outcome="copied", size=size, _path=final.path)
         if not write_sidecar_copy(Path(doc["output_dir"]), sidecar_info(root, final.path, sha, size)):
             row["detail"] = "sidecar not updated (missing or unreadable)"
         return row
@@ -723,15 +751,17 @@ def backfill(store, config, *, dry_run: bool, progress=None, emit=None) -> dict:
         root = config.source_root()
         docs = sorted(store.list_documents(), key=lambda d: (d.get("created_at") or 0, d["id"]))
         if not dry_run:
-            plan = [ensure_copy(store, config, d, dry_run=True) for d in docs]
+            planned_paths: set = set()
+            plan = [ensure_copy(store, config, d, dry_run=True, reserved=planned_paths) for d in docs]
             needed = sum(r["size"] or 0 for r in plan if r["outcome"] == "copied")
             free = free_bytes(root)
             if needed and (free is None or needed + SOURCE_COPY_RESERVE_BYTES > free):
                 raise InsufficientDisk(needed + SOURCE_COPY_RESERVE_BYTES, free or 0)
         rows = []
+        reserved: set = set()           # paths taken by earlier documents of this run: a dry run plans like the run
         for i, d in enumerate(docs, 1):
             current = store.get_document(d["id"]) or d
-            rows.append(ensure_copy(store, config, current, dry_run=dry_run, emit=emit))
+            rows.append(ensure_copy(store, config, current, dry_run=dry_run, emit=emit, reserved=reserved))
             if progress is not None:
                 progress({"dry_run": dry_run, "done": i, "total": len(docs)})
         totals = {k: 0 for k in OUTCOMES}
