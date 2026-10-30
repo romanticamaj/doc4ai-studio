@@ -344,3 +344,17 @@ def test_one_physical_file_has_one_owner_even_through_an_unnormalized_root(tmp_r
     alias = os.path.join(str(cp.parent.parent), "x", "..", cp.parent.name, cp.name)
     assert lb.store.document_by_source_copy(alias)["id"] == a["id"]
     lb.store.close()
+
+
+def test_unreferenced_files_compare_real_paths(tmp_root, fixtures, monkeypatch):
+    """Verifier V8: a copy recorded under another spelling of the same path is referenced, not stray."""
+    from aidoc.source_copy import unreferenced_files
+    lb = Lib(tmp_root, fixtures, monkeypatch)
+    _, t = lb.convert(lb.place("spelled.pdf"))
+    d = lb.doc(t)
+    cp = Path(d["source_copy_path"])
+    alias = os.path.join(str(cp.parent.parent), "x", "..", cp.parent.name, cp.name.upper())
+    lb.store.set_source_copy(d["id"], path=alias, status="copied", error=None,
+                             size=d["source_copy_size"], mtime_ns=d["source_copy_mtime_ns"])
+    assert unreferenced_files(lb.store, lb.cfg.source_root()) == 0
+    lb.store.close()

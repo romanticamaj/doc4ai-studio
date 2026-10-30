@@ -647,15 +647,15 @@ def unreferenced_files(store, source_root: Path) -> int:
     root = fsops.long_path(Path(source_root))
     if not os.path.isdir(root):
         return 0
-    refs = {os.path.normcase(str(fsops.plain_path(Path(d["source_copy_path"]))))
-            for d in store.list_documents() if d.get("source_copy_path")}
+    def norm(p) -> str:                       # the same rule as the ownership checks (store.document_by_source_copy)
+        return os.path.normcase(os.path.realpath(str(fsops.plain_path(Path(p)))))
+    refs = {norm(d["source_copy_path"]) for d in store.list_documents() if d.get("source_copy_path")}
     n = 0
     for dirpath, _dirs, files in os.walk(root):
         for name in files:
             if _is_part(name):
                 continue
-            p = fsops.plain_path(Path(dirpath) / name)
-            if os.path.normcase(str(p)) not in refs:
+            if norm(Path(dirpath) / name) not in refs:
                 n += 1
     return n
 
