@@ -1,4 +1,340 @@
-"""OAuth client registry (spec 2026-11-05 §5.1, §5.2)."""
+"""OAuth client registry (spec 2026-11-05 §5.1 CIMD, §5.2 DCR).
+
+* CIMD: `client_id` is an https URL whose JSON document describes the client (Claude Code). Fetched with an SSRF
+  guard (https only, no redirects, every resolved address public, 5 s, 64 KB, JSON only, `client_id` echoed), cached in
+  `oauth_clients` (`cache_until = now + clamp(max-age, 60 s, 24 h)`), at most 6 fetches a minute per client id, and
+  — when a fetch fails — a document fetched within the last 7 days is used instead (this host may be offline).
+* DCR: `POST /oauth/register` creates a public client (`doc4ai_cl_…`, no secret); fixed hourly window per IP.
+* `redirect_allowed()`: the one redirect rule for registration and authorization — exact string, except loopback
+  `http://localhost|127.0.0.1|[::1]` which ignores the port only (RFC 8252 §7.3)."""
 from __future__ import annotations
 
+import ipaddress
+import json
+import logging
+import re
+import socket
+import threading
+from collections import deque
+from dataclasses import dataclass
+from urllib.parse import urlsplit
+
+from aidoc.oauth.tokens import generate_client_id
+
+log = logging.getLogger("aidoc.oauth")
+
+CIMD_MAX_BYTES = 65536
+CIMD_TIMEOUT_S = 5
+CIMD_FETCH_PER_MIN = 6
+CIMD_STALE_OK_S = 7 * 86400          # a failed refetch falls back to a document this recent
+CIMD_CACHE_MIN_S = 60
+CIMD_CACHE_MAX_S = 86400
+CIMD_CACHE_DEFAULT_S = 3600          # no max-age in the response
 DCR_UNUSED_DAYS = 30                 # a DCR client that never got a grant is deleted after this
+LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
+URI_MAX = 512
+NAME_MAX = 100
+DCR_MAX_REDIRECTS = 10
+DCR_FIELD_MAX = 512
+BLOCKED_SCHEMES = frozenset({"javascript", "data", "file", "vbscript", "blob", "about", "ftp", "ws", "wss", "mailto", "tel"})
+_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*$")
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+GRANT_TYPES = ("authorization_code", "refresh_token")
+APPLICATION_TYPES = (None, "native", "web")
+
+
+class ClientError(Exception):
+    """`code` is the OAuth error (invalid_redirect_uri, invalid_client_metadata, rate_limited) or an internal reason
+    for the authorize error page (unknown_client, invalid_client_id, cimd_disabled, cimd_fetch_failed,
+    client_disabled); `message` is shown to the user."""
+
+    def __init__(self, code: str, message: str, retry_after: int | None = None):
+        super().__init__(f"{code}: {message}")
+        self.code, self.message, self.retry_after = code, message, retry_after
+
+
+@dataclass
+class FetchResult:
+    status: int
+    headers: dict            # lower-cased names
+    body: bytes              # at most max_bytes + 1 bytes (one more than allowed tells "too large")
+
+
+def fetch_json(url: str, *, max_bytes: int, timeout: float) -> FetchResult:
+    """One GET without redirects and without proxies from the environment; the body is read up to max_bytes + 1."""
+    import httpx
+    with httpx.Client(follow_redirects=False, timeout=timeout, trust_env=False) as c, \
+            c.stream("GET", url, headers={"Accept": "application/json"}) as r:
+        body = bytearray()
+        for chunk in r.iter_bytes():
+            body += chunk
+            if len(body) > max_bytes:
+                break
+        return FetchResult(status=r.status_code, headers={k.lower(): v for k, v in r.headers.items()},
+                           body=bytes(body[: max_bytes + 1]))
+
+
+def resolve_addrs(host: str) -> list[str]:
+    infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+    return list(dict.fromkeys(i[4][0] for i in infos))
+
+
+def _is_public(addr: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(addr.split("%", 1)[0])
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+                or ip.is_unspecified or (ip.version == 4 and ip in _CGNAT))
+
+
+def classify_redirect(uri) -> str | None:
+    """"https" | "loopback" | "private" (RFC 8252 §7.1 private-use scheme) | None (never acceptable)."""
+    if not isinstance(uri, str) or not uri or len(uri) > URI_MAX or "#" in uri:
+        return None
+    try:
+        u = urlsplit(uri)
+    except ValueError:
+        return None
+    scheme = u.scheme.lower()
+    if not scheme or not _SCHEME_RE.match(scheme):
+        return None
+    if scheme in ("http", "https"):
+        try:
+            host, _port = u.hostname, u.port
+        except ValueError:
+            return None
+        if not host or "@" in u.netloc:
+            return None
+        if scheme == "https":
+            return "https"
+        return "loopback" if host.lower() in LOOPBACK_HOSTS else None
+    if scheme in BLOCKED_SCHEMES:
+        return None
+    return "private"
+
+
+def _loopback_key(uri: str) -> tuple:
+    u = urlsplit(uri)
+    return (u.scheme.lower(), (u.hostname or "").lower(), u.path, u.query)
+
+
+def redirect_allowed(client_row: dict, uri: str) -> bool:
+    kind = classify_redirect(uri)
+    if kind is None:
+        return False
+    for reg in client_row.get("redirect_uris") or []:
+        if kind == "loopback":
+            if classify_redirect(reg) == "loopback" and _loopback_key(reg) == _loopback_key(uri):
+                return True
+        elif reg == uri and classify_redirect(reg) == kind:
+            return True
+    return False
+
+
+def _max_age(cache_control: str | None) -> int:
+    m = re.search(r"max-age\s*=\s*(\d+)", cache_control or "", re.IGNORECASE)
+    if not m:
+        return CIMD_CACHE_DEFAULT_S
+    return max(CIMD_CACHE_MIN_S, min(CIMD_CACHE_MAX_S, int(m.group(1))))
+
+
+def cimd_id_problem(client_id: str) -> str | None:
+    if len(client_id) > URI_MAX:
+        return "client_id 太長"
+    try:
+        u = urlsplit(client_id)
+    except ValueError:
+        return "client_id 不是 URL"
+    if u.scheme != "https" or not u.hostname or "@" in u.netloc or u.query or u.fragment or "#" in client_id \
+            or u.path in ("", "/"):
+        return "client_id 必須是 https URL（含路徑，不含帳密、query、fragment）"
+    return None
+
+
+class ClientRegistry:
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self._fetches: dict[str, deque] = {}
+        self._dcr: dict[str, tuple[float, int]] = {}         # ip -> (window start, attempts)
+        self._lock = threading.Lock()
+
+    @property
+    def store(self):
+        return self.ctx.store
+
+    # ---- resolution (authorize, token)
+    def resolve(self, client_id: str, now: float) -> dict:
+        if not isinstance(client_id, str) or not client_id:
+            raise ClientError("unknown_client", "找不到這個 client")
+        if client_id.lower().startswith(("https:", "http:")):
+            return self._resolve_cimd(client_id, now)
+        row = self.store.get_oauth_client(client_id)
+        if row is None or row.get("kind") != "dcr":
+            raise ClientError("unknown_client", "找不到這個 client")
+        if row.get("disabled_at") is not None:
+            raise ClientError("client_disabled", "這個 client 已停用")
+        return row
+
+    def _resolve_cimd(self, client_id: str, now: float) -> dict:
+        if not self.ctx.config.oauth.allow_cimd:
+            raise ClientError("cimd_disabled", "這台伺服器未允許以 URL 識別的 client（oauth.allow_cimd）")
+        problem = cimd_id_problem(client_id)
+        if problem:
+            raise ClientError("invalid_client_id", problem)
+        row = self.store.get_oauth_client(client_id)
+        if row is not None and row.get("kind") == "cimd":
+            if row.get("disabled_at") is not None:
+                raise ClientError("client_disabled", "這個 client 已停用")
+            if (row.get("cache_until") or 0) > now:
+                return row
+        try:
+            if not self._may_fetch(client_id, now):
+                raise ClientError("cimd_fetch_failed", "too many fetches of this document; try again in a minute")
+            doc, max_age = self._fetch(client_id)
+        except ClientError as e:
+            stale = row is not None and row.get("kind") == "cimd" and row.get("fetched_at") is not None \
+                and now - row["fetched_at"] <= CIMD_STALE_OK_S
+            if stale:
+                log.warning("CIMD fetch of %s failed (%s); using the document fetched %.0f s ago", client_id, e.message,
+                            now - row["fetched_at"])
+                return row
+            raise
+        self.store.upsert_oauth_client(
+            client_id=client_id, kind="cimd", name=doc.get("client_name") or urlsplit(client_id).hostname,
+            redirect_uris=doc["redirect_uris"], metadata_url=client_id, client_uri=_opt_str(doc.get("client_uri")),
+            logo_uri=_opt_str(doc.get("logo_uri")), software_id=_opt_str(doc.get("software_id")),
+            software_version=_opt_str(doc.get("software_version")), application_type=doc.get("application_type"),
+            metadata_json=doc, fetched_at=now, cache_until=now + max_age)
+        return self.store.get_oauth_client(client_id)
+
+    def _may_fetch(self, client_id: str, now: float) -> bool:
+        with self._lock:
+            q = self._fetches.setdefault(client_id, deque())
+            while q and now - q[0] >= 60:
+                q.popleft()
+            if len(q) >= CIMD_FETCH_PER_MIN:
+                return False
+            q.append(now)
+            if len(self._fetches) > 1000:
+                for k in [k for k, v in self._fetches.items() if not v or now - v[-1] >= 60]:
+                    del self._fetches[k]
+            return True
+
+    def _fetch(self, url: str) -> tuple[dict, int]:
+        def fail(reason):
+            return ClientError("cimd_fetch_failed", reason)
+        host = urlsplit(url).hostname
+        try:
+            addrs = resolve_addrs(host)
+        except OSError as e:
+            raise fail(f"DNS lookup failed ({type(e).__name__})") from None
+        if not addrs:
+            raise fail("DNS lookup returned no address")
+        bad = [a for a in addrs if not _is_public(a)]
+        if bad:
+            raise fail(f"address not allowed ({bad[0]} is not a public address)")
+        try:
+            res = fetch_json(url, max_bytes=CIMD_MAX_BYTES, timeout=CIMD_TIMEOUT_S)
+        except Exception as e:  # noqa: BLE001  any transport error is one reason: unreachable
+            raise fail(f"unreachable ({type(e).__name__})") from None
+        if 300 <= res.status < 400:
+            raise fail(f"HTTP {res.status}: redirect not allowed")
+        if res.status != 200:
+            raise fail(f"HTTP {res.status}")
+        if "json" not in (res.headers.get("content-type") or "").lower():
+            raise fail("content type is not json")
+        if len(res.body) > CIMD_MAX_BYTES:
+            raise fail("document larger than 64 KB")
+        try:
+            doc = json.loads(res.body)
+        except ValueError:
+            raise fail("document is not valid json") from None
+        if not isinstance(doc, dict):
+            raise fail("document is not a json object")
+        if doc.get("client_id") != url:
+            raise fail("client_id in the document does not equal its URL")
+        uris = doc.get("redirect_uris")
+        if not isinstance(uris, list) or not uris or not all(isinstance(u, str) and u and len(u) <= URI_MAX for u in uris):
+            raise fail("redirect_uris must be a non-empty list of strings")
+        if doc.get("token_endpoint_auth_method") not in (None, "none"):
+            raise fail("token_endpoint_auth_method must be none")
+        name = doc.get("client_name")
+        if name is not None and (not isinstance(name, str) or len(name) > NAME_MAX):
+            raise fail("client_name must be a string of at most 100 characters")
+        if doc.get("application_type") not in APPLICATION_TYPES:
+            raise fail("application_type must be native or web")
+        return doc, _max_age(res.headers.get("cache-control"))
+
+    # ---- DCR (RFC 7591 subset)
+    def _count_dcr(self, ip: str | None, now: float) -> None:
+        limit = self.ctx.config.oauth.dcr_per_hour_per_ip
+        key = ip or "?"
+        with self._lock:
+            start, n = self._dcr.get(key, (now, 0))
+            if now - start >= 3600:
+                start, n = now, 0
+            if n >= limit:
+                self._dcr[key] = (start, n)
+                raise ClientError("rate_limited", "too many client registrations from this address",
+                                  retry_after=max(1, int(start + 3600 - now)))
+            self._dcr[key] = (start, n + 1)
+            if len(self._dcr) > 10000:
+                for k in [k for k, (s, _n) in self._dcr.items() if now - s >= 3600]:
+                    del self._dcr[k]
+
+    def register_dcr(self, body, ip: str | None, now: float) -> dict:
+        """Every attempt counts toward the hourly limit (also malformed ones); returns the RFC 7591 response."""
+        self._count_dcr(ip, now)
+
+        def meta(msg):
+            return ClientError("invalid_client_metadata", msg)
+        if not isinstance(body, dict):
+            raise meta("the body must be a JSON object")
+        uris = body.get("redirect_uris")
+        if not isinstance(uris, list) or not 1 <= len(uris) <= DCR_MAX_REDIRECTS:
+            raise ClientError("invalid_redirect_uri", f"redirect_uris must list 1 to {DCR_MAX_REDIRECTS} URIs")
+        for u in uris:
+            if classify_redirect(u) is None:
+                raise ClientError("invalid_redirect_uri", "redirect URIs must be https, http on localhost / 127.0.0.1 / [::1], "
+                                                          "or a private-use scheme (no fragment)")
+        name = body.get("client_name")
+        if name is not None and (not isinstance(name, str) or not name.strip() or len(name) > NAME_MAX):
+            raise meta("client_name must be a string of at most 100 characters")
+        if body.get("token_endpoint_auth_method") not in (None, "none"):
+            raise meta("only public clients are supported: token_endpoint_auth_method must be none")
+        grants = body.get("grant_types", list(GRANT_TYPES))
+        if not isinstance(grants, list) or not grants or not set(grants) <= set(GRANT_TYPES):
+            raise meta("grant_types must be a subset of authorization_code, refresh_token")
+        rtypes = body.get("response_types", ["code"])
+        if not isinstance(rtypes, list) or not rtypes or not set(rtypes) <= {"code"}:
+            raise meta("response_types must be [\"code\"]")
+        if body.get("application_type") not in APPLICATION_TYPES:
+            raise meta("application_type must be native or web")
+        opt = {}
+        for key in ("scope", "software_id", "software_version", "client_uri", "logo_uri"):
+            v = body.get(key)
+            if v is None:
+                continue
+            if not isinstance(v, str) or len(v) > DCR_FIELD_MAX:
+                raise meta(f"{key} must be a string of at most {DCR_FIELD_MAX} characters")
+            opt[key] = v
+        cid = generate_client_id()
+        name = name.strip() if isinstance(name, str) else None
+        self.store.upsert_oauth_client(
+            client_id=cid, kind="dcr", name=name or "未命名 client", redirect_uris=uris, client_uri=opt.get("client_uri"),
+            logo_uri=opt.get("logo_uri"), software_id=opt.get("software_id"), software_version=opt.get("software_version"),
+            application_type=body.get("application_type"), metadata_json=body)
+        out = {"client_id": cid, "client_id_issued_at": int(now), "token_endpoint_auth_method": "none",
+               "redirect_uris": uris, "grant_types": grants, "response_types": rtypes, **opt}
+        if name:
+            out["client_name"] = name
+        if body.get("application_type"):
+            out["application_type"] = body["application_type"]
+        return out
+
+
+def _opt_str(v):
+    return v if isinstance(v, str) and len(v) <= DCR_FIELD_MAX else None

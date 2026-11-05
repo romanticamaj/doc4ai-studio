@@ -46,7 +46,7 @@ class EnvelopeMiddleware:
         # MCP protocol responses (and Phase 2 /.well-known/) must reach clients byte for byte (MCP spec §4.1)
         # docling-serve compatible routes (/v1, /v1alpha, /health) answer docling-shaped JSON, never an envelope
         if (scope["type"] != "http" or path in ("/mcp", "/health", "/ready", "/version", "/v1", "/v1alpha")
-                or path.startswith(("/mcp/", "/.well-known/", "/v1/", "/v1alpha/"))):
+                or path.startswith(("/mcp/", "/.well-known/", "/oauth/", "/v1/", "/v1alpha/"))):
             return await self.app(scope, receive, send)
         start: dict | None = None
         chunks: list[bytes] = []
@@ -155,6 +155,8 @@ def create_app(ctx: ServerContext) -> FastAPI:
     app = FastAPI(title="aidoc", version="0.1.0", docs_url="/api/docs" if docs else None,
                   openapi_url="/api/openapi.json" if docs else None, redoc_url=None, lifespan=lifespan)
     app.state.ctx = ctx
+    from aidoc.oauth.endpoints import OAuthRuntime
+    app.state.oauth = OAuthRuntime(ctx)                 # local MCP OAuth (spec 2026-11-05): per-app registry state
 
     @app.exception_handler(ApiError)
     async def _api_error(request: Request, exc: ApiError):
@@ -186,6 +188,10 @@ def create_app(ctx: ServerContext) -> FastAPI:
     api.include_router(mcp_api.router)
     api.include_router(verify_api.router)
     app.include_router(api)
+    from aidoc.oauth import endpoints as oauth_endpoints
+    from aidoc.oauth import metadata as oauth_metadata
+    app.include_router(oauth_metadata.router)           # /.well-known/* (before the SPA catch-all)
+    app.include_router(oauth_endpoints.router)          # /oauth/*
     app.add_route("/mcp", rt.app, methods=["GET", "POST", "DELETE"])     # before the SPA catch-all (D2, spike S2)
     compat_router.install(app)                          # docling-serve compatible /v1 (compat spec §4), PAT auth
 
