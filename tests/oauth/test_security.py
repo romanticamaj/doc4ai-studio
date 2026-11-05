@@ -137,7 +137,8 @@ def test_tokens_stored_hashed_only(oauth_client, oauth_ctx):
     blob = "\n".join(dump)
     for name, raw in secrets_.items():
         assert raw not in blob, name
-        assert raw[len(raw.split("_")[0]) + 1:] not in blob, name                    # not even the body
+        body = raw.split("_", 2)[2] if raw.startswith("doc4ai_") else raw     # the secret part (a verifier has no prefix)
+        assert len(body) >= 43 and body not in blob, name                         # not even without the prefix
     # only display prefixes (prefix + 4 characters) ever appear
     assert not re.search(r"doc4ai_(at|rt|ac)_[0-9A-Za-z]{5,}", blob)
 
