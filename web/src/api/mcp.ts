@@ -1,6 +1,6 @@
 import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
-import type { McpCallsPage, McpClient, McpSnippet, McpStats, McpStatus, McpToken, McpTokenCreated } from "./types";
+import type { McpCallsPage, McpClient, McpSnippet, McpSnippetAuth, McpStats, McpStatus, McpToken, McpTokenCreated } from "./types";
 
 export type CallFilters = { token_id?: string; client_id?: string; tool?: string; status?: string; since?: string; until?: string; method?: string };
 export type ClientFilters = { active?: boolean; token_id?: string };
@@ -12,7 +12,7 @@ export const qk = {
     clients: (f: ClientFilters = {}) => ["mcp", "clients", f] as const,
     calls: (f: CallFilters = {}) => ["mcp", "calls", f] as const,
     stats: (w: "24h" | "7d" = "24h") => ["mcp", "stats", w] as const,
-    snippets: (endpoint?: string) => ["mcp", "snippets", endpoint ?? ""] as const,
+    snippets: (endpoint?: string, auth: McpSnippetAuth = "pat") => ["mcp", "snippets", endpoint ?? "", auth] as const,
   },
 };
 
@@ -38,10 +38,11 @@ export const useMcpCalls = (f: CallFilters) =>
   });
 export const useMcpStats = (w: "24h" | "7d") =>
   useQuery({ queryKey: qk.mcp.stats(w), queryFn: ({ signal }) => api.get<McpStats>(`/api/mcp/stats?window=${w}`, signal), refetchInterval: 30_000 });
-export const useConfigSnippets = (endpoint?: string) =>
+export const useConfigSnippets = (endpoint?: string, auth: McpSnippetAuth = "pat") =>
   useQuery({
-    queryKey: qk.mcp.snippets(endpoint),
-    queryFn: ({ signal }) => api.get<{ endpoint_url: string; snippets: McpSnippet[] }>(`/api/mcp/config-snippets${qs({ endpoint })}`, signal),
+    queryKey: qk.mcp.snippets(endpoint, auth),
+    queryFn: ({ signal }) =>
+      api.get<{ endpoint_url: string; auth?: McpSnippetAuth; snippets: McpSnippet[] }>(`/api/mcp/config-snippets${qs({ endpoint, auth })}`, signal),
   });
 
 const ISSUE_KEY = ["mcp", "issue"] as const;

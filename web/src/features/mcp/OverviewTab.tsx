@@ -9,7 +9,8 @@ import { StatusBadge, Tag } from "@/components/StatusBadge";
 import { ErrorState } from "@/components/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { ConfigSnippets, CopyButton } from "./ConfigSnippets";
+import { AuthModeToggle, ConfigSnippets, CopyButton } from "./ConfigSnippets";
+import type { McpSnippetAuth } from "@/api/types";
 import { TokenFill } from "./TokenFill";
 import { checkPat } from "./patToken";
 import { Sparkline } from "./Sparkline";
@@ -18,7 +19,11 @@ export function OverviewTab() {
   const status = useMcpStatus();
   const stats = useMcpStats("24h");
   const [endpoint, setEndpoint] = useState<string | undefined>(undefined);
-  const snippets = useConfigSnippets(endpoint);
+  // OAuth (no token in the config) is the default whenever the server has it on (spec 2026-11-05 §7.2)
+  const [authChoice, setAuthChoice] = useState<McpSnippetAuth | null>(null);
+  const oauthOn = Boolean(status.data?.oauth?.enabled);
+  const auth: McpSnippetAuth = oauthOn ? (authChoice ?? "oauth") : "pat";
+  const snippets = useConfigSnippets(status.data ? endpoint : undefined, auth);
   const chosen = endpoint ?? snippets.data?.endpoint_url;
   // a pasted PAT lives only in this component's state: never sent, never stored, gone when the tab/page unmounts
   const [pasted, setPasted] = useState("");
@@ -42,13 +47,27 @@ export function OverviewTab() {
       </div>
       <Metrics s={s} stats={stats.data} />
       <Panel>
-        <PanelHeader title="連線設定" description="token 的位置先放占位字；在下面貼上 token 就會填好，建立 token 時也會給填好的版本。" />
+        <PanelHeader
+          title="連線設定"
+          description={
+            auth === "oauth"
+              ? "不需要先建 token：加入這個位址後，用戶端會開瀏覽器到「授權連線」頁，按允許就連上。"
+              : "token 的位置先放占位字；在下面貼上 token 就會填好，建立 token 時也會給填好的版本。"
+          }
+        />
         <div className="grid gap-4 p-4">
-          <TokenFill value={pasted} onChange={setPasted} />
+          {oauthOn && <AuthModeToggle value={auth} onChange={setAuthChoice} />}
+          {auth === "oauth" && s.bind.host !== "127.0.0.1" && (
+            <p className="flex items-start gap-2 text-xs text-warn">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+              <span>別台電腦上的 Claude Code 無法用 http 的 OAuth；請用 PAT</span>
+            </p>
+          )}
+          {auth === "pat" && <TokenFill value={pasted} onChange={setPasted} />}
           {snippets.isError ? (
             <ErrorState title="無法產生設定" error={snippets.error} onRetry={() => snippets.refetch()} />
           ) : snippets.data ? (
-            <ConfigSnippets key={snippets.data.endpoint_url} snippets={snippets.data.snippets} token={pat} />
+            <ConfigSnippets key={`${snippets.data.endpoint_url}|${auth}`} snippets={snippets.data.snippets} token={auth === "pat" ? pat : undefined} />
           ) : (
             <Skeleton className="h-40" />
           )}

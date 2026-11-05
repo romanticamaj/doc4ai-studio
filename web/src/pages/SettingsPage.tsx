@@ -19,6 +19,7 @@ import type { EngineName, Settings, SystemInfo } from "@/api/types";
 import { useEventStream } from "@/events/EventStreamProvider";
 import { EngineCard } from "@/features/settings/EngineCard";
 import { VlmSettingsCard } from "@/features/settings/VlmSettingsCard";
+import { OauthSection } from "@/features/settings/OauthSection";
 import { NumberField } from "@/features/settings/NumberField";
 import { ListField } from "@/features/settings/ListField";
 import { diffSettings } from "@/features/settings/diffSettings";
@@ -177,6 +178,13 @@ export default function SettingsPage() {
           <SectionTitle id="mcp-h" title="MCP" description="其他 AI 透過 /mcp 使用這個 Library 的規則。token 本身在 MCP 頁管理。" />
           {settings.data ? <McpSettingsForm original={settings.data} /> : !settings.isError && <Skeleton className="h-72 rounded-[10px]" />}
         </section>
+
+        {settings.data?.oauth && (
+          <section aria-labelledby="oauth-h" id="oauth">
+            <SectionTitle id="oauth-h" title="OAuth 授權" description="本機 MCP 的瀏覽器授權連線；連上的用戶端會出現在 MCP 頁的 Tokens。" />
+            <OauthSection original={settings.data.oauth} />
+          </section>
+        )}
 
         {!unauthorized && <TokenCard />}
       </div>

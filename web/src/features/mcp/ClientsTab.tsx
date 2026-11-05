@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { clientLabel, splitClients } from "./clientState";
+import { OAuthPill } from "./OAuthPill";
 
 const ALL = "all";
 
@@ -99,7 +100,12 @@ export function ClientsTab() {
                 {history.map((c) => (
                   <tr key={c.id}>
                     <td className="px-4 py-2 font-medium">{clientLabel(c)}</td>
-                    <td className="px-3 py-2 text-xs">{c.token_name ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs">
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        {c.token_name ?? "—"}
+                        {c.token_kind === "oauth" && <OAuthPill />}
+                      </span>
+                    </td>
                     <td className="px-3 py-2 font-mono text-xs">{c.protocol_version ?? "—"}</td>
                     <td className="px-3 py-2 font-mono text-xs">{c.last_ip ?? "—"}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap tabular">{formatDateTime(c.first_seen)}</td>
@@ -134,7 +140,10 @@ function ClientCard({ c, now }: { c: McpClient; now: number }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate text-[13px] font-semibold">{label}</h3>
-          <p className="truncate text-xs text-muted-foreground">{c.token_name ? `token：${c.token_name}` : "token 已刪除"}</p>
+          <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="truncate">{c.token_name ? `token：${c.token_name}` : "token 已刪除"}</span>
+            {c.token_kind === "oauth" && <OAuthPill />}
+          </p>
         </div>
         <StatusBadge status="active">活躍</StatusBadge>
       </div>

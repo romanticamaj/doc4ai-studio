@@ -1,7 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { McpSnippet } from "@/api/types";
+import type { McpSnippet, McpSnippetAuth } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -75,6 +75,38 @@ export function CopyButton({ text, label = "複製", className }: { text: string
   );
 }
 
+/** Segmented 「授權方式」 control: OAuth (browser consent, no token in the config) or PAT (spec 2026-11-05 §7.2). */
+export function AuthModeToggle({ value, onChange }: { value: McpSnippetAuth; onChange: (v: McpSnippetAuth) => void }) {
+  const opts: [McpSnippetAuth, string][] = [
+    ["oauth", "OAuth（瀏覽器授權）"],
+    ["pat", "PAT"],
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span id="mcp-auth-mode" className="text-xs text-muted-foreground">
+        授權方式
+      </span>
+      <div role="radiogroup" aria-labelledby="mcp-auth-mode" className="inline-grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+        {opts.map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            role="radio"
+            aria-checked={value === v}
+            onClick={() => onChange(v)}
+            className={cn(
+              "h-7 rounded-md px-3 text-[13px] whitespace-nowrap text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring",
+              value === v && "bg-card font-medium text-foreground shadow-panel",
+            )}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** One tab per client (Claude Code / Cursor / VS Code / Claude Desktop), each with its snippet and a copy button.
  *  `token` (a pasted, checked PAT; never sent anywhere) replaces <YOUR_TOKEN> in what is shown and copied. */
 export function ConfigSnippets({ snippets, token, className }: { snippets: McpSnippet[]; token?: string; className?: string }) {
@@ -96,6 +128,7 @@ export function ConfigSnippets({ snippets, token, className }: { snippets: McpSn
               <span className="min-w-0 truncate text-xs text-muted-foreground">{s.title}</span>
               <CopyButton text={text} />
             </div>
+            {s.hint && <p className="pb-1.5 text-xs text-pretty text-muted-foreground">{s.hint}</p>}
             {token && s.client === "vscode" && (
               <p className="pb-1.5 text-xs text-muted-foreground">VS Code 會在第一次連線時詢問 token（存進它的密碼儲存區，不寫進這個檔案），這份設定不需要填 token。</p>
             )}

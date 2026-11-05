@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { clientLabel } from "./clientState";
 import { TokenSelect } from "./ClientsTab";
 import { filtersFromParams, paramsFromFilters, RANGE_OPTIONS, METHOD_OPTIONS, STATUS_OPTIONS } from "./callFilters";
+import { OAuthPill } from "./OAuthPill";
 
 const ALL = "all";
 const TOOLS = ["search_library", "list_documents", "get_document_info", "read_document", "get_chunks", "get_job", "convert_document",
@@ -240,6 +241,7 @@ function CallRow({ c, open, onToggle }: { c: McpCall; open: boolean; onToggle: (
         <td className="px-3 py-2 text-xs whitespace-nowrap tabular">{formatDateTime(c.ts).slice(5)}<span className="text-muted-foreground">:{String(new Date(c.ts * 1000).getSeconds()).padStart(2, "0")}</span></td>
         <td className="max-w-[10rem] truncate px-3 py-2 text-xs">
           {c.token_name ?? (!c.token_prefix_seen && <span className="text-muted-foreground">—</span>)}
+          {c.token_kind === "oauth" && <OAuthPill className="ml-1.5" />}
           {c.token_prefix_seen && <span className="block font-mono text-[11px] text-muted-foreground">{c.token_prefix_seen}…</span>}
         </td>
         <td className="max-w-[10rem] truncate px-3 py-2 text-xs">{c.client_name ?? <span className="text-muted-foreground">—</span>}</td>

@@ -6,6 +6,7 @@ import { forgetIssuedTokens, useMcpTokens, usePatchToken, useRevokeToken, useRot
 import type { McpToken, McpTokenCreated } from "@/api/types";
 import { Panel, PanelHeader } from "@/components/Panel";
 import { StatusBadge } from "@/components/StatusBadge";
+import { OAuthPill } from "./OAuthPill";
 import { EmptyState, ErrorState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,6 +27,12 @@ const TONE_TEXT = { ok: "text-muted-foreground", warn: "text-warn", danger: "tex
 
 type Pending = { kind: "rotate" | "revoke" | "edit"; token: McpToken } | null;
 
+/** The /mcp URL to show in the empty state: this page's own origin when it is a loopback one, else the default. */
+function mcpUrlHint(): string {
+  const { hostname, port } = window.location;
+  return `http://127.0.0.1:${["127.0.0.1", "localhost", "[::1]"].includes(hostname) && port ? port : "<port>"}/mcp`;
+}
+
 export function TokensTab() {
   const tokens = useMcpTokens();
   const [creating, setCreating] = useState(false);
@@ -43,7 +50,7 @@ export function TokensTab() {
       <Panel>
         <PanelHeader
           title="Tokens"
-          description="每個 AI 用戶端一把。token 只對 /mcp 有效，拿不到這個管理後台。"
+          description="每個 AI 用戶端一把。用 OAuth 授權連線的用戶端會自動出現在這裡。"
           actions={createButton}
         />
         {tokens.isPending ? (
@@ -60,7 +67,7 @@ export function TokensTab() {
             <EmptyState
               icon={KeyRound}
               title="還沒有 token"
-              description="按右上角「建立 token」，再把它貼到 Claude Code、Cursor 或 VS Code 的 MCP 設定裡。"
+              description={`按右上角「建立 token」，或直接在 Claude Code 加入 ${mcpUrlHint()}，再用瀏覽器授權。`}
             />
           </div>
         ) : (
@@ -107,14 +114,19 @@ function TokenTable({ tokens, onAction }: { tokens: McpToken[]; onAction: (p: Pe
           {tokens.map((t) => {
             const exp = expiryState(t);
             const inactive = t.status !== "active";
+            const oauth = t.kind === "oauth";
             return (
               <tr key={t.id} className={cn("align-top", inactive && "text-muted-foreground")}>
                 <td className="max-w-[16rem] px-4 py-2.5">
-                  <span className="block truncate font-medium">{t.name}</span>
-                  {t.note && <span className="block truncate text-xs text-muted-foreground">{t.note}</span>}
+                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="truncate font-medium">{t.name}</span>
+                    {oauth && <OAuthPill />}
+                  </span>
+                  {oauth && <span className="block truncate text-xs text-muted-foreground">來源 {t.prefix}</span>}
+                  {t.note && <span className="block truncate text-xs text-muted-foreground">{oauth ? `回到 ${t.note}` : t.note}</span>}
                   {t.revoked_reason && <span className="block truncate text-xs text-muted-foreground">撤銷原因：{t.revoked_reason}</span>}
                 </td>
-                <td className="px-3 py-2.5 font-mono text-xs whitespace-nowrap">{t.prefix}…</td>
+                <td className="px-3 py-2.5 font-mono text-xs whitespace-nowrap">{oauth ? "OAuth" : `${t.prefix}…`}</td>
                 <td className="px-3 py-2.5">
                   <ScopeBadges scopes={t.scopes} />
                 </td>
@@ -153,11 +165,15 @@ function TokenTable({ tokens, onAction }: { tokens: McpToken[]; onAction: (p: Pe
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => onAction({ kind: "edit", token: t })}>編輯名稱與備註</DropdownMenuItem>
-                      <DropdownMenuItem disabled={t.status === "revoked"} onSelect={() => onAction({ kind: "rotate", token: t })}>
-                        輪替
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
+                      {!oauth && (
+                        <>
+                          <DropdownMenuItem onSelect={() => onAction({ kind: "edit", token: t })}>編輯名稱與備註</DropdownMenuItem>
+                          <DropdownMenuItem disabled={t.status === "revoked"} onSelect={() => onAction({ kind: "rotate", token: t })}>
+                            輪替
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                        </>
+                      )}
                       <DropdownMenuItem
                         variant="destructive"
                         disabled={t.status === "revoked"}
@@ -228,7 +244,11 @@ function RevokeDialog({ pending, onDone }: { pending: McpToken | null; onDone: (
       <DialogContent>
         <DialogHeader>
           <DialogTitle>撤銷「{pending?.name}」？</DialogTitle>
-          <DialogDescription>撤銷後下一個請求就會被拒絕（401），無法復原。</DialogDescription>
+          <DialogDescription>
+            {pending?.kind === "oauth"
+              ? "撤銷後這個用戶端的 access 與 refresh token 立即失效，需要重新授權。"
+              : "撤銷後下一個請求就會被拒絕（401），無法復原。"}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-1.5">
           <Label htmlFor="mcp-revoke-reason">原因</Label>

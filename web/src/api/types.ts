@@ -392,8 +392,15 @@ export interface Settings {
     call_log_max_rows: number;
   };
   preview?: { enabled: boolean; soffice_path: string; timeout_s: number; max_mb: number };
+  /** [oauth] local MCP OAuth (spec 2026-11-05 §9); absent on older servers */
+  oauth?: OauthSettings;
   /** absent on servers older than the VLM engine */
   vlm?: VlmSettings;
+}
+
+export interface OauthSettings {
+  enabled: boolean; allow_cimd: boolean; allow_dcr: boolean; access_ttl_min: number; refresh_ttl_days: number;
+  refresh_max_days: number; code_ttl_s: number; consent_ttl_s: number; dcr_per_hour_per_ip: number;
 }
 
 export type SettingsPatch = { [S in keyof Settings]?: Partial<Settings[S]> };
@@ -448,7 +455,7 @@ export interface EventPayloads {
   "system.updated": Record<string, unknown>;
   "mcp.call": McpCallEvent;
   "mcp.client": McpClient & { state: "new" | "active" | "idle" };
-  "mcp.token": { id: string; name: string; prefix: string; action: "created" | "updated" | "revoked" | "rotated" };
+  "mcp.token": { id: string; name: string; prefix: string; action: "created" | "updated" | "revoked" | "rotated"; kind?: McpTokenKind };
   "document.preview": { document_id: string } & PreviewState;
   "document.source_copy": { document_id: string; task_id?: string; status: SourceCopyStatus | null; error: string | null };
   "sources.backfill": BackfillProgress;
@@ -489,25 +496,40 @@ export interface McpStatus {
   config_warnings?: string[];
   /** docling-serve compatible API (compat spec §6): base_url is what Open WebUI's DOCLING_SERVER_URL takes. */
   compat?: { enabled: boolean; base_url: string; calls_24h: number };
+  /** local MCP OAuth (spec 2026-11-05 §7.2); absent on older servers */
+  oauth?: { enabled: boolean; allow_dcr: boolean; allow_cimd: boolean; issuer_example: string; grants_active: number; clients: number };
 }
+/** "pat": a personal access token; "oauth": an OAuth connection (one grant), listed with the PATs. */
+export type McpTokenKind = "pat" | "oauth";
+export interface McpOAuthInfo { client_id: string; kind: "cimd" | "dcr"; redirect_uri: string | null; access_tokens_active: number }
 export interface McpToken {
   id: string; name: string; prefix: string; scopes: McpScope[]; note: string | null; created_at: number; expires_at: number | null;
   revoked_at: number | null; revoked_reason: string | null; rotated_from: string | null; rate_limit_per_min: number | null;
   last_used_at: number | null; last_used_ip: string | null; last_client: string | null; status: "active" | "expired" | "revoked";
   calls_24h: number; errors_24h: number;
+  /** absent on servers older than the OAuth work: a PAT */
+  kind?: McpTokenKind;
+  /** OAuth: the current refresh token's expiry (expires_at is the connection's absolute limit) */
+  refresh_expires_at?: number | null;
+  oauth?: McpOAuthInfo;
 }
-export interface McpSnippet { client: "claude-code" | "cursor" | "vscode" | "claude-desktop" | "openwebui"; title: string; language: "bash" | "json"; text: string }
+export type McpSnippetAuth = "oauth" | "pat";
+export interface McpSnippet {
+  client: "claude-code" | "cursor" | "vscode" | "claude-desktop" | "openwebui" | "inspector"; title: string;
+  language: "bash" | "json" | "text"; text: string; hint?: string;
+}
 export interface McpTokenCreated { token: string; record: McpToken; snippets: McpSnippet[]; revoked?: McpToken }
 export interface McpClient {
   id: string; token_id: string | null; token_name: string | null; client_name: string; client_version: string | null;
   protocol_version: string | null; user_agent: string | null; first_seen: number; last_seen: number; last_ip: string | null;
-  request_count: number; active: boolean; token_status?: "active" | "expired" | "revoked" | null;
+  request_count: number; active: boolean; token_status?: "active" | "expired" | "revoked" | null; token_kind?: McpTokenKind | null;
 }
 export interface McpCall {
   id: number; ts: number; token_id: string | null; token_prefix_seen: string | null; client_id: string | null; method: string | null;
   tool_name: string | null; resource_uri: string | null; args_summary: string | null; status: McpCallStatus; error_code: string | null;
   http_status: number | null; duration_ms: number | null; response_bytes: number | null; response_tokens_est: number | null;
   ip: string | null; protocol_version: string | null; job_id: string | null; token_name: string | null; client_name: string | null;
+  token_kind?: McpTokenKind | null;
 }
 export interface McpCallsPage { calls: McpCall[]; next_cursor: string | null }
 export interface McpStats {
@@ -518,4 +540,4 @@ export interface McpStats {
 }
 export type McpCallEvent = Pick<McpCall, "id" | "ts" | "token_id" | "token_name" | "client_id" | "client_name" | "method" | "tool_name" |
   "status" | "error_code" | "http_status" | "duration_ms" | "response_tokens_est" | "job_id" | "token_prefix_seen" | "ip" |
-  "protocol_version" | "response_bytes" | "resource_uri">;
+  "protocol_version" | "response_bytes" | "resource_uri" | "token_kind">;
