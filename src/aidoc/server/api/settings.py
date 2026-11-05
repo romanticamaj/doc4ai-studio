@@ -10,11 +10,13 @@ from fastapi.concurrency import run_in_threadpool
 
 from aidoc.config import (
     _SECTIONS,
+    OAUTH_RANGES,
     VLM_RANGES,
     config_path,
     default_library_root,
     mcp_list_problem,
     nearest_existing,
+    oauth_problem,
     root_dir_problem,
     root_dir_writable,
     save_config,
@@ -67,6 +69,10 @@ _CHOICES.update({("vlm", "backend"): {"none", "local", "openai"},
                  ("vlm", "local_prompt_style"): {"", "paddle_tasks", "generic"}})
 _MIN.update({("vlm", k): lo for k, (lo, _hi) in VLM_RANGES.items()})
 _MAX.update({("vlm", k): hi for k, (_lo, hi) in VLM_RANGES.items()})
+
+# [oauth] (local MCP OAuth spec 2026-11-05 §9)
+_MIN.update({("oauth", k): lo for k, (lo, _hi) in OAUTH_RANGES.items()})
+_MAX.update({("oauth", k): hi for k, (_lo, hi) in OAUTH_RANGES.items()})
 
 
 def _validate_mcp_lists(key: str, val, allow_drive_root: bool = False) -> None:
@@ -156,6 +162,13 @@ def _validate(body: dict, cfg) -> dict:
             clean.setdefault(section, {})[key] = val
     if "vlm" in clean:
         _validate_vlm(clean["vlm"], cfg)
+    if "oauth" in clean:
+        o = copy.deepcopy(cfg.oauth)
+        for key, val in clean["oauth"].items():
+            setattr(o, key, val)
+        problem = oauth_problem(o)                      # the merged section, as aidoc.toml is checked at load
+        if problem:
+            raise ApiError(422, "invalid_settings", detail=problem)
     if "mcp" in clean:
         m = clean["mcp"]
         default_ttl = m.get("default_token_ttl_days", cfg.mcp.default_token_ttl_days)

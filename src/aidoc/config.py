@@ -140,6 +140,46 @@ class Vlm:
     local_prompt_style: str = ""           # "" = by preset; "paddle_tasks" | "generic"
 
 
+@dataclass
+class Oauth:
+    """[oauth] local MCP OAuth (spec 2026-11-05 §9): an embedded authorization server for /mcp."""
+    enabled: bool = True                # /oauth/*, well-known metadata, resource_metadata in the 401; false = Phase 1
+    allow_cimd: bool = True             # clients whose client_id is an https URL (Claude Code)
+    allow_dcr: bool = True              # POST /oauth/register (Cursor, the Python SDK, Inspector)
+    access_ttl_min: int = 60
+    refresh_ttl_days: int = 30          # sliding
+    refresh_max_days: int = 90          # absolute, from the grant's creation
+    code_ttl_s: int = 300
+    consent_ttl_s: int = 600
+    dcr_per_hour_per_ip: int = 20
+
+
+# (low, high) — shared by load_config and PUT /api/settings; refresh_max_days must also be >= refresh_ttl_days
+OAUTH_RANGES = {"access_ttl_min": (5, 1440), "refresh_ttl_days": (1, 365), "refresh_max_days": (1, 730),
+                "code_ttl_s": (30, 600), "consent_ttl_s": (60, 1800), "dcr_per_hour_per_ip": (1, 1000)}
+OAUTH_FLAGS = ("enabled", "allow_cimd", "allow_dcr")
+
+
+def oauth_problem(o: Oauth) -> str | None:
+    """The first problem of an [oauth] section (load_config: refuse to start; PUT /api/settings: 422)."""
+    for key in OAUTH_FLAGS:
+        if not isinstance(getattr(o, key), bool):
+            return f"oauth.{key} must be true or false"
+    for key, (lo, hi) in OAUTH_RANGES.items():
+        val = getattr(o, key)
+        if not isinstance(val, int) or isinstance(val, bool) or not lo <= val <= hi:
+            return f"oauth.{key} must be an integer in {lo}..{hi}"
+    if o.refresh_max_days < o.refresh_ttl_days:
+        return "oauth.refresh_max_days must be >= oauth.refresh_ttl_days"
+    return None
+
+
+def _check_oauth(cfg: AidocConfig, where: Path) -> None:
+    problem = oauth_problem(cfg.oauth)
+    if problem:
+        raise ConfigError(f"{where}: {problem}")
+
+
 VLM_BACKENDS = ("none", "local", "openai")
 VLM_PRESETS = ("paddleocr-vl-1.6", "qwen2.5-vl-3b", "custom")
 VLM_PROMPT_STYLES = ("", "paddle_tasks", "generic")
@@ -384,7 +424,7 @@ def _check_general(cfg: AidocConfig, where: Path, raw_general: dict) -> None:
 
 
 _SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp,
-             "preview": Preview, "compat": Compat, "vlm": Vlm}
+             "preview": Preview, "compat": Compat, "vlm": Vlm, "oauth": Oauth}
 
 
 @dataclass
@@ -397,6 +437,7 @@ class AidocConfig:
     preview: Preview = field(default_factory=Preview)
     compat: Compat = field(default_factory=Compat)
     vlm: Vlm = field(default_factory=Vlm)
+    oauth: Oauth = field(default_factory=Oauth)
     root: Path = field(default_factory=paths.project_root)
     data_dir: Path = field(default_factory=paths.data_dir)
     warnings: list[str] = field(default_factory=list)            # load-time problems that were ignored
@@ -462,6 +503,7 @@ def load_config(path: Path | None = None) -> AidocConfig:
     _check_general(cfg, p, raw.get("general") or {})
     _check_mcp(cfg, p)
     _check_vlm(cfg, p)
+    _check_oauth(cfg, p)
     return cfg
 
 

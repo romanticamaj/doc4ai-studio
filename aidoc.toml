@@ -82,3 +82,14 @@ local_ctx_size = 8192
 local_gguf = ""                    # local_preset = "custom": absolute paths
 local_mmproj = ""
 local_prompt_style = ""            # "" = by preset; "paddle_tasks" | "generic"
+
+# [oauth]                          # local MCP OAuth: clients add http://127.0.0.1:<port>/mcp with no token and
+# enabled = true                   #   authorize in the browser (授權連線); false = PAT only, Phase 1 401 shape
+# allow_cimd = true                # client_id is an https URL (Claude Code)
+# allow_dcr = true                 # POST /oauth/register (Cursor, the Python SDK, MCP Inspector)
+# access_ttl_min = 60              # 5..1440
+# refresh_ttl_days = 30            # 1..365, sliding
+# refresh_max_days = 90            # refresh_ttl_days..730, absolute from the grant
+# code_ttl_s = 300                 # 30..600
+# consent_ttl_s = 600              # 60..1800
+# dcr_per_hour_per_ip = 20         # 1..1000

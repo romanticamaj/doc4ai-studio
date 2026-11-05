@@ -141,3 +141,15 @@ def test_settings_compat_roundtrip_and_ranges(client):
                 {"json_content": "docling"}, {"enabled": 1}, {"task_retention_days": 0}]:
         r = client.put("/api/settings", json={"compat": bad})
         assert r.status_code == 422 and r.json()["error"] == "invalid_settings", (bad, r.text)
+
+
+def test_settings_oauth_roundtrip_and_ranges(client):
+    s = client.get("/api/settings").json()["settings"]
+    assert s["oauth"] == {"enabled": True, "allow_cimd": True, "allow_dcr": True, "access_ttl_min": 60, "refresh_ttl_days": 30,
+                          "refresh_max_days": 90, "code_ttl_s": 300, "consent_ttl_s": 600, "dcr_per_hour_per_ip": 20}
+    r = client.put("/api/settings", json={"oauth": {"access_ttl_min": 15, "allow_cimd": False}})
+    assert r.status_code == 200 and r.json()["settings"]["oauth"]["access_ttl_min"] == 15
+    for bad in [{"access_ttl_min": 4}, {"code_ttl_s": 601}, {"consent_ttl_s": 59}, {"dcr_per_hour_per_ip": 0},
+                {"refresh_max_days": 29}, {"enabled": 1}]:
+        r = client.put("/api/settings", json={"oauth": bad})
+        assert r.status_code == 422 and r.json()["error"] == "invalid_settings", (bad, r.text)
