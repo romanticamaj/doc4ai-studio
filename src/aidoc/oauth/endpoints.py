@@ -71,3 +71,75 @@ async def register(request: Request):
                               {"Retry-After": str(e.retry_after or 60)})
         return oauth_json({"error": e.code, "error_description": e.message}, 400)
     return oauth_json(out, 201)
+
+
+# ---- token and revocation (spec §5.3 (4)–(5))
+_FORM = "application/x-www-form-urlencoded"
+TOKEN_HEADERS = {"Pragma": "no-cache"}
+
+
+async def _form(request: Request) -> dict:
+    """The urlencoded body as {key: value}; a repeated key or another content type is invalid_request (RFC 6749 §3.2)."""
+    from urllib.parse import parse_qs
+
+    from aidoc.oauth.grants import OAuthError
+    ctype = (request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    raw = await request.body()
+    if not raw:
+        return {}                                       # no parameters at all: each endpoint says what is missing
+    if ctype != _FORM:
+        raise OAuthError("invalid_request", "the body must be application/x-www-form-urlencoded")
+    if len(raw) > REGISTER_MAX_BYTES:
+        raise OAuthError("invalid_request", "the body is too large")
+    try:
+        parsed = parse_qs(raw.decode("utf-8"), keep_blank_values=True, strict_parsing=False)
+    except UnicodeDecodeError:
+        raise OAuthError("invalid_request", "the body is not UTF-8") from None
+    if any(len(v) > 1 for v in parsed.values()):
+        raise OAuthError("invalid_request", "a parameter was sent more than once")
+    return {k: v[0] for k, v in parsed.items()}
+
+
+@router.post("/oauth/token", include_in_schema=False)
+async def token(request: Request):
+    from aidoc.oauth import tokens as T
+    from aidoc.oauth.grants import GrantService, OAuthError
+    iss, refused = _gate(request)
+    if refused is not None:
+        return refused
+    ctx = request.app.state.ctx
+    ip, form = _ip(request), {}
+    try:
+        form = await _form(request)
+        gt = form.get("grant_type")
+        svc = GrantService(ctx)
+        if gt == "authorization_code":
+            tr = svc.exchange_code(form, ip, time.time(), resource=iss + "/mcp")
+        elif gt == "refresh_token":
+            tr = svc.refresh(form, ip, time.time(), resource=iss + "/mcp")
+        elif not gt:
+            raise OAuthError("invalid_request", "missing grant_type")
+        else:
+            raise OAuthError("unsupported_grant_type", "only authorization_code and refresh_token are supported")
+    except OAuthError as e:
+        seen = T.prefix_seen(form.get("code") or form.get("refresh_token"))
+        retry = ctx.extras["mcp"].guard.on_failure(ip, f"oauth_{e.error}", seen)
+        extra = {"Retry-After": str(retry)} if retry is not None else {}
+        return oauth_json({"error": e.error, "error_description": e.description}, 429 if retry is not None else e.status,
+                          {**TOKEN_HEADERS, **extra})
+    return oauth_json(tr.body(), 200, TOKEN_HEADERS)
+
+
+@router.post("/oauth/revoke", include_in_schema=False)
+async def revoke(request: Request):
+    """RFC 7009: 200 {} whether or not the token existed; a known AT or RT revokes its whole grant."""
+    from aidoc.oauth.grants import GrantService, OAuthError
+    _iss, refused = _gate(request)
+    if refused is not None:
+        return refused
+    try:
+        form = await _form(request)
+    except OAuthError as e:
+        return oauth_json({"error": e.error, "error_description": e.description}, 400)
+    GrantService(request.app.state.ctx).revoke_by_token(form.get("token"), time.time())
+    return oauth_json({}, 200)
