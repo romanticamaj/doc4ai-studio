@@ -14,7 +14,7 @@ from fastapi import HTTPException, Request
 
 from aidoc.mcp import tokens as T
 from aidoc.mcp.gate import _FAILURE_TEXT as _MCP_FAILURE_TEXT
-from aidoc.mcp.gate import same_origin, www_authenticate
+from aidoc.mcp.gate import challenge_header, oauth_challenge, same_origin
 from aidoc.mcp.principal import SCOPE_CONVERT, SCOPE_READ, AuthFailure, Principal, parse_bearer
 
 METHOD = "compat/docling"
@@ -65,8 +65,10 @@ def ua_identity(ua: str | None) -> tuple[str, str | None]:
     return _ua(ua)
 
 
-def _www(text: str) -> dict:
-    return {"WWW-Authenticate": www_authenticate("invalid_token", text)}     # no resource_metadata until Spec 4 (4b)
+def _www(ctx, request: Request, reason: str, text: str) -> dict:
+    """The /mcp challenge (same PRM, local OAuth spec 2026-11-05 §4.5); Phase 1 bytes while OAuth is off."""
+    _res, rm, sc = oauth_challenge(ctx, request)
+    return {"WWW-Authenticate": challenge_header(ctx, reason, text, rm, sc)}
 
 
 def new_call(request: Request, principal: Principal | None = None) -> CompatCall:
@@ -83,15 +85,16 @@ def require_enabled(request: Request) -> None:
 
 
 def _fail(ctx, rt, call: CompatCall, reason: str, status: int, text: str, *, prefix: str | None,
-          token_id: str | None = None):
+          token_id: str | None = None, request: Request):
     retry = rt.guard.on_failure(call.ip, reason, prefix, call.protocol)
     call.logged = True                                  # the guard's aggregate row or the row below
     if retry is not None:
         raise CompatError(429, f"{text}. Too many failed authentications from this address; retry after {retry} s",
-                          headers={"Retry-After": str(retry), **_www(text)}, reason=reason, retry_after=retry)
+                          headers={"Retry-After": str(retry), **_www(ctx, request, "flooded", text)}, reason=reason,
+                          retry_after=retry)
     rt.recorder.record(status="auth_error", error_code=reason, http_status=status, ip=call.ip, token_id=token_id,
                        token_prefix_seen=prefix, protocol_version=call.protocol, method=METHOD, ts=call.ts)
-    raise CompatError(status, text, headers=_www(text) if status == 401 else None)
+    raise CompatError(status, text, headers=_www(ctx, request, reason, text) if status == 401 else None)
 
 
 def _principal(request: Request, scopes_any: tuple[str, ...]) -> Principal:
@@ -102,15 +105,18 @@ def _principal(request: Request, scopes_any: tuple[str, ...]) -> Principal:
     in_query = [v for k, v in request.query_params.multi_items() if k.lower() in _QUERY_TOKEN_KEYS]
     if in_query:                                        # tokens never travel in the URL (MCP spec §4.2)
         _fail(ctx, rt, call, "token_in_query", 400, "send the token in X-Api-Key or Authorization",
-              prefix=T.prefix_seen(in_query[0]))
+              prefix=T.prefix_seen(in_query[0]), request=request)
     key = (request.headers.get("x-api-key") or "").strip().strip('"').strip() or None
     bearer = parse_bearer(request.headers.get("authorization"))
     if key and bearer and key != bearer:
-        _fail(ctx, rt, call, "bad_format", 401, "X-Api-Key and Authorization disagree", prefix=T.prefix_seen(key))
-    result = rt.verifier.verify(key or bearer)
+        _fail(ctx, rt, call, "bad_format", 401, "X-Api-Key and Authorization disagree", prefix=T.prefix_seen(key),
+              request=request)
+    # an OAuth access token is audience-bound to this origin's /mcp URL: the compat API on the same origin accepts it
+    resource, _rm, _sc = oauth_challenge(ctx, request)
+    result = rt.verifier.verify(key or bearer, resource=resource)
     if isinstance(result, AuthFailure):
         _fail(ctx, rt, call, result.reason, 401, _FAILURE_TEXT[result.reason], prefix=result.prefix_seen,
-              token_id=result.token_id)
+              token_id=result.token_id, request=request)
     origin = request.headers.get("origin")
     if origin is not None and not same_origin(origin, request.headers.get("host")):
         call.principal = result

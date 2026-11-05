@@ -22,6 +22,7 @@ from aidoc.mcp.principal import (
     SCOPE_READ,
     Principal,
     current_principal,
+    current_resource_metadata,
 )
 
 TOOL_SCOPES: dict[str, str] = {
@@ -139,6 +140,7 @@ def make_middleware(ctx, recorder):
     async def doc4ai_middleware(rctx, call_next):
         state = _call_state(rctx)
         token = current_principal.set(state.principal if state else None)
+        rm_token = current_resource_metadata.set(state.resource_metadata if state else None)
         status, error_code, result = "ok", None, None
         t0 = time.perf_counter()
         try:
@@ -161,6 +163,7 @@ def make_middleware(ctx, recorder):
             raise
         finally:
             current_principal.reset(token)
+            current_resource_metadata.reset(rm_token)
             internal = state is not None and state.method is not None and rctx.method != state.method
             if state is not None and rctx.request_id is not None and not internal:
                 _record(ctx, recorder, rctx, state, status, error_code, result, t0)

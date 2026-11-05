@@ -18,7 +18,7 @@ from mcp.types import CallToolResult, ResourceLink, TextContent, ToolAnnotations
 from pydantic import BaseModel
 
 from aidoc.mcp.errors import ToolFailure
-from aidoc.mcp.principal import current_principal
+from aidoc.mcp.principal import current_principal, current_resource_metadata
 from aidoc.mcp.redact import redact_text, redact_value
 
 log = logging.getLogger("aidoc.mcp")
@@ -29,13 +29,23 @@ def _compact(d) -> str:
     return json.dumps(d, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-def failure_result(f: ToolFailure) -> CallToolResult:
+def failure_result(f: ToolFailure, meta: dict | None = None) -> CallToolResult:
     payload = redact_value(f.payload())
     text = f"{f.code}: {f.message}" + (f" ({f.hint})" if f.hint else "")
     if f.extra:
         text += " " + _compact(f.extra)
     text = redact_text(text)
-    return CallToolResult(content=[TextContent(type="text", text=text)], structured_content=payload, is_error=True)
+    return CallToolResult(content=[TextContent(type="text", text=text)], structured_content=payload, is_error=True,
+                          meta=meta)
+
+
+def step_up_meta(principal, scope: str) -> dict | None:
+    """For an OAuth principal missing a scope: the RFC 6750 insufficient_scope challenge in `_meta`, so a client that
+    supports step-up can re-authorize with it (spec 2026-11-05 §4.5); PATs get nothing."""
+    rm = current_resource_metadata.get()
+    if principal is None or principal.kind != "oauth" or not rm:
+        return None
+    return {"mcp/www_authenticate": [f'Bearer error="insufficient_scope", scope="{scope}", resource_metadata="{rm}"']}
 
 
 def _read_header(d: dict) -> str:
@@ -101,7 +111,7 @@ def doc4ai_tool(mcp, ctx, *, name: str, title: str, description: str, scope: str
                     return success_result(await fn(*args, **kwargs))
                 return success_result(await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs)))
             except ToolFailure as f:
-                return failure_result(f)
+                return failure_result(f, step_up_meta(principal, scope) if f.code == "forbidden_scope" else None)
             except Exception:
                 log.exception("tool %s raised an unexpected exception", name)
                 return failure_result(internal_error())

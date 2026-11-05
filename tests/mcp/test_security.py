@@ -36,9 +36,12 @@ def test_server_token_is_not_a_pat(mcp_server, token_ctx):
 def test_mcp_requires_token_even_on_loopback(mcp_server, mcp_env):
     r = raw_post(mcp_server, None, LIST)
     assert r.status_code == 401
-    assert r.headers["www-authenticate"] == 'Bearer realm="doc4ai", error="invalid_token"' or \
-        r.headers["www-authenticate"].startswith('Bearer realm="doc4ai", error="invalid_token", error_description=')
-    assert "resource_metadata" not in r.headers["www-authenticate"]
+    www = r.headers["www-authenticate"]
+    if mcp_env.ctx.config.oauth.enabled:     # local OAuth: PRM of the URL used, suggested scope, no error code
+        assert www == (f'Bearer realm="doc4ai", resource_metadata="{mcp_server}/.well-known/oauth-protected-resource/mcp", '
+                       'scope="doc4ai:read doc4ai:convert"')
+    else:
+        assert www == 'Bearer realm="doc4ai", error="invalid_token", error_description="Authentication required: send Authorization: Bearer <token>"'
 
 
 def test_query_token_rejected_on_mcp(mcp_server, mcp_env):

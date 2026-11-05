@@ -1,6 +1,7 @@
-"""ASGI layer in front of the SDK's Streamable HTTP app (MCP spec §4.3, index D1/D5): Bearer PAT only, 401 without
-`resource_metadata` (Phase 1), per-token rate limit on tools/call, 404 while disabled, and a log row for every
-request the SDK middleware did not record itself."""
+"""ASGI layer in front of the SDK's Streamable HTTP app (MCP spec §4.3, index D1/D5): Bearer PAT or OAuth access
+token (local OAuth spec 2026-11-05 §7.1, audience-bound to the URL the client used), a 401 that advertises the
+protected-resource metadata while OAuth is on (and is byte-identical to Phase 1 while it is off), per-token rate
+limit on tools/call, 404 while disabled, and a log row for every request the SDK middleware did not record itself."""
 from __future__ import annotations
 
 import json
@@ -11,7 +12,7 @@ from urllib.parse import parse_qs
 
 from aidoc.mcp import tokens as T
 from aidoc.mcp.authguard import AuthFailureGuard
-from aidoc.mcp.principal import AuthFailure, PatVerifier, Principal, parse_bearer
+from aidoc.mcp.principal import AuthFailure, Principal, parse_bearer
 
 MIB = 1024 * 1024
 _FAILURE_TEXT = {
@@ -21,6 +22,7 @@ _FAILURE_TEXT = {
     "unknown_token": "Unknown token",
     "revoked": "This token was revoked",
     "expired": "This token has expired",
+    "wrong_audience": "This token was issued for another URL of this server",
 }
 
 
@@ -34,6 +36,7 @@ class CallState:
     started: float
     protocol_version: str | None
     logged: bool = False
+    resource_metadata: str | None = None    # PRM URL of this request's Host (OAuth on), for step-up challenges
 
 
 SMALL_BODY_BYTES = MIB                     # every request but a convert_document upload
@@ -57,13 +60,43 @@ def max_body_bytes(cfg) -> int:
     return cfg.mcp.max_upload_mb * MIB * 4 // 3 + MIB
 
 
-def www_authenticate(error: str, description: str | None, resource_metadata: str | None = None) -> str:
-    parts = ['realm="doc4ai"', f'error="{error}"']
-    if description:
-        parts.append(f'error_description="{description}"')
-    if resource_metadata:                           # Phase 2 (RFC 9728); always None in Phase 1
+def www_authenticate(error: str | None, description: str | None, resource_metadata: str | None = None,
+                     scope: str | None = None) -> str:
+    """`error` None: the request carried no credentials at all (RFC 6750 §3.1: no error code then)."""
+    parts = ['realm="doc4ai"']
+    if error:
+        parts.append(f'error="{error}"')
+        if description:
+            parts.append(f'error_description="{description}"')
+    if resource_metadata:                           # RFC 9728 (OAuth on)
         parts.append(f'resource_metadata="{resource_metadata}"')
+    if scope:
+        parts.append(f'scope="{scope}"')
     return "Bearer " + ", ".join(parts)
+
+
+def oauth_challenge(ctx, scope_or_request) -> tuple[str | None, str | None, str | None]:
+    """(canonical resource, resource_metadata URL, suggested scope) for this request; all None while OAuth is off.
+    The resource exists only for a Host this server answers to (an unknown Host never becomes an issuer)."""
+    if not ctx.config.oauth.enabled:
+        return None, None, None
+    from starlette.requests import Request
+
+    from aidoc.oauth.metadata import DEFAULT_CHALLENGE_SCOPE, issuer_or_none, prm_url
+    req = scope_or_request if isinstance(scope_or_request, Request) else Request(scope_or_request)
+    iss = issuer_or_none(ctx, req)
+    if iss is None:
+        return None, None, DEFAULT_CHALLENGE_SCOPE
+    return iss + "/mcp", prm_url(iss), DEFAULT_CHALLENGE_SCOPE
+
+
+def challenge_header(ctx, reason: str, text: str, resource_metadata: str | None, scope: str | None) -> str:
+    """The 401's WWW-Authenticate: Phase 1 bytes while OAuth is off; with OAuth, no error for a missing token."""
+    if not ctx.config.oauth.enabled:
+        return www_authenticate("invalid_token", text)
+    if reason == "missing_token":
+        return www_authenticate(None, None, resource_metadata, scope)
+    return www_authenticate("invalid_token", text, resource_metadata, scope)
 
 
 def same_origin(origin: str, host: str | None) -> bool:
@@ -90,7 +123,7 @@ async def _send_json(send, status: int, body: dict, headers: list[tuple[bytes, b
 
 
 class McpGate:
-    def __init__(self, ctx, inner, verifier: PatVerifier, limiter, recorder, guard: AuthFailureGuard | None = None):
+    def __init__(self, ctx, inner, verifier, limiter, recorder, guard: AuthFailureGuard | None = None):
         self.ctx, self.inner, self.verifier, self.limiter, self.recorder = ctx, inner, verifier, limiter, recorder
         self.guard = guard if guard is not None else AuthFailureGuard(recorder)
 
@@ -112,7 +145,7 @@ class McpGate:
                                      "result": {"content": [{"type": "text", "text": text}], "isError": True,
                                                 "structuredContent": payload}})
 
-    async def _flooded(self, send, retry: int, reason: str) -> None:
+    async def _flooded(self, send, retry: int, reason: str, rm: str | None = None, sc: str | None = None) -> None:
         """An IP over the failed-auth limit: 429 (counted into its aggregate row instead of a row per attempt), but
         still saying why this token failed, so a user fixing a client sees "revoked", not only "too many"."""
         why = ("Send the token in the Authorization header, not the URL" if reason == "token_in_query"
@@ -121,7 +154,7 @@ class McpGate:
                                      "error_description": f"{why}. Too many failed authentications from this address; "
                                                           f"retry after {retry} s"},
                          [(b"retry-after", str(retry).encode()),
-                          (b"www-authenticate", www_authenticate("invalid_token", why).encode())])
+                          (b"www-authenticate", www_authenticate("invalid_token", why, rm, sc).encode())])
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -143,16 +176,17 @@ class McpGate:
                                  token_prefix_seen=T.prefix_seen(in_url[0] if in_url else None), protocol_version=pv, ts=ts)
             return await _send_json(send, 400, {"error": "token_in_query",
                                                 "error_description": "Send the token in the Authorization header"})
-        result = self.verifier.verify(parse_bearer(_header(scope, "authorization")))
+        resource, rm, sc = oauth_challenge(self.ctx, scope)
+        result = self.verifier.verify(parse_bearer(_header(scope, "authorization")), resource=resource)
         if isinstance(result, AuthFailure):
             retry = self.guard.on_failure(ip, result.reason, result.prefix_seen, pv)
             if retry is not None:
-                return await self._flooded(send, retry, result.reason)
+                return await self._flooded(send, retry, result.reason, rm, sc)
             text = _FAILURE_TEXT[result.reason]
             self.recorder.record(status="auth_error", error_code=result.reason, http_status=401, ip=ip,
                                  token_id=result.token_id, token_prefix_seen=result.prefix_seen, protocol_version=pv, ts=ts)
             return await _send_json(send, 401, {"error": "invalid_token", "error_description": text},
-                                    [(b"www-authenticate", www_authenticate("invalid_token", text).encode())])
+                                    [(b"www-authenticate", challenge_header(self.ctx, result.reason, text, rm, sc).encode())])
         principal = result
         origin = _header(scope, "origin")
         if origin is not None and not same_origin(origin, _header(scope, "host")):
@@ -232,7 +266,7 @@ class McpGate:
                                                     "error_description": f"Retry after {retry} s"},
                                         [(b"retry-after", str(retry).encode())])
         state = CallState(principal=principal, ip=ip, user_agent=ua, method=method, ts=ts, started=started,
-                          protocol_version=pv)
+                          protocol_version=pv, resource_metadata=rm)
         scope.setdefault("state", {})["doc4ai"] = state
 
         replayed = {"done": False}

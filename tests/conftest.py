@@ -151,3 +151,15 @@ def live_server(ctx):
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     th.join(10)
+
+
+@pytest.fixture(autouse=True)
+def _oauth_mode(request):
+    """AIDOC_TEST_OAUTH=0|1 runs a suite (tests/mcp, tests/compat) with [oauth] enabled forced off or on, so the PAT
+    path is checked in both modes (local OAuth plan 2026-11-05, matrix M3). Unset: the config default (on)."""
+    flag = os.environ.get("AIDOC_TEST_OAUTH")
+    if flag not in ("0", "1"):
+        return
+    for name in ("ctx", "token_ctx"):
+        if name in request.fixturenames:
+            request.getfixturevalue(name).config.oauth.enabled = flag == "1"

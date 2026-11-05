@@ -17,7 +17,7 @@ from aidoc.mcp.authguard import AuthFailureGuard
 from aidoc.mcp.calllog import CallRecorder
 from aidoc.mcp.gate import McpGate, max_body_bytes
 from aidoc.mcp.middleware import make_middleware
-from aidoc.mcp.principal import PatVerifier
+from aidoc.mcp.principal import OAuthTokenVerifier, PatVerifier, VerifierChain
 from aidoc.mcp.ratelimit import RateLimiter
 from aidoc.mcp.tokens import load_or_create_secret
 
@@ -152,7 +152,7 @@ def endpoint_urls(cfg, bind_host: str, port: int) -> list[str]:
 class McpRuntime:
     mcp: MCPServer
     app: McpGate
-    verifier: PatVerifier
+    verifier: VerifierChain
     limiter: RateLimiter
     recorder: CallRecorder
     secret: bytes
@@ -165,7 +165,7 @@ def build_mcp(ctx) -> McpRuntime:
     install_secret_redaction()                         # the SDK logs tool arguments and resource URIs
     secret = load_or_create_secret(cfg.data_dir)
     recorder = CallRecorder(ctx)
-    verifier = PatVerifier(ctx.store, secret)
+    verifier = VerifierChain(PatVerifier(ctx.store, secret), OAuthTokenVerifier(ctx.store, secret, lambda: ctx.config))
     limiter = RateLimiter(lambda: ctx.config.mcp.rate_limit_per_min)
     mcp = MCPServer(name="Doc4AI Studio", instructions=INSTRUCTIONS, version=__import__("aidoc").__version__,
                     middleware=[make_middleware(ctx, recorder)],

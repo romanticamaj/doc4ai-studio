@@ -54,6 +54,7 @@ def _rows(ctx):
 def test_max_body_and_header_helpers(ctx):
     assert max_body_bytes(ctx.config) == 20 * 1024 * 1024 * 4 // 3 + 1024 * 1024
     assert www_authenticate("invalid_token", None) == 'Bearer realm="doc4ai", error="invalid_token"'
+    assert www_authenticate(None, "ignored", "https://h/prm", "a b") == 'Bearer realm="doc4ai", resource_metadata="https://h/prm", scope="a b"'
     assert www_authenticate("invalid_token", "x", "https://h/.well-known/oauth-protected-resource").endswith(
         'error_description="x", resource_metadata="https://h/.well-known/oauth-protected-resource"')
 
@@ -71,8 +72,12 @@ def test_missing_token_401_logged(gate_client):
     c, ctx = gate_client
     r = c.post("/mcp", content=b'{"method":"tools/list"}', headers=MODERN)
     assert r.status_code == 401
-    assert r.headers["www-authenticate"].startswith('Bearer realm="doc4ai", error="invalid_token"')
-    assert "resource_metadata" not in r.headers["www-authenticate"]
+    www = r.headers["www-authenticate"]
+    if ctx.config.oauth.enabled:            # RFC 6750 §3.1: no error code without credentials; PRM + suggested scope
+        assert www == ('Bearer realm="doc4ai", resource_metadata="http://127.0.0.1:8765/.well-known/oauth-protected-resource/mcp", '
+                       'scope="doc4ai:read doc4ai:convert"')
+    else:                                   # Phase 1, byte for byte
+        assert www == 'Bearer realm="doc4ai", error="invalid_token", error_description="Authentication required: send Authorization: Bearer <token>"'
     assert r.json()["error"] == "invalid_token"
     row = _rows(ctx)[0]
     assert row["status"] == "auth_error" and row["error_code"] == "missing_token" and row["http_status"] == 401

@@ -35,8 +35,12 @@ def test_two_different_tokens_is_401(compat_env):
 def test_missing_bad_revoked_expired(compat_env):
     c = compat_env.client
     r = c.get("/v1/_whoami")
-    assert r.status_code == 401 and r.headers["www-authenticate"].startswith('Bearer realm="doc4ai", error="invalid_token"')
-    assert "resource_metadata" not in r.headers["www-authenticate"]
+    www = r.headers["www-authenticate"]
+    if compat_env.ctx.config.oauth.enabled:
+        assert r.status_code == 401 and www.startswith('Bearer realm="doc4ai", resource_metadata="') and "error=" not in www
+    else:
+        assert r.status_code == 401 and www.startswith('Bearer realm="doc4ai", error="invalid_token"')
+        assert "resource_metadata" not in www
     assert last_call(compat_env.ctx)["error_code"] == "missing_token"
     raw, tid = compat_env.issue()
     compat_env.ctx.store.revoke_api_token(tid, "test", at=0)
