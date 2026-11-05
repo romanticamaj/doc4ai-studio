@@ -59,7 +59,10 @@ CONSENT_HEADERS = {
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; frame-ancestors 'none'; "
                                "base-uri 'none'",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    # same-origin, not no-referrer: under no-referrer a browser sends `Origin: null` on the consent form's POST (Fetch
+    # spec, non-CORS POST), which the CSRF check must refuse. same-origin still sends no Referer to the client's
+    # callback (always another origin), so the code never leaks through it (plan deviation, Task 12)
+    "Referrer-Policy": "same-origin",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
 }

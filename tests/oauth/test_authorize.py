@@ -34,7 +34,7 @@ def test_consent_page_dcr_loopback(oauth_client, dcr_client):
     assert re.search(r'value="doc4ai:read"[^>]*checked', html) and re.search(r'value="doc4ai:convert"[^>]*checked', html)
     assert not re.search(r'value="doc4ai:manage"[^>]*checked', html) and html.count(TEXT["high_risk"]) == 1
     assert r.headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in r.headers["content-security-policy"]
-    assert "form-action" not in r.headers["content-security-policy"] and r.headers["referrer-policy"] == "no-referrer"
+    assert "form-action" not in r.headers["content-security-policy"] and r.headers["referrer-policy"] == "same-origin"
     assert r.headers["cache-control"] == "no-store" and "<script" not in html
 
 
@@ -90,7 +90,7 @@ def test_consent_allow_redirects_with_code_and_iss(oauth_client, oauth_ctx, dcr_
     assert r.status_code == 302 and r.headers["location"].startswith(CB + "?")
     q = location_query(r)
     assert q["state"] == "st4te" and q["iss"] == ISSUER and q["code"].startswith("doc4ai_ac_") and set(q) == {"code", "state", "iss"}
-    assert r.headers["referrer-policy"] == "no-referrer" and r.headers["cache-control"] == "no-store"
+    assert r.headers["referrer-policy"] == "same-origin" and r.headers["cache-control"] == "no-store"
     t = exchange(oauth_client, dcr_client, q["code"], v, resource=RES)
     assert t.status_code == 200 and t.json()["scope"] == "doc4ai:read doc4ai:convert", t.text
     row = next(cl for cl in oauth_ctx.store.list_mcp_calls(limit=10) if cl["method"] == "oauth/authorize")

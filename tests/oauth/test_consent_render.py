@@ -78,7 +78,7 @@ def test_render_error_and_headers():
     h = C.CONSENT_HEADERS
     assert h["X-Frame-Options"] == "DENY" and "frame-ancestors 'none'" in h["Content-Security-Policy"]
     assert "default-src 'none'" in h["Content-Security-Policy"] and "form-action" not in h["Content-Security-Policy"]
-    assert h["Referrer-Policy"] == "no-referrer" and h["Cache-Control"] == "no-store" and h["X-Content-Type-Options"] == "nosniff"
+    assert h["Referrer-Policy"] == "same-origin" and h["Cache-Control"] == "no-store" and h["X-Content-Type-Options"] == "nosniff"
 
 
 def test_text_constants_exist():

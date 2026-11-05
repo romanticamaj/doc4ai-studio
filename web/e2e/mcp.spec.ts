@@ -94,6 +94,13 @@ test("copy buttons work without navigator.clipboard (plain-HTTP tailnet origin)"
   await reader.close();
 });
 
+/** The token box belongs to the PAT snippets; with OAuth on (the default) the Overview shows the OAuth ones first. */
+async function choosePat(page: import("@playwright/test").Page) {
+  const pat = page.getByRole("radio", { name: "PAT" });
+  await expect(pat).toBeVisible();
+  if ((await pat.getAttribute("aria-checked")) !== "true") await pat.click();
+}
+
 test("貼上 token fills the snippets in the browser only (no request carries it, nothing stored)", async ({ page }) => {
   const pat = "doc4ai_pat_xGW2n8zGcJdieMqBmDCjiu10YwpYVPWuO187gPXtTYj_450QG8"; // well-formed, never issued
   const leaks: string[] = [];
@@ -102,6 +109,7 @@ test("貼上 token fills the snippets in the browser only (no request carries it
     if (all.includes(pat)) leaks.push(r.url());
   });
   await page.goto("/mcp-admin");
+  await choosePat(page);
   const box = page.getByLabel("貼上你的 MCP token 以填入設定");
   await expect(box).toHaveAttribute("type", "password");
   await box.fill(pat);
@@ -124,6 +132,7 @@ test("貼上 token fills the snippets in the browser only (no request carries it
   await page.goBack();
   await expect(page).toHaveURL(/\/mcp-admin/);
   expect(await page.evaluate(() => (window as any).__doc)).toBe(1); // same document: bfcache not involved
+  await choosePat(page); // the page remounted: back to the default (OAuth) snippets
   await expect(box).toHaveValue("");
   const stored2 = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
   expect(stored2).not.toContain(pat);
@@ -134,12 +143,15 @@ test("貼上 token: a full reload never brings the token back; cross-document ba
   const pat = "doc4ai_pat_xGW2n8zGcJdieMqBmDCjiu10YwpYVPWuO187gPXtTYj_450QG8"; // well-formed, never issued
   const label = "貼上你的 MCP token 以填入設定";
   await page.goto("/mcp-admin");
+  await choosePat(page);
   await page.getByLabel(label).fill(pat);
   await page.goto("/library"); // full document load
   await page.goBack(); // bfcache may restore the frozen page
+  await choosePat(page);
   expect(["", pat]).toContain(await page.getByLabel(label).inputValue());
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
   expect(stored).not.toContain(pat);
   await page.reload();
+  await choosePat(page);
   await expect(page.getByLabel(label)).toHaveValue("");
 });
