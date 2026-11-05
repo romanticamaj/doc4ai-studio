@@ -23,8 +23,12 @@ class OAuthRuntime:
     """Per-app OAuth state (app.state.oauth): the client registry with its fetch / registration counters."""
 
     def __init__(self, ctx):
+        from aidoc.mcp.ratelimit import RateLimiter
+        from aidoc.oauth.consent import NonceSet
         self.ctx = ctx
         self.registry = ClientRegistry(ctx)
+        self.authorize_limiter = RateLimiter(lambda: AUTHORIZE_GET_PER_MIN)
+        self.nonces = NonceSet(ttl_s=1800)                 # the longest consent_ttl_s: a nonce outlives its request
 
 
 def runtime(request: Request) -> OAuthRuntime:
@@ -143,3 +147,196 @@ async def revoke(request: Request):
         return oauth_json({"error": e.error, "error_description": e.description}, 400)
     GrantService(request.app.state.ctx).revoke_by_token(form.get("token"), time.time())
     return oauth_json({}, 200)
+
+
+# ---- authorize (spec §5.3 (1)–(3), §6)
+def _page(body: str, status: int, extra: dict | None = None):
+    from fastapi.responses import HTMLResponse
+
+    from aidoc.oauth.consent import CONSENT_HEADERS
+    return HTMLResponse(body, status_code=status, headers={**CONSENT_HEADERS, **(extra or {})})
+
+
+def _error_page(title: str, status: int = 400, reason: str | None = None, extra: dict | None = None):
+    from aidoc.oauth.consent import render_error
+    return _page(render_error(title, reason), status, extra)
+
+
+def _with_query(uri: str, params: dict) -> str:
+    from urllib.parse import urlencode
+    sep = "&" if "?" in uri else "?"
+    return uri + sep + urlencode(params)
+
+
+def _redirect(uri: str, params: dict):
+    from fastapi.responses import Response
+
+    from aidoc.oauth.consent import CONSENT_HEADERS
+    return Response(status_code=302, headers={**CONSENT_HEADERS, "Location": _with_query(uri, params)})
+
+
+def _client_error_page(e: ClientError):
+    from aidoc.oauth.consent import TEXT
+    if e.code == "unknown_client":
+        return _error_page(TEXT["err_unknown_client"])
+    if e.code == "cimd_fetch_failed":
+        return _error_page(TEXT["err_cimd"].format(reason=e.message))
+    return _error_page(TEXT["err_client"].format(reason=e.message))
+
+
+def _requested_scopes(raw: str | None) -> list[str] | None:
+    """Canonical order; None when a scope is unknown. doc4ai:read is always part of the request (every connection
+    needs it; spec §6.1 「至少要有 doc4ai:read」)."""
+    from aidoc.mcp.principal import SCOPE_READ, SCOPES
+    asked = (raw if raw is not None else DEFAULT_CHALLENGE_SCOPE).split()
+    if any(s not in SCOPES for s in asked):
+        return None
+    want = set(asked) | {SCOPE_READ}
+    return [s for s in SCOPES if s in want]
+
+
+def _record(ctx, status: str, http_status: int, ip, *, error_code=None, args=None) -> None:
+    ctx.extras["mcp"].recorder.record(status=status, error_code=error_code, http_status=http_status, ip=ip,
+                                      method="oauth/authorize", args=args)
+
+
+def _host_of(uri: str) -> str | None:
+    from urllib.parse import urlsplit
+    try:
+        return urlsplit(uri).hostname or uri.split(":", 1)[0]
+    except ValueError:
+        return None
+
+
+@router.get("/oauth/authorize", include_in_schema=False)
+def authorize_get(request: Request):
+    from aidoc.mcp.principal import SCOPE_CONVERT, SCOPE_READ
+    from aidoc.oauth.clients import classify_redirect, redirect_allowed
+    from aidoc.oauth.consent import TEXT, ConsentView, render_consent, sign_request
+    from aidoc.oauth.grants import CHALLENGE_RE, source_label
+    ctx = request.app.state.ctx
+    if not ctx.config.oauth.enabled:
+        return not_found()
+    iss = issuer_or_none(ctx, request)
+    if iss is None:
+        return _error_page(TEXT["err_bad_host"])
+    rt = runtime(request)
+    ok, retry = rt.authorize_limiter.acquire(f"authz:{_ip(request)}")
+    if not ok:
+        return _error_page(TEXT["err_too_many"], 429, extra={"Retry-After": str(retry)})
+    q = request.query_params
+    now = time.time()
+    try:
+        client = rt.registry.resolve(q.get("client_id") or "", now)
+    except ClientError as e:
+        return _client_error_page(e)
+    redirect_uri = q.get("redirect_uri")
+    if not redirect_uri or not redirect_allowed(client, redirect_uri):
+        return _error_page(TEXT["err_bad_redirect"], reason=redirect_uri)
+    state = q.get("state")
+    if not state:
+        return _error_page(TEXT["err_missing_state"])
+    # from here on the client and its redirect URI are known: errors go back to it, with state and iss
+
+    def back(error: str, description: str):
+        return _redirect(redirect_uri, {"error": error, "error_description": description, "state": state, "iss": iss})
+    if q.get("response_type") != "code":
+        return back("unsupported_response_type", "only response_type=code is supported")
+    if q.get("code_challenge_method") != "S256":
+        return back("invalid_request", "PKCE with code_challenge_method=S256 is required")
+    challenge = q.get("code_challenge") or ""
+    if not CHALLENGE_RE.match(challenge):
+        return back("invalid_request", "code_challenge must be 43-128 characters of [A-Za-z0-9._~-]")
+    requested = _requested_scopes(q.get("scope"))
+    if requested is None:
+        return back("invalid_scope", "unknown scope requested")
+    resource = iss + "/mcp"
+    if q.get("resource") is not None and q.get("resource") != resource:
+        return back("invalid_target", "resource must be this server's /mcp URL")
+    blob = sign_request(ctx.extras["mcp"].secret, {"client_id": client["client_id"], "redirect_uri": redirect_uri,
+                                                   "scope": " ".join(requested), "state": state, "code_challenge": challenge,
+                                                   "resource": resource}, exp=now + ctx.config.oauth.consent_ttl_s)
+    cimd = client["client_id"].startswith("https://")
+    view = ConsentView(client_name=client.get("name") or client["client_id"], source_kind="cimd" if cimd else "dcr",
+                       source_label=source_label(client, client["client_id"]) if cimd else client["client_id"],
+                       redirect_uri=redirect_uri, redirect_kind=classify_redirect(redirect_uri) or "https", issuer=iss,
+                       requested_scopes=requested, checked_scopes=[s for s in requested if s in (SCOPE_READ, SCOPE_CONVERT)],
+                       needs_token=bool(ctx.token), request_blob=blob)
+    return _page(render_consent(view), 200)
+
+
+async def _consent_form(request: Request) -> dict[str, list[str]] | None:
+    from urllib.parse import parse_qs
+    ctype = (request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    raw = await request.body()
+    if ctype != _FORM or len(raw) > REGISTER_MAX_BYTES:
+        return None
+    try:
+        return parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+    except UnicodeDecodeError:
+        return None
+
+
+@router.post("/oauth/authorize", include_in_schema=False)
+async def authorize_post(request: Request):
+    import hmac
+
+    from aidoc.mcp.principal import SCOPE_READ
+    from aidoc.oauth.clients import redirect_allowed
+    from aidoc.oauth.consent import TEXT, ConsentError, verify_request
+    from aidoc.oauth.grants import GrantService, source_label
+    ctx = request.app.state.ctx
+    if not ctx.config.oauth.enabled:
+        return not_found()
+    iss = issuer_or_none(ctx, request)
+    if iss is None:
+        return _error_page(TEXT["err_bad_host"])
+    # CSRF (spec §6.2): a browser says where the form came from; only this page itself may submit it
+    origin, site = request.headers.get("origin"), request.headers.get("sec-fetch-site")
+    if (origin is not None and origin.strip().lower().rstrip("/") != iss) or \
+            (site is not None and site.strip().lower() not in ("same-origin", "none")):
+        return oauth_json({"error": "cross_origin", "error_description": TEXT["err_cross_site"]}, 403)
+    ip, now = _ip(request), time.time()
+    form = await _consent_form(request)
+    if form is None or len(form.get("request", [])) != 1:
+        return _error_page(TEXT["err_bad_request"])
+    try:
+        req = verify_request(ctx.extras["mcp"].secret, form["request"][0], now)
+    except ConsentError as e:
+        return _error_page(e.message)
+    if req.get("resource") != iss + "/mcp":
+        return _error_page(TEXT["err_bad_request"])           # the page was served for another Host
+    rt = runtime(request)
+    if ctx.token:
+        given = (form.get("server_token") or [""])[0]
+        if not hmac.compare_digest(given.encode("utf-8"), ctx.token.encode("utf-8")):
+            retry = ctx.extras["mcp"].guard.on_failure(ip, "consent_token", None)
+            if retry is not None:
+                return _error_page(TEXT["err_too_many"], 429, extra={"Retry-After": str(retry)})
+            _record(ctx, "auth_error", 401, ip, error_code="consent_token")
+            return _error_page(TEXT["err_wrong_token"], 401)
+    decision = (form.get("decision") or [""])[0]
+    if decision not in ("allow", "deny"):
+        return _error_page(TEXT["err_bad_request"])
+    try:
+        client = rt.registry.resolve(req["client_id"], now)
+    except ClientError as e:
+        return _client_error_page(e)
+    if not redirect_allowed(client, req["redirect_uri"]):
+        return _error_page(TEXT["err_bad_redirect"], reason=req["redirect_uri"])
+    requested = req["scope"].split()
+    granted = form.get("scopes", [])
+    if decision == "allow" and (SCOPE_READ not in granted or not set(granted) <= set(requested)):
+        return _error_page(TEXT["err_scopes"])
+    if not rt.nonces.consume(req["nonce"], now):
+        return _error_page(TEXT["err_used"])
+    base = {"state": req["state"], "iss": iss}
+    if decision == "deny":
+        _record(ctx, "ok", 302, ip, args={"client_host": source_label(client, client["client_id"]), "decision": "deny"})
+        return _redirect(req["redirect_uri"], {"error": "access_denied", "error_description": "the user denied the request",
+                                               **base})
+    scopes = [s for s in requested if s in set(granted)]
+    code = GrantService(ctx).issue_code(client, req["redirect_uri"], req["code_challenge"], scopes, req["resource"], ip, now)
+    _record(ctx, "ok", 302, ip, args={"client_host": source_label(client, client["client_id"]), "scopes": scopes,
+                                      "redirect_host": _host_of(req["redirect_uri"])})
+    return _redirect(req["redirect_uri"], {"code": code, **base})
