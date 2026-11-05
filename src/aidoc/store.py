@@ -11,11 +11,30 @@ from pathlib import Path
 
 from aidoc.models import TERMINAL_TASK, Attempt, ConvertOptions, JobStatus, TaskStatus
 
-SCHEMA_VERSION = 7   # v3 was never issued (MCP went to "v4"); v5 adds compat_tasks (docling-serve compatible API);
+SCHEMA_VERSION = 8   # v3 was never issued (MCP went to "v4"); v5 adds compat_tasks (docling-serve compatible API);
                      # v6 adds vlm_usage (VLM spec 2026-10-05 §8.2, which said v5 before compat took that number);
-                     # v7 adds documents.source_copy_* (spec 2026-10-29 §9.1)
+                     # v7 adds documents.source_copy_* (spec 2026-10-29 §9.1);
+                     # v8 adds oauth_clients columns + oauth_codes/grants/tokens (local MCP OAuth spec 2026-11-05 §5.5)
 _SOURCE_COPY_COLS = (("source_copy_path", "TEXT"), ("source_copy_status", "TEXT"), ("source_copy_error", "TEXT"),
                      ("source_copy_at", "REAL"), ("source_copy_size", "INTEGER"), ("source_copy_mtime_ns", "INTEGER"))
+_OAUTH_CLIENT_COLS = (("kind", "TEXT"), ("client_uri", "TEXT"), ("logo_uri", "TEXT"), ("software_id", "TEXT"),
+                      ("software_version", "TEXT"), ("application_type", "TEXT"), ("metadata_json", "TEXT"),
+                      ("fetched_at", "REAL"), ("cache_until", "REAL"), ("disabled_at", "REAL"))
+_OAUTH_DDL = """
+CREATE TABLE IF NOT EXISTS oauth_codes(
+  code_hash TEXT PRIMARY KEY, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, code_challenge TEXT NOT NULL,
+  scopes_json TEXT NOT NULL, resource TEXT NOT NULL, subject TEXT NOT NULL, created_at REAL NOT NULL,
+  expires_at REAL NOT NULL, consumed_at REAL, grant_id TEXT);
+CREATE TABLE IF NOT EXISTS oauth_grants(
+  id TEXT PRIMARY KEY, client_id TEXT NOT NULL, subject TEXT NOT NULL, scopes_json TEXT NOT NULL,
+  resource TEXT NOT NULL, created_at REAL NOT NULL, created_ip TEXT, absolute_expires_at REAL NOT NULL,
+  last_used_at REAL, last_used_ip TEXT, last_client TEXT, revoked_at REAL, revoked_reason TEXT);
+CREATE TABLE IF NOT EXISTS oauth_tokens(
+  id TEXT PRIMARY KEY, grant_id TEXT NOT NULL REFERENCES oauth_grants(id), kind TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE, prefix TEXT NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL,
+  revoked_at REAL, rotated_at REAL, parent_id TEXT, last_used_at REAL);
+CREATE INDEX IF NOT EXISTS oauth_tokens_grant ON oauth_tokens(grant_id);
+"""
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -88,7 +107,8 @@ class TaskBusyError(Exception):
         self.task_id = task_id
 
 
-_JSON_COLS = {"options_json", "tried_json", "quality_json", "payload_json", "flags_json", "scopes_json"}
+_JSON_COLS = {"options_json", "tried_json", "quality_json", "payload_json", "flags_json", "scopes_json",
+              "redirect_uris_json", "metadata_json"}
 _TERMINAL = {s.value for s in TERMINAL_TASK}
 # index A14 (P2): rows with these statuses are re-parented and resumed; done/low/skipped rows are replaced
 _REUSABLE = {TaskStatus.queued.value, TaskStatus.probing.value, TaskStatus.converting.value,
@@ -188,6 +208,7 @@ class Store:
         if "flags_json" not in cols:                     # schema v1 -> v2 (index §4, A18)
             self.con.execute("ALTER TABLE tasks ADD COLUMN flags_json TEXT NOT NULL DEFAULT '{}'")
         self._migrate_v7()
+        self._migrate_v8()
         self.con.execute("INSERT INTO meta(key, value) VALUES('schema_version', ?) "
                          "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
         self._page_index_tokenizer = self._ensure_page_index()
@@ -201,6 +222,15 @@ class Store:
                 self.con.execute(f"ALTER TABLE documents ADD COLUMN {name} {typ}")
         self.con.execute("CREATE UNIQUE INDEX IF NOT EXISTS documents_source_copy ON documents("
                          "source_copy_path COLLATE NOCASE) WHERE source_copy_path IS NOT NULL")
+
+    def _migrate_v8(self) -> None:
+        """Additive and idempotent (spec 2026-11-05 §5.5): the oauth_clients columns first, then the three tables and
+        their index (kept out of _DDL so a v7 file gains the columns before anything relies on them)."""
+        cols = {r[1] for r in self.con.execute("PRAGMA table_info(oauth_clients)")}
+        for name, typ in _OAUTH_CLIENT_COLS:
+            if name not in cols:
+                self.con.execute(f"ALTER TABLE oauth_clients ADD COLUMN {name} {typ}")
+        self.con.executescript(_OAUTH_DDL)
 
     def close(self) -> None:
         self.con.close()
@@ -710,6 +740,162 @@ class Store:
             if cut is not None:
                 n += self.con.execute("DELETE FROM mcp_calls WHERE id < ?", (cut[0],)).rowcount
         return n
+
+    # ---- OAuth (schema v8, local MCP OAuth spec 2026-11-05 §5.5). Secrets are stored as HMACs only.
+    def upsert_oauth_client(self, *, client_id, kind, name, redirect_uris, metadata_url=None, client_uri=None, logo_uri=None,
+                            software_id=None, software_version=None, application_type=None, metadata_json=None,
+                            fetched_at=None, cache_until=None) -> None:
+        meta = metadata_json if metadata_json is None or isinstance(metadata_json, str) else json.dumps(metadata_json,
+                                                                                                    ensure_ascii=False)
+        self.con.execute(
+            "INSERT INTO oauth_clients(client_id, metadata_url, name, redirect_uris_json, created_at, kind, client_uri, logo_uri, "
+            "software_id, software_version, application_type, metadata_json, fetched_at, cache_until) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(client_id) DO UPDATE SET metadata_url=excluded.metadata_url, "
+            "name=excluded.name, redirect_uris_json=excluded.redirect_uris_json, kind=excluded.kind, "
+            "client_uri=excluded.client_uri, logo_uri=excluded.logo_uri, software_id=excluded.software_id, "
+            "software_version=excluded.software_version, application_type=excluded.application_type, "
+            "metadata_json=excluded.metadata_json, fetched_at=excluded.fetched_at, cache_until=excluded.cache_until",
+            (client_id, metadata_url, name, json.dumps(list(redirect_uris)), time.time(), kind, client_uri, logo_uri,
+             software_id, software_version, application_type, meta, fetched_at, cache_until))
+
+    def get_oauth_client(self, client_id) -> dict | None:
+        return _row(self._q1("SELECT * FROM oauth_clients WHERE client_id=?", (client_id,)))
+
+    def list_oauth_clients(self) -> list[dict]:
+        return self._qa("SELECT * FROM oauth_clients ORDER BY created_at DESC, rowid DESC")
+
+    def touch_oauth_client(self, client_id, now: float) -> None:
+        self.con.execute("UPDATE oauth_clients SET last_seen=? WHERE client_id=?", (now, client_id))
+
+    def create_oauth_code(self, *, code_hash, client_id, redirect_uri, code_challenge, scopes, resource, subject, expires_at,
+                          created_at=None) -> None:
+        self.con.execute(
+            "INSERT INTO oauth_codes(code_hash, client_id, redirect_uri, code_challenge, scopes_json, resource, subject, "
+            "created_at, expires_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (code_hash, client_id, redirect_uri, code_challenge, json.dumps(list(scopes)), resource, subject,
+             time.time() if created_at is None else created_at, expires_at))
+
+    def take_oauth_code(self, code_hash, now: float) -> dict | None:
+        """The code row as it was before this take; the first take marks it consumed. A second take returns the row with
+        `consumed_at` already set, so the caller can revoke what the first exchange created (RFC 6749 §4.1.2)."""
+        with self.con.lock:
+            self.con.execute("BEGIN IMMEDIATE")
+            try:
+                row = _row(self._q1("SELECT * FROM oauth_codes WHERE code_hash=?", (code_hash,)))
+                if row is not None and row["consumed_at"] is None:
+                    self.con.execute("UPDATE oauth_codes SET consumed_at=? WHERE code_hash=?", (now, code_hash))
+            except BaseException:
+                self.con.execute("ROLLBACK")
+                raise
+            self.con.execute("COMMIT")
+            return row
+
+    def bind_oauth_code(self, code_hash, grant_id) -> None:
+        self.con.execute("UPDATE oauth_codes SET grant_id=? WHERE code_hash=?", (grant_id, code_hash))
+
+    def create_oauth_grant(self, *, client_id, subject, scopes, resource, created_ip, absolute_expires_at,
+                           created_at=None) -> str:
+        gid = _new_id()
+        self.con.execute(
+            "INSERT INTO oauth_grants(id, client_id, subject, scopes_json, resource, created_at, created_ip, absolute_expires_at) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (gid, client_id, subject, json.dumps(list(scopes)), resource, time.time() if created_at is None else created_at,
+             created_ip, absolute_expires_at))
+        return gid
+
+    def get_oauth_grant(self, grant_id) -> dict | None:
+        return _row(self._q1("SELECT * FROM oauth_grants WHERE id=?", (grant_id,)))
+
+    def list_oauth_grants(self, include_revoked: bool = True) -> list[dict]:
+        where = "" if include_revoked else " WHERE revoked_at IS NULL"
+        return self._qa(f"SELECT * FROM oauth_grants{where} ORDER BY created_at DESC, rowid DESC")
+
+    def revoke_oauth_grant(self, grant_id, reason: str | None, at: float) -> int:
+        """Marks the grant and every one of its access and refresh tokens; returns the number of tokens marked
+        (0 when the grant was already revoked: nothing changes)."""
+        with self.con.lock:
+            changed = self.con.execute("UPDATE oauth_grants SET revoked_at=?, revoked_reason=? WHERE id=? AND revoked_at IS NULL",
+                                       (at, reason, grant_id)).rowcount
+            if not changed:
+                return 0
+            return self.con.execute("UPDATE oauth_tokens SET revoked_at=? WHERE grant_id=? AND revoked_at IS NULL",
+                                    (at, grant_id)).rowcount
+
+    def touch_oauth_grant(self, grant_id, *, now: float, ip: str | None, client_label: str | None) -> None:
+        self.con.execute("UPDATE oauth_grants SET last_used_at=?, last_used_ip=?, last_client=? WHERE id=?",
+                         (now, ip, client_label, grant_id))
+
+    def create_oauth_token(self, *, grant_id, kind, token_hash, prefix, expires_at, parent_id=None, created_at=None) -> str:
+        tid = _new_id()
+        self.con.execute(
+            "INSERT INTO oauth_tokens(id, grant_id, kind, token_hash, prefix, created_at, expires_at, parent_id) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (tid, grant_id, kind, token_hash, prefix, time.time() if created_at is None else created_at, expires_at, parent_id))
+        return tid
+
+    def get_oauth_token_by_hash(self, token_hash) -> dict | None:
+        """The token joined with its grant: `scopes` (= `grant_scopes`), `resource`, `client_id`, `subject`,
+        `absolute_expires_at`, `grant_created_at`, `grant_revoked_at`."""
+        row = _row(self._q1(
+            "SELECT t.*, g.scopes_json AS scopes_json, g.resource AS resource, g.client_id AS client_id, g.subject AS subject, "
+            "g.absolute_expires_at AS absolute_expires_at, g.created_at AS grant_created_at, g.revoked_at AS grant_revoked_at "
+            "FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id WHERE t.token_hash=?", (token_hash,)))
+        if row is not None:
+            row["grant_scopes"] = row["scopes"]
+        return row
+
+    def rotate_oauth_refresh(self, old_id, *, new_hash, new_prefix, expires_at, at: float) -> str | None:
+        """Marks the old refresh token rotated and issues its successor in one locked step; None when the old token was
+        already rotated (a concurrent refresh with the same token: the caller treats it as a replay)."""
+        with self.con.lock:
+            old = self._q1("SELECT grant_id FROM oauth_tokens WHERE id=?", (old_id,))
+            if old is None or not self.con.execute("UPDATE oauth_tokens SET rotated_at=? WHERE id=? AND rotated_at IS NULL",
+                                                   (at, old_id)).rowcount:
+                return None
+            return self.create_oauth_token(grant_id=old["grant_id"], kind="rt", token_hash=new_hash, prefix=new_prefix,
+                                           expires_at=expires_at, parent_id=old_id, created_at=at)
+
+    def active_oauth_tokens(self, grant_id, kind: str, now: float) -> list[dict]:
+        return self._qa("SELECT * FROM oauth_tokens WHERE grant_id=? AND kind=? AND revoked_at IS NULL AND rotated_at IS NULL "
+                        "AND expires_at > ? ORDER BY created_at DESC, rowid DESC", (grant_id, kind, now))
+
+    def touch_oauth_token(self, token_id, now: float) -> None:
+        self.con.execute("UPDATE oauth_tokens SET last_used_at=? WHERE id=?", (now, token_id))
+
+    def prune_oauth(self, *, now: float) -> dict:
+        """Spec §7.3: codes expired unused or consumed more than an hour ago; tokens expired or revoked more than 90 days
+        ago; grants revoked (or past their absolute expiry) more than 30 days ago, with all their tokens; DCR clients
+        without any grant registered more than 30 days ago. CIMD clients are never deleted."""
+        from aidoc.oauth.clients import DCR_UNUSED_DAYS
+        from aidoc.oauth.grants import CODE_CONSUMED_KEEP_S, GRANT_REVOKED_KEEP_DAYS, TOKEN_EXPIRED_KEEP_DAYS
+        day = 86400
+        with self.con.lock:
+            codes = self.con.execute("DELETE FROM oauth_codes WHERE (consumed_at IS NULL AND expires_at < ?) OR "
+                                     "(consumed_at IS NOT NULL AND consumed_at < ?)", (now, now - CODE_CONSUMED_KEEP_S)).rowcount
+            g_cut = now - GRANT_REVOKED_KEEP_DAYS * day
+            dead = [r[0] for r in self.con.execute(
+                "SELECT id FROM oauth_grants WHERE (revoked_at IS NOT NULL AND revoked_at < ?) OR absolute_expires_at < ?",
+                (g_cut, g_cut))]
+            tokens = 0
+            for gid in dead:
+                tokens += self.con.execute("DELETE FROM oauth_tokens WHERE grant_id=?", (gid,)).rowcount
+                self.con.execute("DELETE FROM oauth_grants WHERE id=?", (gid,))
+            t_cut = now - TOKEN_EXPIRED_KEEP_DAYS * day
+            tokens += self.con.execute("DELETE FROM oauth_tokens WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)",
+                                       (t_cut, t_cut)).rowcount
+            clients = self.con.execute(
+                "DELETE FROM oauth_clients WHERE kind='dcr' AND created_at < ? AND NOT EXISTS "
+                "(SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.client_id)",
+                (now - DCR_UNUSED_DAYS * day,)).rowcount
+        return {"codes": codes, "tokens": tokens, "grants": len(dead), "clients": clients}
+
+    def token_names(self) -> dict[str, tuple[str, str]]:
+        """id -> (display name, kind) over PATs and OAuth grants (a grant is named after its client)."""
+        out = {r["id"]: (r["name"], "pat") for r in self.con.execute("SELECT id, name FROM api_tokens")}
+        for r in self.con.execute("SELECT g.id AS id, COALESCE(c.name, g.client_id) AS name FROM oauth_grants g "
+                                  "LEFT JOIN oauth_clients c ON c.client_id = g.client_id"):
+            out[r["id"]] = (r["name"], "oauth")
+        return out
 
     # ---- page_index (FTS5; MCP spec §3)
     def _ensure_page_index(self) -> str:

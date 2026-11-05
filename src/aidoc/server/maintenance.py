@@ -73,6 +73,7 @@ class Maintenance:
         res["compat_tasks_pruned"] = ctx.store.prune_compat_tasks(
             older_than_ts=now - ctx.config.compat.task_retention_days * 86400)
         res["vlm_usage_pruned"] = ctx.store.prune_vlm_usage(keep_days=180)     # VLM spec §8.2
+        res["oauth_pruned"] = ctx.store.prune_oauth(now=now)                     # local MCP OAuth spec §7.3
         ctx.store.prune_events(keep=self.keep_events)
         ctx.bus.publish("system.updated", None, {"maintenance": res})
         return res

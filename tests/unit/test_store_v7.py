@@ -47,7 +47,7 @@ def test_v6_to_v7_keeps_every_row(tmp_path):
     before = _v6_db(db)
     s = Store(db)
     cols = {r[1] for r in s.con.execute("PRAGMA table_info(documents)")}
-    assert {c for c, _ in _SOURCE_COPY_COLS} <= cols and s.schema_version() == 7 == SCHEMA_VERSION
+    assert {c for c, _ in _SOURCE_COPY_COLS} <= cols and s.schema_version() == 8 == SCHEMA_VERSION
     after = _dump(s)
     assert after == before and len(after) == 25                 # A2
     assert all(r["source_copy_status"] is None and r["source_copy_path"] is None for r in s.list_documents())
@@ -62,7 +62,7 @@ def test_migration_is_idempotent(tmp_path):
     s.close()
     s = Store(db)
     assert [tuple(r) for r in s.con.execute("PRAGMA table_info(documents)")] == cols1
-    assert _dump(s) == rows1 and s.schema_version() == 7
+    assert _dump(s) == rows1 and s.schema_version() == 8
     s.close()
 
 

@@ -51,7 +51,7 @@ def test_constants():
     assert source_copy.COPY_CHUNK == 8 * 1024 * 1024
     assert source_copy.PART_MAX_AGE_S == 3600
     assert ROOT_DIR_MAX == 200 and fsops.LONG_PATH_AT == 240 and source_copy.NAME_SUFFIX_MAX == 16
-    assert SCHEMA_VERSION == 7
+    assert SCHEMA_VERSION == 8            # v7 added source_copy_*; v8 the OAuth tables (spec 2026-11-05)
 
 
 @pytest.mark.parametrize("display, expected", [
