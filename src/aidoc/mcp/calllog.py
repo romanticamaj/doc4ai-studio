@@ -50,6 +50,7 @@ class CallRecorder:
     def __init__(self, ctx):
         self.ctx = ctx
         self._touched: dict[str, float] = {}
+        self._kinds: dict[str, str] = {}               # token id -> "pat" | "oauth" (resolved once per id)
         self._identities: dict[tuple, tuple[str, str | None, float]] = {}   # (token_id, ua) -> (name, version, ts)
         self._active: dict[str, float] = {}             # client_id -> last_seen we announced as active
         self._lock = threading.Lock()
@@ -81,29 +82,30 @@ class CallRecorder:
 
     def _publish_call(self, row: dict) -> None:
         store = self.ctx.store
-        token = store.get_api_token(row["token_id"]) if row["token_id"] else None
+        token = store.token_view(row["token_id"]) if row["token_id"] else None      # a PAT or an OAuth grant
         client = store.get_mcp_client(row["client_id"]) if row["client_id"] else None
         self.ctx.bus.publish("mcp.call", str(row["id"]), {
             # display fields only: the 15-char token prefix seen on failures, never args_summary or the token
             **{k: row[k] for k in ("id", "ts", "token_id", "client_id", "method", "tool_name", "status", "error_code",
                                    "http_status", "duration_ms", "response_tokens_est", "job_id", "token_prefix_seen",
                                    "ip", "protocol_version", "response_bytes", "resource_uri")},
-            "token_name": token["name"] if token else None, "client_name": client["client_name"] if client else None})
+            "token_name": token["name"] if token else None, "token_kind": token["kind"] if token else None,
+            "client_name": client["client_name"] if client else None})
 
     # ---- clients
     def _client_payload(self, row: dict, state: str) -> dict:
-        token = self.ctx.store.get_api_token(row["token_id"]) if row.get("token_id") else None
+        token = self.ctx.store.token_view(row.get("token_id"))
         return {**{k: row[k] for k in ("id", "token_id", "client_name", "client_version", "protocol_version", "user_agent",
                                       "first_seen", "last_seen", "last_ip", "request_count")},
-                "token_name": token["name"] if token else None, "state": state,
-                "token_status": ("revoked" if token["revoked_at"] is not None and token["revoked_at"] <= time.time()
-                                 else "expired" if token["expires_at"] is not None and token["expires_at"] <= time.time()
-                                 else "active") if token else None,
-                "active": state != "idle"}
+                "token_name": token["name"] if token else None, "token_kind": token["kind"] if token else None,
+                "state": state, "token_status": token["status"] if token else None, "active": state != "idle"}
 
-    def note_client(self, *, token_id, client_name, client_version, protocol_version, user_agent, ip, now=None) -> str:
+    def note_client(self, *, token_id, client_name, client_version, protocol_version, user_agent, ip, now=None,
+                    oauth_client_id=None) -> str:
+        """`token_id` is the PAT id or, for OAuth, the grant id (stable across refreshes, so UNIQUE(token_id, name,
+        version) keeps one row per connection); `oauth_client_id` names the OAuth client."""
         now = time.time() if now is None else now
-        cid, created = self.ctx.store.upsert_mcp_client(
+        cid, created = self.ctx.store.upsert_mcp_client(oauth_client_id=oauth_client_id,
             token_id=token_id, client_name=(client_name or "unknown")[:CLIENT_NAME_MAX],
             client_version=client_version[:CLIENT_VERSION_MAX] if client_version else client_version,
             protocol_version=protocol_version[:40] if protocol_version else protocol_version,
@@ -153,7 +155,22 @@ class CallRecorder:
             if last is not None and now - last < TOUCH_THROTTLE_S:
                 return False
             self._touched[token_id] = now
-        self.ctx.store.update_api_token(token_id, last_used_at=now, last_used_ip=ip, last_client=client_label)
+            kind = self._kinds.get(token_id)
+        store = self.ctx.store
+        if kind is None:
+            kind = "oauth" if store.get_api_token(token_id) is None and store.get_oauth_grant(token_id) is not None else "pat"
+            with self._lock:
+                self._kinds[token_id] = kind
+                if len(self._kinds) > 10000:
+                    self._kinds.clear()
+        if kind == "oauth":
+            # an OAuth principal's token_id is its grant (spec §7.1): the grant and its newest live access token
+            store.touch_oauth_grant(token_id, now=now, ip=ip, client_label=client_label)
+            live = store.active_oauth_tokens(token_id, "at", now)
+            if live:
+                store.touch_oauth_token(live[0]["id"], now)
+        else:
+            store.update_api_token(token_id, last_used_at=now, last_used_ip=ip, last_client=client_label)
         return True
 
     # ---- watcher

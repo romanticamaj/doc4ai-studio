@@ -153,8 +153,10 @@ def finish_call(ctx, call: CompatCall, http_status: int, response_bytes: int) ->
     client_id = None
     if token_id:
         name, version = ua_identity(call.ua)
+        p = call.principal
         client_id = rec.note_client(token_id=token_id, client_name=name, client_version=version,
-                                    protocol_version=call.protocol, user_agent=call.ua, ip=call.ip)
+                                    protocol_version=call.protocol, user_agent=call.ua, ip=call.ip,
+                                    oauth_client_id=p.client_id if p is not None and p.kind == "oauth" else None)
     if call.status == "ok" and http_status >= 400:
         call.status, call.error_code = "protocol_error", call.error_code or f"http_{http_status}"
     rec.record(status=call.status, error_code=call.error_code, http_status=http_status, method=METHOD,

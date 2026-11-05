@@ -179,8 +179,10 @@ def _record(ctx, recorder, rctx, state, status, error_code, result, t0) -> None:
     elif not name:
         name, version = recorder.recall_identity(token_id, state.user_agent)
     pv = _protocol_version(rctx)
+    oauth_client = state.principal.client_id if state.principal.kind == "oauth" else None
     client_id = recorder.note_client(token_id=token_id, client_name=name, client_version=version,
-                                     protocol_version=pv, user_agent=state.user_agent, ip=state.ip)
+                                     protocol_version=pv, user_agent=state.user_agent, ip=state.ip,
+                                     oauth_client_id=oauth_client)
     size, tokens = _response_size(result)
     sc = _get(result, "structuredContent", "structured_content") if result is not None else None
     tool = params.get("name") if rctx.method == "tools/call" else None

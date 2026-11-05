@@ -639,20 +639,21 @@ class Store:
 
     # ---- mcp_clients (observed clients; display only)
     def upsert_mcp_client(self, *, token_id, client_name, client_version, protocol_version, user_agent, ip,
-                          now) -> tuple[str, bool]:
+                          now, oauth_client_id=None) -> tuple[str, bool]:
         version = client_version or ""
         with self.con.lock:
             old = self._q1("SELECT id FROM mcp_clients WHERE token_id IS ? AND client_name=? AND client_version=?",
                            (token_id, client_name, version))
             if old is not None:
                 self.con.execute("UPDATE mcp_clients SET protocol_version=?, user_agent=?, last_seen=?, last_ip=?, "
-                                 "request_count=request_count+1 WHERE id=?",
-                                 (protocol_version, user_agent, now, ip, old["id"]))
+                                 "request_count=request_count+1, oauth_client_id=COALESCE(?, oauth_client_id) WHERE id=?",
+                                 (protocol_version, user_agent, now, ip, oauth_client_id, old["id"]))
                 return old["id"], False
             cid = _new_id()
-            self.con.execute("INSERT INTO mcp_clients(id, token_id, client_name, client_version, protocol_version, "
-                             "user_agent, first_seen, last_seen, last_ip, request_count) VALUES(?,?,?,?,?,?,?,?,?,1)",
-                             (cid, token_id, client_name, version, protocol_version, user_agent, now, now, ip))
+            self.con.execute("INSERT INTO mcp_clients(id, token_id, oauth_client_id, client_name, client_version, "
+                             "protocol_version, user_agent, first_seen, last_seen, last_ip, request_count) "
+                             "VALUES(?,?,?,?,?,?,?,?,?,?,1)",
+                             (cid, token_id, oauth_client_id, client_name, version, protocol_version, user_agent, now, now, ip))
             return cid, True
 
     def prune_mcp_clients(self, *, idle_before_ts: float) -> int:
@@ -888,6 +889,30 @@ class Store:
                 "(SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.client_id)",
                 (now - DCR_UNUSED_DAYS * day,)).rowcount
         return {"codes": codes, "tokens": tokens, "grants": len(dead), "clients": clients}
+
+    def grant_status(self, grant: dict, now: float) -> str:
+        """active | expired (past the absolute limit, or no live refresh token left) | revoked (spec §7.2)."""
+        if grant["revoked_at"] is not None:
+            return "revoked"
+        if grant["absolute_expires_at"] <= now or not self.active_oauth_tokens(grant["id"], "rt", now):
+            return "expired"
+        return "active"
+
+    def token_view(self, token_id, now: float | None = None) -> dict | None:
+        """{name, kind, status} of a PAT or an OAuth grant id (what mcp_calls / mcp_clients.token_id hold)."""
+        if not token_id:
+            return None
+        now = time.time() if now is None else now
+        t = self.get_api_token(token_id)
+        if t is not None:
+            status = ("revoked" if t["revoked_at"] is not None and t["revoked_at"] <= now
+                      else "expired" if t["expires_at"] is not None and t["expires_at"] <= now else "active")
+            return {"name": t["name"], "kind": "pat", "status": status}
+        g = self.get_oauth_grant(token_id)
+        if g is None:
+            return None
+        c = self.get_oauth_client(g["client_id"])
+        return {"name": (c or {}).get("name") or g["client_id"], "kind": "oauth", "status": self.grant_status(g, now)}
 
     def token_names(self) -> dict[str, tuple[str, str]]:
         """id -> (display name, kind) over PATs and OAuth grants (a grant is named after its client)."""
