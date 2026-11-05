@@ -21,6 +21,7 @@ ISSUER = "http://127.0.0.1:8765"
 RES = ISSUER + "/mcp"
 SERVER_TOKEN = "admin-s3cret"
 LOOPBACK_CB = "http://127.0.0.1/callback"
+CB_DEFAULT = "http://127.0.0.1:3118/callback"           # the port a loopback client listens on in these tests
 LIST = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
 
 
