@@ -173,7 +173,7 @@ def test_vlm_usage_upsert_and_today(tmp_path):
     s.add_vlm_usage("2026-10-05", "openai", "h:1", pages=3, requests=3, prompt_tokens=10, completion_tokens=5)
     s.add_vlm_usage("2026-10-05", "openai", "h:1", pages=2, requests=2, prompt_tokens=1, completion_tokens=1)
     s.add_vlm_usage("2026-10-04", "openai", "h:1", pages=9, requests=9, prompt_tokens=0, completion_tokens=0)
-    row = s.vlm_usage_days(30)
+    row = s.vlm_usage_days(30, today="2026-10-05")          # a fixed day: the test must not age out
     assert {r["day"]: r["pages"] for r in row} == {"2026-10-05": 5, "2026-10-04": 9}
     assert s.vlm_usage_today("openai", "h:1", today="2026-10-05")["pages"] == 5
     assert s.vlm_usage_today("local", "local", today="2026-10-05")["pages"] == 0
@@ -195,6 +195,6 @@ def test_v5_database_migrates_to_v6_with_data_intact(tmp_path):
     con.close()
     for _ in range(2):                                 # idempotent on a second open
         s = Store(db)
-        assert s.schema_version() == 7 and s.get_job(job) is not None
+        assert s.schema_version() == 8 and s.get_job(job) is not None
         s.add_vlm_usage("2026-10-05", "openai", "h", pages=1)
         s.close()
