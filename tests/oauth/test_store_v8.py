@@ -34,6 +34,7 @@ def test_v7_file_migrates_to_v8(tmp_path):
     assert V8_CLIENT_COLS <= cols
     tables = {r[0] for r in s.con.execute("SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
     assert {"oauth_codes", "oauth_grants", "oauth_tokens", "oauth_tokens_grant"} <= tables
+    assert "redirect_uri" in {r[1] for r in s.con.execute("PRAGMA table_info(oauth_grants)")}
     old = s.get_oauth_client("old-client")
     assert old["name"] == "Old" and old["redirect_uris"] == ["http://localhost/cb"] and old["kind"] is None
     s.close()

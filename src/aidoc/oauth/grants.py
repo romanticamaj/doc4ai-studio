@@ -129,7 +129,8 @@ class GrantService:
             o = self.ctx.config.oauth
             absolute = now + o.refresh_max_days * DAY
             gid = store.create_oauth_grant(client_id=client_id, subject=row["subject"], scopes=row["scopes"],
-                                           resource=row["resource"], created_ip=ip, absolute_expires_at=absolute, created_at=now)
+                                           resource=row["resource"], created_ip=ip, absolute_expires_at=absolute, created_at=now,
+                                           redirect_uri=row["redirect_uri"])
             store.bind_oauth_code(row["code_hash"], gid)
             at, rt_exp, _ = self._mint(gid, now, absolute)
             rt = T.generate(T.RT_PREFIX)

@@ -31,6 +31,23 @@ def render_snippets(endpoint_url: str, token: str = PLACEHOLDER) -> list[dict]:
     ]
 
 
+OAUTH_HINT = "然後在 Claude Code 輸入 /mcp → 選 doc4ai → 認證"
+
+
+def oauth_snippets(endpoint_url: str) -> list[dict]:
+    """No token anywhere (local OAuth spec 2026-11-05 §7.2): the client discovers the authorization server from the
+    401 and opens the browser on the 授權連線 page."""
+    cursor = {"mcpServers": {SERVER_ALIAS: {"url": endpoint_url}}}
+    vscode = {"servers": {SERVER_ALIAS: {"type": "http", "url": endpoint_url}}}
+    return [
+        {"client": "claude-code", "title": "Claude Code", "language": "bash",
+         "text": f"claude mcp add --transport http {SERVER_ALIAS} {endpoint_url}\n# {OAUTH_HINT}", "hint": OAUTH_HINT},
+        {"client": "cursor", "title": "Cursor（~/.cursor/mcp.json）", "language": "json", "text": json.dumps(cursor, indent=2)},
+        {"client": "vscode", "title": "VS Code（.vscode/mcp.json）", "language": "json", "text": json.dumps(vscode, indent=2)},
+        {"client": "inspector", "title": "MCP Inspector（Streamable HTTP URL）", "language": "text", "text": endpoint_url},
+    ]
+
+
 def compat_base_url(endpoint_url: str) -> str:
     """The server's origin for the docling-serve compatible API: clients append /v1/... themselves."""
     return endpoint_url.removesuffix("/mcp").rstrip("/")

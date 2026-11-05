@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS oauth_codes(
 CREATE TABLE IF NOT EXISTS oauth_grants(
   id TEXT PRIMARY KEY, client_id TEXT NOT NULL, subject TEXT NOT NULL, scopes_json TEXT NOT NULL,
   resource TEXT NOT NULL, created_at REAL NOT NULL, created_ip TEXT, absolute_expires_at REAL NOT NULL,
-  last_used_at REAL, last_used_ip TEXT, last_client TEXT, revoked_at REAL, revoked_reason TEXT);
+  last_used_at REAL, last_used_ip TEXT, last_client TEXT, revoked_at REAL, revoked_reason TEXT, redirect_uri TEXT);
 CREATE TABLE IF NOT EXISTS oauth_tokens(
   id TEXT PRIMARY KEY, grant_id TEXT NOT NULL REFERENCES oauth_grants(id), kind TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE, prefix TEXT NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL,
@@ -231,6 +231,9 @@ class Store:
             if name not in cols:
                 self.con.execute(f"ALTER TABLE oauth_clients ADD COLUMN {name} {typ}")
         self.con.executescript(_OAUTH_DDL)
+        # the redirect URI the connection was authorized for (admin 「Tokens」 note; codes are pruned after an hour)
+        if "redirect_uri" not in {r[1] for r in self.con.execute("PRAGMA table_info(oauth_grants)")}:
+            self.con.execute("ALTER TABLE oauth_grants ADD COLUMN redirect_uri TEXT")
 
     def close(self) -> None:
         self.con.close()
@@ -795,13 +798,13 @@ class Store:
         self.con.execute("UPDATE oauth_codes SET grant_id=? WHERE code_hash=?", (grant_id, code_hash))
 
     def create_oauth_grant(self, *, client_id, subject, scopes, resource, created_ip, absolute_expires_at,
-                           created_at=None) -> str:
+                           created_at=None, redirect_uri=None) -> str:
         gid = _new_id()
         self.con.execute(
-            "INSERT INTO oauth_grants(id, client_id, subject, scopes_json, resource, created_at, created_ip, absolute_expires_at) "
-            "VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO oauth_grants(id, client_id, subject, scopes_json, resource, created_at, created_ip, absolute_expires_at, "
+            "redirect_uri) VALUES(?,?,?,?,?,?,?,?,?)",
             (gid, client_id, subject, json.dumps(list(scopes)), resource, time.time() if created_at is None else created_at,
-             created_ip, absolute_expires_at))
+             created_ip, absolute_expires_at, redirect_uri))
         return gid
 
     def get_oauth_grant(self, grant_id) -> dict | None:

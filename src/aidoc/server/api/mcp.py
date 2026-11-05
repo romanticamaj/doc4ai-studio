@@ -12,7 +12,7 @@ from aidoc.mcp import tokens as T
 from aidoc.mcp.middleware import TOOL_SCOPES
 from aidoc.mcp.principal import SCOPE_READ, SCOPES
 from aidoc.mcp.server import PROTOCOL_VERSIONS, SDK_VERSION, endpoint_urls, transport_security_for
-from aidoc.mcp.snippets import compat_base_url, render_snippets
+from aidoc.mcp.snippets import compat_base_url, oauth_snippets, render_snippets
 from aidoc.server.auth import ApiError
 
 router = APIRouter()
@@ -63,10 +63,47 @@ def token_status(row: dict, now: float) -> str:
 def serialize_token(store, row: dict, now: float | None = None) -> dict:
     now = time.time() if now is None else now
     out = {k: v for k, v in row.items() if k not in ("token_hash", "workspace")}
+    out["kind"] = "pat"
     out["status"] = token_status(row, now)
     out["calls_24h"] = store.count_mcp_calls(since=now - DAY, token_id=row["id"])
     out["errors_24h"] = store.count_mcp_calls(since=now - DAY, token_id=row["id"], errors_only=True)
     return out
+
+
+def serialize_grant(store, row: dict, now: float | None = None) -> dict:
+    """An OAuth connection as a Tokens row (local OAuth spec 2026-11-05 §7.2): one grant = one row."""
+    from urllib.parse import urlsplit
+
+    from aidoc.oauth.grants import source_label
+    now = time.time() if now is None else now
+    client = store.get_oauth_client(row["client_id"])
+    rts = store.active_oauth_tokens(row["id"], "rt", now)
+    redirect = row.get("redirect_uri")
+    try:
+        note = (urlsplit(redirect).hostname or redirect.split(":", 1)[0]) if redirect else None
+    except ValueError:
+        note = None
+    return {"id": row["id"], "kind": "oauth", "name": (client or {}).get("name") or row["client_id"],
+            "prefix": source_label(client, row["client_id"]), "scopes": row["scopes"], "note": note,
+            "created_at": row["created_at"], "expires_at": row["absolute_expires_at"],
+            "refresh_expires_at": max((t["expires_at"] for t in rts), default=None),
+            "revoked_at": row["revoked_at"], "revoked_reason": row["revoked_reason"], "rotated_from": None,
+            "rate_limit_per_min": None, "last_used_at": row["last_used_at"], "last_used_ip": row["last_used_ip"],
+            "last_client": row["last_client"], "status": store.grant_status(row, now),
+            "calls_24h": store.count_mcp_calls(since=now - DAY, token_id=row["id"]),
+            "errors_24h": store.count_mcp_calls(since=now - DAY, token_id=row["id"], errors_only=True),
+            "oauth": {"client_id": row["client_id"], "kind": "cimd" if row["client_id"].startswith("https://") else "dcr",
+                      "redirect_uri": redirect, "access_tokens_active": len(store.active_oauth_tokens(row["id"], "at", now))}}
+
+
+def _oauth_grant_or_404(ctx, token_id: str) -> dict:
+    g = ctx.store.get_oauth_grant(token_id)
+    if g is None:
+        raise ApiError(404, "not_found")
+    return g
+
+
+OAUTH_IMMUTABLE = "OAuth 連線由 client 自行續期；要改權限請撤銷後重新授權"
 
 
 def _check_scopes(scopes: list[str]) -> list[str]:
@@ -109,8 +146,11 @@ def _default_endpoint(ctx) -> tuple[list[str], str]:
 
 
 @router.get("/mcp/config-snippets")
-def config_snippets(request: Request, token_id: str | None = None, endpoint: str | None = None) -> dict:
+def config_snippets(request: Request, token_id: str | None = None, endpoint: str | None = None, auth: str = "pat") -> dict:
+    """`auth=pat` (default): the Phase 1 snippets with a token placeholder; `auth=oauth`: no token (spec §7.2)."""
     ctx = _ctx(request)
+    if auth not in ("pat", "oauth"):
+        raise ApiError(422, "validation_error", detail="auth must be pat or oauth")
     if token_id is not None and ctx.store.get_api_token(token_id) is None:
         raise ApiError(404, "not_found")
     urls, chosen = _default_endpoint(ctx)
@@ -118,7 +158,8 @@ def config_snippets(request: Request, token_id: str | None = None, endpoint: str
         if endpoint not in urls:
             raise ApiError(422, "unknown_endpoint", endpoint_urls=urls)
         chosen = endpoint
-    return {"endpoint_url": chosen, "snippets": render_snippets(chosen)}
+    return {"endpoint_url": chosen, "auth": auth,
+            "snippets": oauth_snippets(chosen) if auth == "oauth" else render_snippets(chosen)}
 
 
 def _snippets_for(ctx, token: str) -> list[dict]:
@@ -145,14 +186,23 @@ def status(request: Request) -> dict:
             "config_warnings": list(getattr(cfg, "warnings", [])),
             # docling-serve compatible API (compat spec §6): Open WebUI's DOCLING_SERVER_URL, no /v1
             "compat": {"enabled": cfg.compat.enabled, "base_url": compat_base_url(_default_endpoint(ctx)[1]),
-                       "calls_24h": ctx.store.count_mcp_calls(since=now - DAY, method="compat/docling")}}
+                       "calls_24h": ctx.store.count_mcp_calls(since=now - DAY, method="compat/docling")},
+            # local MCP OAuth (spec 2026-11-05 §7.2)
+            "oauth": {"enabled": cfg.oauth.enabled, "allow_dcr": cfg.oauth.allow_dcr, "allow_cimd": cfg.oauth.allow_cimd,
+                      "issuer_example": f"http://127.0.0.1:{port}",
+                      "grants_active": sum(1 for g in ctx.store.list_oauth_grants(include_revoked=False)
+                                           if ctx.store.grant_status(g, now) == "active"),
+                      "clients": len(ctx.store.list_oauth_clients())}}
 
 
 @router.get("/mcp/tokens")
 def list_tokens(request: Request) -> dict:
     store = _ctx(request).store
     now = time.time()
-    return {"tokens": [serialize_token(store, t, now) for t in store.list_api_tokens()]}
+    rows = [serialize_token(store, t, now) for t in store.list_api_tokens()]
+    rows += [serialize_grant(store, g, now) for g in store.list_oauth_grants()]
+    rows.sort(key=lambda r: r["created_at"], reverse=True)          # PATs and OAuth connections, newest first
+    return {"tokens": rows}
 
 
 @router.post("/mcp/tokens", status_code=201)
@@ -170,7 +220,8 @@ async def patch_token(token_id: str, request: Request) -> dict:
     ctx = _ctx(request)
     row = ctx.store.get_api_token(token_id)
     if row is None:
-        raise ApiError(404, "not_found")
+        _oauth_grant_or_404(ctx, token_id)
+        raise ApiError(409, "oauth_grant", detail=OAUTH_IMMUTABLE)
     try:
         data = await request.json()
     except ValueError:
@@ -195,7 +246,12 @@ async def patch_token(token_id: str, request: Request) -> dict:
 def revoke_token(token_id: str, request: Request, body: RevokeIn | None = None) -> dict:
     ctx = _ctx(request)
     if ctx.store.get_api_token(token_id) is None:
-        raise ApiError(404, "not_found")
+        g = _oauth_grant_or_404(ctx, token_id)                 # an OAuth connection: revoke the whole grant
+        if g["revoked_at"] is not None:
+            raise ApiError(409, "already_revoked")
+        from aidoc.oauth.grants import GrantService
+        GrantService(ctx).revoke_grant(token_id, "admin", time.time())
+        return {"token": serialize_grant(ctx.store, ctx.store.get_oauth_grant(token_id))}
     if not ctx.store.revoke_api_token(token_id, (body or RevokeIn()).reason, at=time.time()):
         raise ApiError(409, "already_revoked")
     row = ctx.store.get_api_token(token_id)
@@ -208,7 +264,8 @@ def rotate_token(token_id: str, request: Request) -> dict:
     ctx = _ctx(request)
     old = ctx.store.get_api_token(token_id)
     if old is None:
-        raise ApiError(404, "not_found")
+        _oauth_grant_or_404(ctx, token_id)
+        raise ApiError(409, "oauth_grant", detail=OAUTH_IMMUTABLE)
     if token_status(old, time.time()) == "revoked":
         raise ApiError(409, "already_revoked")
     ttl = None if old["expires_at"] is None else max(DAY, old["expires_at"] - old["created_at"])
@@ -224,13 +281,14 @@ ACTIVE_WINDOW_S = 300
 
 
 def serialize_client(store, row: dict, now: float, tokens: dict | None = None) -> dict:
-    """`tokens`: id -> api_tokens row (one listing for many clients). `token_status` lets the UI move the clients of a
-    revoked token out of 活躍 at once."""
-    t = (tokens or {}).get(row["token_id"]) if row.get("token_id") else None
-    if t is None and row.get("token_id"):
-        t = store.get_api_token(row["token_id"])
-    return {**row, "token_name": t["name"] if t else None, "token_status": token_status(t, now) if t else None,
-            "active": (now - row["last_seen"]) <= ACTIVE_WINDOW_S}
+    """`tokens`: id -> store.token_view() (one lookup per token for many clients): a PAT or an OAuth grant.
+    `token_status` lets the UI move the clients of a revoked token out of 活躍 at once."""
+    tid = row.get("token_id")
+    t = (tokens or {}).get(tid) if tid else None
+    if t is None and tid:
+        t = store.token_view(tid, now)
+    return {**row, "token_name": t["name"] if t else None, "token_status": t["status"] if t else None,
+            "token_kind": t["kind"] if t else None, "active": (now - row["last_seen"]) <= ACTIVE_WINDOW_S}
 
 
 @router.get("/mcp/clients")
@@ -238,12 +296,14 @@ def list_clients(request: Request, active: int = 0, token_id: str | None = None)
     store = _ctx(request).store
     now = time.time()
     rows = store.list_mcp_clients(token_id=token_id, active_since=now - ACTIVE_WINDOW_S if active else None)
-    tokens = {t["id"]: t for t in store.list_api_tokens()}
+    tokens = {tid: store.token_view(tid, now) for tid in {r["token_id"] for r in rows if r.get("token_id")}}
     return {"clients": [serialize_client(store, r, now, tokens) for r in rows]}
 
 
 def serialize_call(row: dict, token_names: dict, client_names: dict) -> dict:
-    return {**row, "token_name": token_names.get(row["token_id"]), "client_name": client_names.get(row["client_id"])}
+    """`token_names`: store.token_names() (id -> (name, kind)) over PATs and OAuth grants."""
+    name, kind = token_names.get(row["token_id"]) or (None, None)
+    return {**row, "token_name": name, "token_kind": kind, "client_name": client_names.get(row["client_id"])}
 
 
 @router.get("/mcp/calls")
@@ -262,7 +322,7 @@ def list_calls(request: Request, token_id: str | None = None, client_id: str | N
                                 before_id=before, limit=limit + 1, method=method)
     more = len(rows) > limit
     rows = rows[:limit]
-    token_names = {t["id"]: t["name"] for t in store.list_api_tokens()}
+    token_names = store.token_names()
     client_names = {c["id"]: c["client_name"] for c in store.list_mcp_clients()}
     return {"calls": [serialize_call(r, token_names, client_names) for r in rows],
             "next_cursor": str(rows[-1]["id"]) if more and rows else None}
@@ -300,7 +360,7 @@ def stats(store, since: float, bucket_s: float, buckets: int) -> dict:
         i = min(buckets - 1, max(0, int((r["ts"] - since) // bucket_s)))
         series[i]["calls"] += 1
         series[i]["errors"] += int(err)
-    names = {t["id"]: t["name"] for t in store.list_api_tokens()}
+    names = {tid: name for tid, (name, _kind) in store.token_names().items()}
     tools = [{"tool": name, "calls": v["calls"], "errors": v["errors"], "error_rate": round(v["errors"] / v["calls"], 4),
               "p50_ms": percentile(v["durations"], 0.5), "p95_ms": percentile(v["durations"], 0.95),
               "tokens_median": percentile(v["tokens"], 0.5)} for name, v in sorted(per_tool.items())]
