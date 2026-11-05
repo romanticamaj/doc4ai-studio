@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import socket
+import ssl
 import threading
 from collections import deque
 from dataclasses import dataclass
@@ -38,7 +39,6 @@ DCR_MAX_REDIRECTS = 10
 DCR_FIELD_MAX = 512
 BLOCKED_SCHEMES = frozenset({"javascript", "data", "file", "vbscript", "blob", "about", "ftp", "ws", "wss", "mailto", "tel"})
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*$")
-_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 GRANT_TYPES = ("authorization_code", "refresh_token")
 APPLICATION_TYPES = (None, "native", "web")
 
@@ -60,18 +60,8 @@ class FetchResult:
     body: bytes              # at most max_bytes + 1 bytes (one more than allowed tells "too large")
 
 
-def fetch_json(url: str, *, max_bytes: int, timeout: float) -> FetchResult:
-    """One GET without redirects and without proxies from the environment; the body is read up to max_bytes + 1."""
-    import httpx
-    with httpx.Client(follow_redirects=False, timeout=timeout, trust_env=False) as c, \
-            c.stream("GET", url, headers={"Accept": "application/json"}) as r:
-        body = bytearray()
-        for chunk in r.iter_bytes():
-            body += chunk
-            if len(body) > max_bytes:
-                break
-        return FetchResult(status=r.status_code, headers={k.lower(): v for k, v in r.headers.items()},
-                           body=bytes(body[: max_bytes + 1]))
+class BlockedAddress(Exception):
+    """The CIMD host resolves to (or the connection reached) an address that is not a public unicast address."""
 
 
 def resolve_addrs(host: str) -> list[str]:
@@ -79,15 +69,97 @@ def resolve_addrs(host: str) -> list[str]:
     return list(dict.fromkeys(i[4][0] for i in infos))
 
 
+# IPv6 ranges that embed or translate to an IPv4 address (the embedded address could be anything, private included),
+# plus special-use blocks Python does not flag everywhere: all refused outright.
+_BLOCKED_NETS = tuple(ipaddress.ip_network(n) for n in (
+    "::ffff:0:0/96",        # IPv4-mapped
+    "::/96",                # IPv4-compatible (deprecated)
+    "64:ff9b::/96",         # NAT64 well-known prefix (RFC 6052)
+    "64:ff9b:1::/48",       # NAT64 local-use (RFC 8215)
+    "2002::/16",            # 6to4
+    "2001::/32",            # Teredo
+    "100::/64",             # discard-only
+    "2001:db8::/32",        # documentation
+    "fc00::/7", "fe80::/10", "fec0::/10", "ff00::/8",
+    "100.64.0.0/10",        # CGNAT (Tailscale)
+    "192.0.0.0/24", "198.18.0.0/15", "240.0.0.0/4",
+))
+
+
 def _is_public(addr: str) -> bool:
     try:
-        ip = ipaddress.ip_address(addr.split("%", 1)[0])
+        ip = ipaddress.ip_address(addr.split("%", 1)[0]) if addr else None
     except ValueError:
         return False
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
-    return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
-                or ip.is_unspecified or (ip.version == 4 and ip in _CGNAT))
+    if ip is None or any(ip.version == n.version and ip in n for n in _BLOCKED_NETS):
+        return False
+    return ip.is_global and not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+                                 or ip.is_unspecified)
+
+
+def check_addresses(addrs: list[str]) -> str:
+    """The address to dial (the first): every resolved address must be public, else BlockedAddress."""
+    if not addrs:
+        raise BlockedAddress("DNS lookup returned no address")
+    bad = [a for a in addrs if not _is_public(a)]
+    if bad:
+        raise BlockedAddress(f"address not allowed ({bad[0]} is not a public address)")
+    return addrs[0]
+
+
+def _dial(ip: str, port: int, timeout: float | None):
+    """Connect to exactly this address (never a name: no second DNS lookup)."""
+    import httpcore
+    return httpcore.SyncBackend().connect_tcp(ip, port, timeout=timeout)
+
+
+class _PinnedBackend:
+    """httpcore network backend that ignores the host name httpcore asks for and dials the pre-validated address;
+    the TLS layer above still uses the URL's host name for SNI and certificate verification, and the request keeps
+    it in the Host header. The peer address of the new connection is checked again."""
+
+    def __init__(self, ip: str):
+        self.ip = ip
+
+    def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        stream = _dial(self.ip, port, timeout)
+        sock = stream.get_extra_info("socket")
+        peer = sock.getpeername()[0] if sock is not None else None
+        if peer is None or ipaddress.ip_address(peer.split("%", 1)[0]) != ipaddress.ip_address(self.ip) \
+                or not _is_public(peer):
+            stream.close()
+            raise BlockedAddress(f"connection peer {peer} is not the validated address")
+        return stream
+
+    def connect_unix_socket(self, *a, **kw):
+        raise BlockedAddress("unix sockets are not allowed")
+
+    def sleep(self, seconds: float) -> None:
+        import time
+        time.sleep(seconds)
+
+
+def fetch_json(url: str, *, max_bytes: int, timeout: float, ssl_context=None) -> FetchResult:
+    """One https GET: the host is resolved once, every address validated, and the connection dials the validated
+    address (DNS rebinding cannot move it); no proxies, no redirects (httpcore never follows one; the caller refuses
+    3xx); the body is read up to max_bytes + 1."""
+    import httpcore
+    u = urlsplit(url)
+    if u.scheme != "https" or not u.hostname:
+        raise BlockedAddress("only https URLs are fetched")
+    ip = check_addresses(resolve_addrs(u.hostname))
+    ctx = ssl_context or ssl.create_default_context()
+    t = {"connect": timeout, "read": timeout, "write": timeout, "pool": timeout}
+    with httpcore.ConnectionPool(ssl_context=ctx, network_backend=_PinnedBackend(ip), max_connections=1, retries=0) as pool, \
+            pool.stream("GET", url, headers={"Accept": "application/json", "User-Agent": "Doc4AI-Studio-CIMD"},
+                        extensions={"timeout": t}) as r:
+        body = bytearray()
+        for chunk in r.iter_stream():
+            body += chunk
+            if len(body) > max_bytes:
+                break
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in r.headers}
+        return FetchResult(status=r.status, headers=headers, body=bytes(body[: max_bytes + 1]))
 
 
 def classify_redirect(uri) -> str | None:
@@ -226,19 +298,13 @@ class ClientRegistry:
     def _fetch(self, url: str) -> tuple[dict, int]:
         def fail(reason):
             return ClientError("cimd_fetch_failed", reason)
-        host = urlsplit(url).hostname
-        try:
-            addrs = resolve_addrs(host)
-        except OSError as e:
-            raise fail(f"DNS lookup failed ({type(e).__name__})") from None
-        if not addrs:
-            raise fail("DNS lookup returned no address")
-        bad = [a for a in addrs if not _is_public(a)]
-        if bad:
-            raise fail(f"address not allowed ({bad[0]} is not a public address)")
         try:
             res = fetch_json(url, max_bytes=CIMD_MAX_BYTES, timeout=CIMD_TIMEOUT_S)
-        except Exception as e:  # noqa: BLE001  any transport error is one reason: unreachable
+        except BlockedAddress as e:
+            raise fail(str(e)) from None
+        except OSError as e:
+            raise fail(f"DNS lookup or connection failed ({type(e).__name__})") from None
+        except Exception as e:  # noqa: BLE001  any transport / TLS error is one reason: unreachable
             raise fail(f"unreachable ({type(e).__name__})") from None
         if 300 <= res.status < 400:
             raise fail(f"HTTP {res.status}: redirect not allowed")

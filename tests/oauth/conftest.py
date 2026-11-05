@@ -77,7 +77,7 @@ def token_oauth_client(token_oauth_ctx):
         yield c
 
 
-# ---- CIMD network stand-in
+# ---- CIMD network stand-in (replaces fetch_json only; the address rule inside it is the real check_addresses)
 
 class FakeCimd:
     def __init__(self):
@@ -99,8 +99,10 @@ class FakeCimd:
         return sum(1 for u in self.log if u == url)
 
     # the two injectable module functions of aidoc.oauth.clients
-    def fetch_json(self, url, *, max_bytes, timeout):
-        from aidoc.oauth.clients import FetchResult
+    def fetch_json(self, url, *, max_bytes, timeout, ssl_context=None):
+        """Like the real fetch_json: one lookup, every address checked by the real rule, then the "request"."""
+        from aidoc.oauth.clients import FetchResult, check_addresses
+        check_addresses(self.resolve_addrs(url.split("/")[2]))
         with self._lock:
             self.log.append(url)
         e = self.table.get(url)
@@ -120,7 +122,6 @@ def fake_cimd(monkeypatch):
     from aidoc.oauth import clients
     f = FakeCimd()
     monkeypatch.setattr(clients, "fetch_json", f.fetch_json)
-    monkeypatch.setattr(clients, "resolve_addrs", f.resolve_addrs)
     return f
 
 
