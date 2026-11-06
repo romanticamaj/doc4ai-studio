@@ -41,7 +41,8 @@ def oauth_snippets(endpoint_url: str) -> list[dict]:
     vscode = {"servers": {SERVER_ALIAS: {"type": "http", "url": endpoint_url}}}
     return [
         {"client": "claude-code", "title": "Claude Code", "language": "bash",
-         "text": f"claude mcp add --transport http {SERVER_ALIAS} {endpoint_url}\n# {OAUTH_HINT}", "hint": OAUTH_HINT},
+         # copied as-is into a shell: only the command; the hint is its own line next to the snippet
+         "text": f"claude mcp add --transport http {SERVER_ALIAS} {endpoint_url}", "hint": OAUTH_HINT},
         {"client": "cursor", "title": "Cursor（~/.cursor/mcp.json）", "language": "json", "text": json.dumps(cursor, indent=2)},
         {"client": "vscode", "title": "VS Code（.vscode/mcp.json）", "language": "json", "text": json.dumps(vscode, indent=2)},
         {"client": "inspector", "title": "MCP Inspector（Streamable HTTP URL）", "language": "text", "text": endpoint_url},

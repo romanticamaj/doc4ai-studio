@@ -140,7 +140,11 @@ def test_status_oauth_and_snippets(oauth_client, oauth_ctx, dcr_client):
     texts = " ".join(s["text"] for s in sn["snippets"])
     assert sn["auth"] == "oauth" and "Bearer" not in texts and "doc4ai_pat_" not in texts and "<YOUR_TOKEN>" not in texts
     assert [s["client"] for s in sn["snippets"]] == ["claude-code", "cursor", "vscode", "inspector"]
-    assert sn["snippets"][0]["text"].startswith("claude mcp add --transport http doc4ai http://127.0.0.1:8765/mcp")
+    cc = sn["snippets"][0]
+    # what is copied is only the command (browser tester: a trailing "# ..." comment went into the shell); the hint
+    # is its own field, shown as a line next to the snippet
+    assert cc["text"] == "claude mcp add --transport http doc4ai http://127.0.0.1:8765/mcp"
+    assert cc["hint"] == "然後在 Claude Code 輸入 /mcp → 選 doc4ai → 認證"
     pat = oauth_client.get("/api/mcp/config-snippets").json()
     assert pat["auth"] == "pat" and "Bearer" in pat["snippets"][0]["text"]
     assert oauth_client.get("/api/mcp/config-snippets", params={"auth": "jwt"}).status_code == 422
