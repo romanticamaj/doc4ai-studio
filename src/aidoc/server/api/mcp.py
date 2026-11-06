@@ -74,6 +74,7 @@ def serialize_grant(store, row: dict, now: float | None = None) -> dict:
     """An OAuth connection as a Tokens row (local OAuth spec 2026-11-05 §7.2): one grant = one row."""
     from urllib.parse import urlsplit
 
+    from aidoc.oauth.clients import is_cimd
     from aidoc.oauth.grants import source_label
     now = time.time() if now is None else now
     client = store.get_oauth_client(row["client_id"])
@@ -92,7 +93,7 @@ def serialize_grant(store, row: dict, now: float | None = None) -> dict:
             "last_client": row["last_client"], "status": store.grant_status(row, now),
             "calls_24h": store.count_mcp_calls(since=now - DAY, token_id=row["id"]),
             "errors_24h": store.count_mcp_calls(since=now - DAY, token_id=row["id"], errors_only=True),
-            "oauth": {"client_id": row["client_id"], "kind": "cimd" if row["client_id"].startswith("https://") else "dcr",
+            "oauth": {"client_id": row["client_id"], "kind": "cimd" if is_cimd(client) else "dcr",
                       "redirect_uri": redirect, "access_tokens_active": len(store.active_oauth_tokens(row["id"], "at", now))}}
 
 

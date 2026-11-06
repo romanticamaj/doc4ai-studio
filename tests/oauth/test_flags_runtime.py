@@ -63,3 +63,33 @@ def test_a_failed_code_exchange_burns_the_code(oauth_client, oauth_ctx):
     assert good.status_code == 400 and good.json()["error"] == "invalid_grant"
     assert oauth_ctx.store._q1("SELECT consumed_at FROM oauth_codes WHERE code_hash=?",
                                (OT.hash_(oauth_ctx.extras["mcp"].secret, code),))[0] is not None
+
+
+def test_non_canonical_cimd_ids_refused_at_admission(oauth_ctx, fake_cimd):
+    """Review 2026-11-06: one canonical form only (exact lowercase https://, no whitespace / control characters, no
+    userinfo or fragment), so no client id can be fetched as CIMD yet look like something else elsewhere."""
+    import pytest
+
+    from aidoc.oauth.clients import ClientError, ClientRegistry
+    reg = ClientRegistry(oauth_ctx)
+    for cid in ("HTTPS://claude.ai/oauth/x", "Https://claude.ai/oauth/x", " https://claude.ai/oauth/x",
+                "https://claude.ai/oauth/x\t", "https://claude.ai/oa uth/x", "https://claude.ai/oauth/x\n",
+                "https://u@claude.ai/oauth/x", "https://claude.ai/oauth/x#f"):
+        fake_cimd.put(cid, {**CLAUDE_CODE_CIMD, "client_id": cid})
+        with pytest.raises(ClientError) as ei:
+            reg.resolve(cid, now=time.time())
+        assert ei.value.code in ("invalid_client_id", "unknown_client"), cid
+        assert fake_cimd.calls_for(cid) == 0, cid
+
+
+def test_kill_switch_follows_the_stored_client_kind(oauth_client, oauth_ctx):
+    """Whatever its spelling, a client stored as CIMD is stopped by allow_cimd = false on refresh and on verify."""
+    cid = "HTTPS://Claude.ai/oauth/legacy-spelling"
+    oauth_ctx.store.upsert_oauth_client(client_id=cid, kind="cimd", name="Legacy", redirect_uris=["http://127.0.0.1/callback"])
+    m = mint_tokens(oauth_ctx, client_id=cid)
+    oauth_ctx.config.oauth.allow_cimd = False
+    r = oauth_client.post("/oauth/token", data={"grant_type": "refresh_token", "refresh_token": m.refresh_token, "client_id": cid})
+    assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
+    assert oauth_ctx.extras["mcp"].verifier.verify(m.access_token, resource=RES).reason == "unknown_token"
+    g = next(t for t in oauth_client.get("/api/mcp/tokens").json()["tokens"] if t["id"] == m.grant_id)
+    assert g["oauth"]["kind"] == "cimd"

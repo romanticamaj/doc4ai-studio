@@ -282,9 +282,19 @@ def _max_age(cache_control: str | None) -> int:
     return max(CIMD_CACHE_MIN_S, min(CIMD_CACHE_MAX_S, int(m.group(1))))
 
 
+def is_cimd(client: dict | None) -> bool:
+    """The one test of "is this a CIMD client": its stored row says so (never a spelling of its client_id)."""
+    return bool(client) and client.get("kind") == "cimd"
+
+
 def cimd_id_problem(client_id: str) -> str | None:
+    """Admission of a CIMD client_id: only the canonical form (exact lowercase https://, no whitespace or control
+    characters, no userinfo, query or fragment, a non-root path), so no id is fetched under one spelling and
+    classified under another (review 2026-11-06)."""
     if len(client_id) > URI_MAX:
         return "client_id 太長"
+    if not client_id.startswith("https://") or _CONTROL_OR_SPACE.search(client_id):
+        return "client_id 必須是 https URL（小寫 https://，不含空白或控制字元）"
     try:
         u = urlsplit(client_id)
     except ValueError:

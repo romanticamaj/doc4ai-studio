@@ -14,7 +14,7 @@ async def _asyncio_sleep(seconds: float) -> None:
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from aidoc.oauth.clients import DCR_METADATA_MAX, ClientError, ClientRegistry
+from aidoc.oauth.clients import DCR_METADATA_MAX, ClientError, ClientRegistry, is_cimd
 from aidoc.oauth.metadata import DEFAULT_CHALLENGE_SCOPE, NO_STORE, issuer_or_none, not_found, unknown_host
 
 __all__ = ["AUTHORIZE_GET_PER_MIN", "DEFAULT_CHALLENGE_SCOPE", "OAuthRuntime", "router"]
@@ -320,7 +320,7 @@ async def authorize_get(request: Request):
     blob = sign_request(ctx.extras["mcp"].secret, {"client_id": client["client_id"], "redirect_uri": redirect_uri,
                                                    "scope": " ".join(requested), "state": state, "code_challenge": challenge,
                                                    "resource": resource}, exp=now + ctx.config.oauth.consent_ttl_s)
-    cimd = client["client_id"].startswith("https://")
+    cimd = is_cimd(client)
     view = ConsentView(client_name=client.get("name") or client["client_id"], source_kind="cimd" if cimd else "dcr",
                        source_label=source_label(client, client["client_id"]) if cimd else client["client_id"],
                        redirect_uri=redirect_uri, redirect_kind=classify_redirect(redirect_uri) or "https", issuer=iss,
