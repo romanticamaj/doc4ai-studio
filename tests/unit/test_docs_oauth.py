@@ -14,7 +14,10 @@ def test_readme_oauth_section():
     assert "[oauth] enabled = false" in readme
     sec = readme[readme.index("### Connect without a token"):]
     sec = sec[: sec.index("\n## ")]
-    assert "local threat model" in sec.lower() and "Origin" in sec
+    assert "local threat model" in sec.lower()
+    # the threat model states what a web page can still do and what it cannot (no "zero capability" claim; 2026-11-06)
+    assert "can still make the browser" in sec and "no open redirect" in sec and "5-second deadline" in sec
+    assert "lock you out" in sec
 
 
 def test_index_amendments():

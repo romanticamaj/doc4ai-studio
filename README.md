@@ -243,7 +243,15 @@ Limits:
 - Claude Desktop reaches remote MCP servers only through claude.ai's cloud connectors (public HTTPS), which a local `http://127.0.0.1` server is not; keep the `mcp-remote` + PAT setup above for it.
 - PATs keep working exactly as before; switching a client to OAuth does not revoke its old token (revoke it in the Tokens list when you no longer need it).
 
-Local threat model: when the server runs without a server token (loopback only), anyone at this computer's browser may approve the 授權連線 page; nobody else can. A web page in your browser gets nothing: it cannot read the page (no CORS), a cross-site form post is refused by its `Origin` / `Sec-Fetch-Site`, the page refuses to be framed, every approval needs a signed one-time form field, and a DNS-rebinding Host never becomes an issuer. Another program on this computer can approve its own connection, exactly as it could already create a PAT through the local admin API; OAuth does not widen that. In token mode (`--host 0.0.0.0` with a server token) the page also asks for the server token.
+Local threat model: when the server runs without a server token (loopback only), anyone at this computer's browser may approve the 授權連線 page; nobody else can. A web page open in your browser can still make the browser *request* things from this server (show you the consent or error page, try a cross-site post, point a client id at its own client document), but it cannot get a connection out of it:
+
+- it cannot read the consent page (no CORS) or its signed one-time form field, and the page refuses to be framed;
+- a cross-site consent post, and a cross-site or non-JSON client registration, is refused (403 / 400) before it counts against any quota, and junk registrations make room for a real one rather than locking it out;
+- a client document that answers slowly cannot hold the server: the fetch has one 5-second deadline, at most 3 run at once, failures are remembered for 30 s, and they run off the request threads;
+- before you approve anything, errors are sent back only to a loopback redirect address: never to a web site or an app handler named by an unverified client (no open redirect);
+- a DNS-rebinding Host, or a Host with another port than the server's, never becomes an issuer.
+
+Another program on this computer can approve its own connection, exactly as it could already create a PAT through the local admin API; OAuth does not widen that. In token mode (`--host 0.0.0.0` with a server token) the page also asks for the server token: each page allows 5 wrong tokens, and wrong guesses from one address are slowed down step by step (1 to 8 s per attempt), so guessing stays slow without letting a neighbour on the same network lock you out.
 
 MCP tools: `search_library`, `get_document_info`, `read_document` (page ranges; every response is capped at a token budget and continues with a cursor), `get_chunks`, `list_documents`, `convert_document`, `get_job`, `cancel_job`, `reconvert_document`, and `convert_path` (only when `[mcp] local_path_roots` is set). The web studio's MCP page lists tokens, connected clients and the call log; its Overview has a field where you can paste a token to fill the snippets above in the browser (the token is never sent or stored).
 
