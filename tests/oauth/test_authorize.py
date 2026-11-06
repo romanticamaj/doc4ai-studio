@@ -33,7 +33,7 @@ def test_consent_page_dcr_loopback(oauth_client, dcr_client):
     assert f"本機註冊的用戶端（{dcr_client['client_id']}）" in html and ISSUER in html
     assert 'name="request" value="' in html and 'type="password"' not in html and TEXT["loopback_only"] in html
     assert re.search(r'value="doc4ai:read"[^>]*checked', html) and re.search(r'value="doc4ai:convert"[^>]*checked', html)
-    assert not re.search(r'value="doc4ai:manage"[^>]*checked', html) and html.count(TEXT["high_risk"]) == 1
+    assert not re.search(r'value="doc4ai:manage"[^>]*checked', html) and html.count(TEXT["attention"]) == 1
     assert r.headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in r.headers["content-security-policy"]
     assert "form-action" not in r.headers["content-security-policy"] and r.headers["referrer-policy"] == "same-origin"
     assert r.headers["cache-control"] == "no-store" and "<script" not in html

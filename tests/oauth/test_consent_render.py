@@ -52,7 +52,7 @@ def test_render_consent_cimd_loopback():
     assert "http://127.0.0.1:8765" in html and 'name="request" value="BLOB.sig"' in html
     assert re.search(r'value="doc4ai:read"[^>]*checked', html) and re.search(r'value="doc4ai:convert"[^>]*checked', html)
     assert not re.search(r'value="doc4ai:manage"[^>]*checked', html) and 'value="doc4ai:manage"' in html
-    assert html.count(C.TEXT["high_risk"]) == 1 and 'value="doc4ai:convert:local"' not in html          # only requested scopes
+    assert html.count(C.TEXT["attention"]) == 1 and 'value="doc4ai:convert:local"' not in html          # only requested scopes
     assert 'type="password"' not in html and C.TEXT["loopback_only"] in html
     assert "<script" not in html.lower() and "src=" not in html and "<link" not in html and "url(" not in html
     assert set(re.findall(r"https?://[^\s\"<]+", html)) == {"http://localhost:3118/callback", "http://127.0.0.1:8765"}
@@ -69,7 +69,63 @@ def test_render_consent_dcr_private_token_mode():
     assert "本機註冊的用戶端（doc4ai_cl_abcdEFGH1234567890xyzw）" in html and "<strong>claude.ai</strong>" not in html
     assert C.TEXT["private_note"] in html and "cursor://anysphere.cursor-mcp/oauth/callback" in html
     assert 'type="password" name="server_token"' in html and C.TEXT["loopback_only"] not in html
-    assert html.count(C.TEXT["high_risk"]) == 1 and not re.search(r'value="doc4ai:convert:local"[^>]*checked', html)
+    assert html.count(C.TEXT["attention"]) == 1 and not re.search(r'value="doc4ai:convert:local"[^>]*checked', html)
+
+
+def test_consent_says_in_plain_words_what_each_permission_allows():
+    """The user could not read a list of scope ids: every row leads with what the app may do, the id is a small footnote."""
+    scopes = ["doc4ai:read", "doc4ai:convert", "doc4ai:convert:local", "doc4ai:manage"]
+    html = C.render_consent(view(requested_scopes=scopes))
+    assert set(C.SCOPE_TEXT) == set(C.SCOPE_DETAIL) == set(scopes)
+    for s in scopes:
+        title, detail = C.SCOPE_TEXT[s], C.SCOPE_DETAIL[s]
+        assert title in html and detail in html and f'<code class="scope-id">{s}</code>' in html
+        assert html.index(title) < html.index(detail) < html.index(f'<code class="scope-id">{s}</code>')
+        assert "doc4ai:" not in title + detail
+    assert "Claude Code 想連到你的 Doc4AI 文件庫" in html and C.TEXT["intro"] in html and C.TEXT["limits"] in html
+    assert "doc4ai:" not in C.TEXT["scopes_note"] + C.TEXT["err_scopes"]
+
+
+def test_technical_details_stay_visible_but_after_the_permissions():
+    """Small print, never hidden: the source and the callback are what tells a user the request is not what it claims."""
+    html = C.render_consent(view())
+    assert "<details" not in html and C.TEXT["details"] in html
+    assert html.index(C.SCOPE_TEXT["doc4ai:read"]) < html.index(C.TEXT["details"]) < html.index("<strong>claude.ai</strong>")
+    assert html.index("http://localhost:3118/callback") < html.index('name="decision" value="deny"')
+
+
+def test_sensitive_permissions_get_a_quiet_mark_not_a_scary_word():
+    """「高風險」 read as an alarm. The two sensitive rows carry a ! with a spoken name; the words are the row's own detail."""
+    html = C.render_consent(view(requested_scopes=["doc4ai:read", "doc4ai:convert", "doc4ai:convert:local", "doc4ai:manage"]))
+    assert "高風險" not in html and "風險" not in "".join(C.TEXT.values())
+    mark = f'<span class="attn" role="img" title="{C.TEXT["attention"]}">'
+    assert html.count(mark) == len(C.HIGH_RISK) == 2
+    for s in C.HIGH_RISK:                                # the mark sits on its own row, next to that row's title
+        assert html.index(C.SCOPE_TEXT[s]) < html.index(mark, html.index(C.SCOPE_TEXT[s])) < html.index(C.SCOPE_DETAIL[s])
+    for s in ("doc4ai:read", "doc4ai:convert"):
+        assert mark not in html[html.index(C.SCOPE_TEXT[s]):html.index(C.SCOPE_DETAIL[s])]
+
+
+def test_page_uses_the_product_look_and_stays_self_contained():
+    """Same tokens and mark as the web app (index.css, BrandMark), drawn inline: the CSP allows no image, font or script."""
+    for html in (C.render_consent(view(needs_token=True)), C.render_error("x")):
+        assert "oklch(0.51 0.19 270)" in html and "oklch(0.72 0.14 272)" in html       # --primary, light and dark
+        assert 'class="brand"' in html and "<svg" in html and "xmlns" not in html
+        assert "<script" not in html.lower() and "src=" not in html and "<link" not in html and "url(" not in html
+        assert "@import" not in html and "@font-face" not in html
+    assert "default-src 'none'" in C.CONSENT_HEADERS["Content-Security-Policy"]
+
+
+@pytest.mark.parametrize("name,tile", [("Claude Code", "C"), ("cursor", "C"), ("<b>", "&lt;"), ("  ", "?"), ("", "?"), ("克勞德", "克")])
+def test_client_tile_shows_the_escaped_first_letter(name, tile):
+    assert f'<span class="tile peer" aria-hidden="true">{tile}</span>' in C.render_consent(view(client_name=name))
+
+
+def test_limits_text_matches_the_tools_that_exist():
+    """The page promises the app cannot delete documents: adding such a tool must fail here until the text changes."""
+    from aidoc.mcp.middleware import TOOL_SCOPES
+    assert "刪除文件" in C.TEXT["limits"]
+    assert not [t for t in TOOL_SCOPES if "delete" in t or "remove" in t or "setting" in t or "token" in t]
 
 
 def test_render_error_and_headers():
@@ -83,7 +139,7 @@ def test_render_error_and_headers():
 
 def test_text_constants_exist():
     for key in ("title", "headline", "unverified", "source", "redirect", "server", "loopback_note", "private_note", "dcr_source",
-                "scopes", "scopes_note", "high_risk", "server_token", "loopback_only", "deny", "allow", "error_title",
+                "scopes", "scopes_note", "attention", "server_token", "loopback_only", "deny", "allow", "error_title",
                 "err_bad_redirect", "err_unknown_client", "err_cimd", "err_missing_state", "err_bad_host"):
         assert C.TEXT[key]
     assert C.TEXT["title"] == "授權連線" and C.TEXT["loopback_only"] == "只有在這台電腦的瀏覽器能看到這個頁面。"

@@ -62,7 +62,8 @@ test("consent page: content, phone and desktop width, deny, approve → token �
   await expect(page.getByRole("checkbox", { name: /doc4ai:convert/ })).toBeChecked();
   const manage = page.getByRole("checkbox", { name: /doc4ai:manage/ });
   await expect(manage).not.toBeChecked();
-  await expect(page.getByText("高風險")).toBeVisible();
+  await expect(page.getByRole("img", { name: "這項權限影響比較大，勾選前請確認" })).toBeVisible();
+  await expect(page.getByText("高風險")).toHaveCount(0);
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await expect(page.getByText("只有在這台電腦的瀏覽器能看到這個頁面。")).toBeVisible();
   expect(await noHorizontalScroll(page)).toBe(true);
