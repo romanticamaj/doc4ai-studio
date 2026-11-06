@@ -41,8 +41,13 @@ def _known_hosts(ctx) -> frozenset:
     return hosts
 
 
+def bound_port(ctx) -> int:
+    return int(ctx.extras.get("bind_port") or ctx.config.server.port)
+
+
 def allowed_host(ctx, host_header: str | None) -> str | None:
-    """The lower-cased `host[:port]` when its host part is one this server answers to, else None."""
+    """The lower-cased `host[:port]` when its host part is one this server answers to and its port is the one it is
+    bound to (or absent, when that port is 80, the http default); else None (verifier F5)."""
     if not host_header:
         return None
     h = host_header.strip().lower()
@@ -60,7 +65,10 @@ def allowed_host(ctx, host_header: str | None) -> str | None:
         name, _, port = h.partition(":")
         if ":" in h and not _PORT_RE.match(port):
             return None
-    if not name or (port and not 0 < int(port) < 65536) or name not in _known_hosts(ctx):
+    if not name or name not in _known_hosts(ctx):
+        return None
+    bound = bound_port(ctx)
+    if (port and (port != str(int(port)) or int(port) != bound)) or (not port and bound != 80):
         return None
     return f"{name}:{port}" if port else name
 

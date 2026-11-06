@@ -148,6 +148,7 @@ def live_server(ctx):
             raise RuntimeError("uvicorn did not start")
         _time.sleep(0.02)
     port = server.servers[0].sockets[0].getsockname()[1]
+    ctx.extras["bind_port"] = port                    # like `aidoc serve`: the port it really listens on
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     th.join(10)

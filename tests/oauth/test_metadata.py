@@ -32,8 +32,8 @@ def test_issuer_follows_the_host_the_client_used(oauth_client):
     assert m["issuer"] == "http://localhost:8765" and m["token_endpoint"] == "http://localhost:8765/oauth/token"
     assert oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": "[::1]:8765"}).json()["issuer"] == \
         "http://[::1]:8765"
-    assert oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": "LOCALHOST:9999"}).json()["issuer"] == \
-        "http://localhost:9999"
+    assert oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": "LOCALHOST:8765"}).json()["issuer"] == \
+        "http://localhost:8765"
     for bad in ("evil.test:8765", "evil.test", "127.0.0.1.evil.test:8765", "localhost:abc", "127.0.0.1:8765@evil",
                 "[::1", "a:b:c"):
         r = oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": bad})
@@ -64,8 +64,30 @@ def test_flags_hide_endpoints_and_disabled_is_404(oauth_client, oauth_ctx):
 def test_unit_helpers(oauth_ctx):
     from aidoc.oauth.metadata import allowed_host, prm_url
     assert allowed_host(oauth_ctx, "127.0.0.1:8765") == "127.0.0.1:8765"
-    assert allowed_host(oauth_ctx, "127.0.0.1") == "127.0.0.1"
-    assert allowed_host(oauth_ctx, "Localhost:1") == "localhost:1"
+    assert allowed_host(oauth_ctx, "127.0.0.1") is None                 # bound to 8765: a port-less Host is another port
+    assert allowed_host(oauth_ctx, "Localhost:8765") == "localhost:8765"
     assert allowed_host(oauth_ctx, None) is None and allowed_host(oauth_ctx, "") is None
     assert allowed_host(oauth_ctx, "evil.test") is None and allowed_host(oauth_ctx, "::1") is None
     assert prm_url(ISSUER) == ISSUER + "/.well-known/oauth-protected-resource/mcp"
+
+
+def test_issuer_port_must_be_the_bound_one(oauth_client, oauth_ctx):
+    """Verifier F5: only the port this server is bound to (or none, when that is the scheme default) becomes part of
+    an issuer; any other port in Host is an unknown host."""
+    for host in ("127.0.0.1:9999", "localhost:1", "127.0.0.1", "[::1]:80", "127.0.0.1:08765"):
+        r = oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": host})
+        assert r.status_code == 400 and "issuer" not in r.text, host
+    assert oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": "127.0.0.1:8765"}).json()["issuer"] == ISSUER
+    oauth_ctx.extras["bind_port"] = 80
+    assert oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": "127.0.0.1"}).json()["issuer"] == \
+        "http://127.0.0.1"
+    assert oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": "127.0.0.1:80"}).status_code == 200
+    assert oauth_client.get("/.well-known/oauth-authorization-server", headers={"Host": "127.0.0.1:8765"}).status_code == 400
+
+
+def test_mcp_401_has_no_resource_metadata_for_another_port(live_oauth):
+    from tests.mcp.conftest import raw_post
+    from tests.oauth.conftest import LIST
+    port = int(live_oauth.rsplit(":", 1)[1])
+    r = raw_post(live_oauth, None, LIST, extra_headers={"Host": f"127.0.0.1:{port + 1}"})
+    assert "resource_metadata" not in r.headers.get("www-authenticate", "")
