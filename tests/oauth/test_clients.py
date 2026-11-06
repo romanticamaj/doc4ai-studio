@@ -64,14 +64,17 @@ def test_cimd_blocks_private_and_redirect(fake_cimd, oauth_ctx):
     fake_cimd.put("https://err.test/m", None, status=500)
     with pytest.raises(ClientError):
         reg.resolve("https://err.test/m", now=T0)
-    assert oauth_ctx.store.get_oauth_client("https://err.test/m") is None    # errors are not cached
+    assert oauth_ctx.store.get_oauth_client("https://err.test/m") is None    # errors are never persisted
     for _ in range(7):
         with pytest.raises(ClientError):
             reg.resolve("https://err.test/m", now=T0 + 1)
-    assert fake_cimd.calls_for("https://err.test/m") == 6                    # per-client fetch limit 6/min
+    assert fake_cimd.calls_for("https://err.test/m") == 1                    # answered from the 30 s negative cache
     with pytest.raises(ClientError):
         reg.resolve("https://err.test/m", now=T0 + 61)
-    assert fake_cimd.calls_for("https://err.test/m") == 7                    # the next minute fetches again
+    assert fake_cimd.calls_for("https://err.test/m") == 2                    # after the window it fetches again
+    # the per-client limit (6 a minute) stays as the backstop behind the negative cache
+    assert [reg._may_fetch("https://other.test/m", T0) for _ in range(7)] == [True] * 6 + [False]
+    assert reg._may_fetch("https://other.test/m", T0 + 60) is True
 
 
 def test_cimd_stale_document_used_when_fetch_fails(fake_cimd, oauth_ctx):

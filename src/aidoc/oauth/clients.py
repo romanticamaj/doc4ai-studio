@@ -16,6 +16,7 @@ import re
 import socket
 import ssl
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -25,8 +26,10 @@ from aidoc.oauth.tokens import generate_client_id
 log = logging.getLogger("aidoc.oauth")
 
 CIMD_MAX_BYTES = 65536
-CIMD_TIMEOUT_S = 5
+CIMD_TIMEOUT_S = 5                  # total wall-clock budget of one fetch: DNS answer to last byte (spec §5.1)
 CIMD_FETCH_PER_MIN = 6
+CIMD_MAX_CONCURRENT = 3              # documents fetched at the same time, server-wide; more are refused, never queued
+CIMD_NEGATIVE_TTL_S = 30             # a failed fetch (with no usable stale document) is answered from memory this long
 CIMD_STALE_OK_S = 7 * 86400          # a failed refetch falls back to a document this recent
 CIMD_CACHE_MIN_S = 60
 CIMD_CACHE_MAX_S = 86400
@@ -107,6 +110,37 @@ def check_addresses(addrs: list[str]) -> str:
     return addrs[0]
 
 
+class _DeadlineStream:
+    """An httpcore network stream whose every read, write and TLS handshake gets at most the time left until one
+    absolute deadline: a peer that trickles a byte at a time cannot stretch the fetch past it (each read alone would
+    stay under a per-phase timeout)."""
+
+    def __init__(self, inner, deadline: float):
+        self._inner, self._deadline = inner, deadline
+
+    def _left(self, timeout: float | None) -> float:
+        import httpcore
+        left = self._deadline - time.monotonic()
+        if left <= 0:
+            raise httpcore.ReadTimeout("CIMD fetch exceeded its total deadline")
+        return left if timeout is None else min(timeout, left)
+
+    def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
+        return self._inner.read(max_bytes, self._left(timeout))
+
+    def write(self, buffer: bytes, timeout: float | None = None) -> None:
+        self._inner.write(buffer, self._left(timeout))
+
+    def close(self) -> None:
+        self._inner.close()
+
+    def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+        return _DeadlineStream(self._inner.start_tls(ssl_context, server_hostname, self._left(timeout)), self._deadline)
+
+    def get_extra_info(self, info: str):
+        return self._inner.get_extra_info(info)
+
+
 def _dial(ip: str, port: int, timeout: float | None):
     """Connect to exactly this address (never a name: no second DNS lookup)."""
     import httpcore
@@ -118,18 +152,22 @@ class _PinnedBackend:
     the TLS layer above still uses the URL's host name for SNI and certificate verification, and the request keeps
     it in the Host header. The peer address of the new connection is checked again."""
 
-    def __init__(self, ip: str):
-        self.ip = ip
+    def __init__(self, ip: str, deadline: float):
+        self.ip, self.deadline = ip, deadline
 
     def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
-        stream = _dial(self.ip, port, timeout)
+        left = self.deadline - time.monotonic()
+        if left <= 0:
+            import httpcore
+            raise httpcore.ConnectTimeout("CIMD fetch exceeded its total deadline")
+        stream = _dial(self.ip, port, left if timeout is None else min(timeout, left))
         sock = stream.get_extra_info("socket")
         peer = sock.getpeername()[0] if sock is not None else None
         if peer is None or ipaddress.ip_address(peer.split("%", 1)[0]) != ipaddress.ip_address(self.ip) \
                 or not _is_public(peer):
             stream.close()
             raise BlockedAddress(f"connection peer {peer} is not the validated address")
-        return stream
+        return _DeadlineStream(stream, self.deadline)
 
     def connect_unix_socket(self, *a, **kw):
         raise BlockedAddress("unix sockets are not allowed")
@@ -142,15 +180,18 @@ class _PinnedBackend:
 def fetch_json(url: str, *, max_bytes: int, timeout: float, ssl_context=None) -> FetchResult:
     """One https GET: the host is resolved once, every address validated, and the connection dials the validated
     address (DNS rebinding cannot move it); no proxies, no redirects (httpcore never follows one; the caller refuses
-    3xx); the body is read up to max_bytes + 1."""
+    3xx); the body is read up to max_bytes + 1. `timeout` is ONE total budget for connect, TLS, request and the whole
+    body (verifier F1: per-phase timeouts let a trickling server hold the fetch for hours)."""
     import httpcore
+    deadline = time.monotonic() + timeout
     u = urlsplit(url)
     if u.scheme != "https" or not u.hostname:
         raise BlockedAddress("only https URLs are fetched")
     ip = check_addresses(resolve_addrs(u.hostname))
     ctx = ssl_context or ssl.create_default_context()
     t = {"connect": timeout, "read": timeout, "write": timeout, "pool": timeout}
-    with httpcore.ConnectionPool(ssl_context=ctx, network_backend=_PinnedBackend(ip), max_connections=1, retries=0) as pool, \
+    with httpcore.ConnectionPool(ssl_context=ctx, network_backend=_PinnedBackend(ip, deadline), max_connections=1,
+                                 retries=0) as pool, \
             pool.stream("GET", url, headers={"Accept": "application/json", "User-Agent": "Doc4AI-Studio-CIMD"},
                         extensions={"timeout": t}) as r:
         body = bytearray()
@@ -158,6 +199,8 @@ def fetch_json(url: str, *, max_bytes: int, timeout: float, ssl_context=None) ->
             body += chunk
             if len(body) > max_bytes:
                 break
+            if time.monotonic() >= deadline:
+                raise httpcore.ReadTimeout("CIMD fetch exceeded its total deadline")
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in r.headers}
         return FetchResult(status=r.status, headers=headers, body=bytes(body[: max_bytes + 1]))
 
@@ -226,10 +269,14 @@ def cimd_id_problem(client_id: str) -> str | None:
     return None
 
 
+_FETCH_SLOTS = threading.BoundedSemaphore(CIMD_MAX_CONCURRENT)
+
+
 class ClientRegistry:
     def __init__(self, ctx):
         self.ctx = ctx
         self._fetches: dict[str, deque] = {}
+        self._failed: dict[str, tuple[float, str]] = {}      # client_id -> (until, reason): the negative cache
         self._dcr: dict[str, tuple[float, int]] = {}         # ip -> (window start, attempts)
         self._lock = threading.Lock()
 
@@ -263,6 +310,12 @@ class ClientRegistry:
             if (row.get("cache_until") or 0) > now:
                 return row
         try:
+            with self._lock:
+                failed = self._failed.get(client_id)
+            if failed is not None and failed[0] > now:
+                cached = ClientError("cimd_fetch_failed", failed[1])
+                cached.cached = True                      # answered from memory: does not extend the window
+                raise cached
             if not self._may_fetch(client_id, now):
                 raise ClientError("cimd_fetch_failed", "too many fetches of this document; try again in a minute")
             doc, max_age = self._fetch(client_id)
@@ -273,7 +326,15 @@ class ClientRegistry:
                 log.warning("CIMD fetch of %s failed (%s); using the document fetched %.0f s ago", client_id, e.message,
                             now - row["fetched_at"])
                 return row
+            if not e.message.startswith("busy") and not getattr(e, "cached", False):   # a full cap is not its fault
+                with self._lock:
+                    self._failed[client_id] = (now + CIMD_NEGATIVE_TTL_S, e.message)
+                    if len(self._failed) > 1000:
+                        for k in [k for k, (until, _m) in self._failed.items() if until <= now]:
+                            del self._failed[k]
             raise
+        with self._lock:
+            self._failed.pop(client_id, None)
         self.store.upsert_oauth_client(
             client_id=client_id, kind="cimd", name=doc.get("client_name") or urlsplit(client_id).hostname,
             redirect_uris=doc["redirect_uris"], metadata_url=client_id, client_uri=_opt_str(doc.get("client_uri")),
@@ -298,6 +359,8 @@ class ClientRegistry:
     def _fetch(self, url: str) -> tuple[dict, int]:
         def fail(reason):
             return ClientError("cimd_fetch_failed", reason)
+        if not _FETCH_SLOTS.acquire(blocking=False):
+            raise fail("busy: other client documents are being fetched; try again in a few seconds")
         try:
             res = fetch_json(url, max_bytes=CIMD_MAX_BYTES, timeout=CIMD_TIMEOUT_S)
         except BlockedAddress as e:
@@ -306,6 +369,8 @@ class ClientRegistry:
             raise fail(f"DNS lookup or connection failed ({type(e).__name__})") from None
         except Exception as e:  # noqa: BLE001  any transport / TLS error is one reason: unreachable
             raise fail(f"unreachable ({type(e).__name__})") from None
+        finally:
+            _FETCH_SLOTS.release()
         if 300 <= res.status < 400:
             raise fail(f"HTTP {res.status}: redirect not allowed")
         if res.status != 200:

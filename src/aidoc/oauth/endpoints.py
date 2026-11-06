@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -14,13 +15,14 @@ from aidoc.oauth.metadata import DEFAULT_CHALLENGE_SCOPE, NO_STORE, issuer_or_no
 __all__ = ["AUTHORIZE_GET_PER_MIN", "DEFAULT_CHALLENGE_SCOPE", "OAuthRuntime", "router"]
 
 AUTHORIZE_GET_PER_MIN = 60
+OAUTH_WORKERS = 4                    # the executor client resolution runs on (> CIMD_MAX_CONCURRENT: lookups never wait)
 REGISTER_MAX_BYTES = 64 * 1024
 
 router = APIRouter()
 
 
 class OAuthRuntime:
-    """Per-app OAuth state (app.state.oauth): the client registry with its fetch / registration counters."""
+    """Per-app OAuth state (app.state.oauth): client registry, its resolution executor, authorize limiter, used nonces."""
 
     def __init__(self, ctx):
         from aidoc.mcp.ratelimit import RateLimiter
@@ -28,7 +30,14 @@ class OAuthRuntime:
         self.ctx = ctx
         self.registry = ClientRegistry(ctx)
         self.authorize_limiter = RateLimiter(lambda: AUTHORIZE_GET_PER_MIN)
+        # client resolution can fetch a CIMD document (up to CIMD_TIMEOUT_S): it runs here, never on the shared request
+        # threadpool or the event loop, so slow client documents cannot starve other requests (verifier F1)
+        self.executor = ThreadPoolExecutor(max_workers=OAUTH_WORKERS, thread_name_prefix="aidoc-oauth")
         self.nonces = NonceSet(ttl_s=1800)                 # the longest consent_ttl_s: a nonce outlives its request
+
+    async def resolve(self, client_id: str, now: float) -> dict:
+        import asyncio
+        return await asyncio.get_running_loop().run_in_executor(self.executor, self.registry.resolve, client_id, now)
 
 
 def runtime(request: Request) -> OAuthRuntime:
@@ -209,7 +218,7 @@ def _host_of(uri: str) -> str | None:
 
 
 @router.get("/oauth/authorize", include_in_schema=False)
-def authorize_get(request: Request):
+async def authorize_get(request: Request):
     from aidoc.mcp.principal import SCOPE_CONVERT, SCOPE_READ
     from aidoc.oauth.clients import classify_redirect, redirect_allowed
     from aidoc.oauth.consent import TEXT, ConsentView, render_consent, sign_request
@@ -227,7 +236,7 @@ def authorize_get(request: Request):
     q = request.query_params
     now = time.time()
     try:
-        client = rt.registry.resolve(q.get("client_id") or "", now)
+        client = await rt.resolve(q.get("client_id") or "", now)
     except ClientError as e:
         return _client_error_page(e)
     redirect_uri = q.get("redirect_uri")
@@ -319,7 +328,7 @@ async def authorize_post(request: Request):
     if decision not in ("allow", "deny"):
         return _error_page(TEXT["err_bad_request"])
     try:
-        client = rt.registry.resolve(req["client_id"], now)
+        client = await rt.resolve(req["client_id"], now)
     except ClientError as e:
         return _client_error_page(e)
     if not redirect_allowed(client, req["redirect_uri"]):
