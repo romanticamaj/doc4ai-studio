@@ -44,7 +44,6 @@ TEXT = {
     "err_scopes": "至少要允許 doc4ai:read，且只能允許 client 請求的權限。",
     "err_wrong_token": "伺服器 token 不正確。",
     "err_too_many": "嘗試太多次，請稍後再試。",
-    "err_burned": "這個授權頁輸錯伺服器 token 太多次，已失效；請回到應用程式重新開始。",
     "err_cross_site": "這個表單只能從授權頁本身送出。",
     "err_client": "client 設定有誤：{reason}",
     "err_param": "授權請求的參數有誤，請回到應用程式重新開始。",
@@ -126,60 +125,83 @@ class NonceSet:
             self._seen[nonce] = now
             return True
 
+    def is_used(self, nonce: str, now: float) -> bool:
+        with self._lock:
+            t = self._seen.get(nonce)
+            return t is not None and now - t < self.ttl_s
+
     def __len__(self) -> int:
         return len(self._seen)
 
 
 class ConsentThrottle:
-    """Token-mode consent guessing (verifier F4). Per address: IP_LIMIT wrong server tokens inside WINDOW_S lock it for
-    LOCK_S, doubling with every further lockout up to MAX_LOCK_S; while locked every POST is refused, the right token
-    included, so the lockout really limits guessing. Per consent page (nonce): from the 2nd wrong guess a pause of
-    1, 2, 4 … s before the next try, and the NONCE_LIMIT-th wrong guess burns the page."""
+    """Token-mode consent guessing (verifier F4, review 2026-11-06). Two limits, neither of which lets an address lock
+    the owner out:
 
-    IP_LIMIT, WINDOW_S, LOCK_S, MAX_LOCK_S = 10, 60.0, 60.0, 3600.0
+    * per consent page (nonce) — the hard limit: from the 2nd wrong server token a pause of 1, 2, 4 … s before the
+      next try, and the NONCE_LIMIT-th wrong guess uses the page up (the user reloads for a new one);
+    * per address (the socket peer; no forwarded headers are trusted) — a growing delay, never a refusal: after
+      FREE_FAILS wrong tokens every attempt from the address waits 1, 2, 4, 8 s (MAX_DELAY_S) before it is judged, and
+      attempts from one address are judged one at a time, so guesses cannot get faster however many pages are opened.
+      The delay decays after QUIET_S without failures and resets on a success.
+
+    All arithmetic is clamped (exponents at EXP_CAP, counters stop at their cap) and fails closed: any error answers
+    with the longest delay."""
+
+    FREE_FAILS, EXP_CAP, MAX_DELAY_S, QUIET_S = 2, 6, 8.0, 300.0
     NONCE_LIMIT = 5
     MAX_KEYS = 10000
 
     def __init__(self):
-        self._ip: dict[str, dict] = {}             # ip -> {fails: [ts], until, lockouts}
-        self._nonce: dict[str, tuple[int, float]] = {}   # nonce -> (wrong guesses, not before)
+        self._ip: dict[str, dict] = {}                     # ip -> {fails, last}
+        self._nonce: dict[str, tuple[int, float]] = {}     # nonce -> (wrong guesses, not before)
         self._lock = threading.Lock()
 
-    def retry_after(self, ip: str | None, nonce: str, now: float) -> int | None:
-        """Seconds to wait when this address or this page is paused, else None."""
+    def delay_for(self, ip: str | None, now: float) -> float:
         with self._lock:
             st = self._ip.get(ip or "?")
-            waits = []
-            if st and st["until"] > now:
-                waits.append(st["until"] - now)
+            if st is None:
+                return 0.0
+            try:
+                if now - st["last"] >= self.QUIET_S:
+                    return 0.0
+                if st["fails"] <= self.FREE_FAILS:
+                    return 0.0
+                return min(self.MAX_DELAY_S, float(2 ** min(st["fails"] - self.FREE_FAILS - 1, self.EXP_CAP)))
+            except Exception:  # noqa: BLE001  fail closed: never skip the delay
+                return self.MAX_DELAY_S
+
+    def nonce_retry(self, nonce: str, now: float) -> int | None:
+        with self._lock:
             n = self._nonce.get(nonce)
-            if n and n[1] > now:
-                waits.append(n[1] - now)
-        return max(1, int(max(waits) + 0.999)) if waits else None
+        if n is None or n[1] <= now:
+            return None
+        return max(1, int(n[1] - now + 0.999))
 
     def failure(self, ip: str | None, nonce: str, now: float) -> bool:
-        """Count one wrong token; True when this page is now burned."""
+        """Count one wrong token; True when this page is now used up."""
+        cap = self.FREE_FAILS + self.EXP_CAP + 1
         with self._lock:
             if len(self._ip) > self.MAX_KEYS:
-                self._ip = {k: v for k, v in self._ip.items() if v["until"] > now or (v["fails"] and now - v["fails"][-1] < self.WINDOW_S)}
+                self._ip = {k: v for k, v in self._ip.items() if isinstance(v.get("last"), float) and now - v["last"] < self.QUIET_S}
             if len(self._nonce) > self.MAX_KEYS:
-                self._nonce.clear()
-            st = self._ip.setdefault(ip or "?", {"fails": [], "until": 0.0, "lockouts": 0})
-            st["fails"] = [t for t in st["fails"] if now - t < self.WINDOW_S] + [now]
-            if len(st["fails"]) >= self.IP_LIMIT:
-                st["until"] = now + min(self.MAX_LOCK_S, self.LOCK_S * 2 ** st["lockouts"])
-                st["lockouts"] += 1
-                st["fails"] = []
-            wrong = self._nonce.get(nonce, (0, 0.0))[0] + 1
-            self._nonce[nonce] = (wrong, now + (2 ** (wrong - 2) if wrong >= 2 else 0))
+                self._nonce = {k: v for k, v in self._nonce.items() if v[1] > now}
+            st = self._ip.setdefault(ip or "?", {"fails": 0, "last": now})
+            try:
+                fails = 0 if now - st["last"] >= self.QUIET_S else int(st["fails"])
+                st["fails"] = min(fails + 1, cap)
+            except Exception:  # noqa: BLE001  fail closed: the longest delay
+                st["fails"] = cap
+            st["last"] = now
+            wrong = min(self._nonce.get(nonce, (0, 0.0))[0] + 1, self.NONCE_LIMIT + self.EXP_CAP)
+            pause = 2 ** min(wrong - 2, self.EXP_CAP) if wrong >= 2 else 0
+            self._nonce[nonce] = (wrong, now + pause)
             return wrong >= self.NONCE_LIMIT
 
     def success(self, ip: str | None, nonce: str) -> None:
         with self._lock:
             self._nonce.pop(nonce, None)
-            st = self._ip.get(ip or "?")
-            if st:
-                st["fails"] = []
+            self._ip.pop(ip or "?", None)
 
 
 @dataclass

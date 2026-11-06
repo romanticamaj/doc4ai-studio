@@ -6,6 +6,11 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+
+async def _asyncio_sleep(seconds: float) -> None:
+    import asyncio
+    await asyncio.sleep(seconds)
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -15,6 +20,8 @@ from aidoc.oauth.metadata import DEFAULT_CHALLENGE_SCOPE, NO_STORE, issuer_or_no
 __all__ = ["AUTHORIZE_GET_PER_MIN", "DEFAULT_CHALLENGE_SCOPE", "OAuthRuntime", "router"]
 
 AUTHORIZE_GET_PER_MIN = 60
+AUTHORIZE_POST_PER_MIN = 30          # consent submissions per address (each also waits its throttle delay)
+CONSENT_MAX_WAITING = 3              # submissions from one address queued behind its delay; more are refused at once
 OAUTH_WORKERS = 4                    # the executor client resolution runs on (> CIMD_MAX_CONCURRENT: lookups never wait)
 REGISTER_MAX_BYTES = 64 * 1024
 
@@ -34,7 +41,21 @@ class OAuthRuntime:
         # threadpool or the event loop, so slow client documents cannot starve other requests (verifier F1)
         self.executor = ThreadPoolExecutor(max_workers=OAUTH_WORKERS, thread_name_prefix="aidoc-oauth")
         self.nonces = NonceSet(ttl_s=1800)                 # the longest consent_ttl_s: a nonce outlives its request
-        self.consent_throttle = ConsentThrottle()           # token-mode guessing (verifier F4)
+        self.consent_throttle = ConsentThrottle()           # token-mode guessing (verifier F4, review 2026-11-06)
+        self.authorize_post_limiter = RateLimiter(lambda: AUTHORIZE_POST_PER_MIN)
+        self.sleep = _asyncio_sleep                          # the per-address delay (tests advance a clock instead)
+        self._ip_locks: dict[str, object] = {}
+        self._ip_waiting: dict[str, int] = {}
+
+    def ip_lock(self, ip: str | None):
+        import asyncio
+        key = ip or "?"
+        lock = self._ip_locks.get(key)
+        if lock is None:
+            if len(self._ip_locks) > 10000:
+                self._ip_locks = {k: v for k, v in self._ip_locks.items() if v.locked()}
+            lock = self._ip_locks[key] = asyncio.Lock()
+        return lock
 
     async def resolve(self, client_id: str, now: float) -> dict:
         import asyncio
@@ -222,6 +243,15 @@ def _requested_scopes(raw: str | None) -> list[str] | None:
     return [s for s in SCOPES if s in want]
 
 
+def _refused(ctx, ip, retry: int):
+    """A throttled consent submission: counted into the auth-failure guard's aggregate row (its own row only while the
+    guard says so), answered 429 with Retry-After."""
+    from aidoc.oauth.consent import TEXT
+    if ctx.extras["mcp"].guard.on_failure(ip, "consent_throttled", None) is None:
+        _record(ctx, "rate_limited", 429, ip, error_code="consent_throttled")
+    return _error_page(TEXT["err_too_many"], 429, extra={"Retry-After": str(max(1, int(retry)))})
+
+
 def _record(ctx, status: str, http_status: int, ip, *, error_code=None, args=None) -> None:
     ctx.extras["mcp"].recorder.record(status=status, error_code=error_code, http_status=http_status, ip=ip,
                                       method="oauth/authorize", args=args)
@@ -329,7 +359,11 @@ async def authorize_post(request: Request):
     # CSRF (spec §6.2): a browser says where the form came from; only this page itself may submit it
     if _cross_site(request, iss):
         return oauth_json({"error": "cross_origin", "error_description": TEXT["err_cross_site"]}, 403)
-    ip, now = _ip(request), time.time()
+    ip, now = _ip(request), time.time()                     # ip: the socket peer (no forwarded headers are trusted)
+    rt = runtime(request)
+    ok, retry = rt.authorize_post_limiter.acquire(f"authz-post:{ip}", now=now)
+    if not ok:
+        return _refused(ctx, ip, retry)
     form = await _consent_form(request)
     if form is None or len(form.get("request", [])) != 1:
         return _error_page(TEXT["err_bad_request"])
@@ -337,23 +371,43 @@ async def authorize_post(request: Request):
         req = verify_request(ctx.extras["mcp"].secret, form["request"][0], now)
     except ConsentError as e:
         return _error_page(e.message)
+    # a used-up page (approved, denied, or burned by wrong tokens) answers the same whatever is sent: no token oracle
+    if rt.nonces.is_used(req["nonce"], now):
+        return _error_page(TEXT["err_used"])
     if req.get("resource") != iss + "/mcp":
         return _error_page(TEXT["err_bad_request"])           # the page was served for another Host
-    rt = runtime(request)
     if ctx.token:
         throttle = rt.consent_throttle
-        retry = throttle.retry_after(ip, req["nonce"], now)
-        if retry is not None:                                 # locked: refused even with the right token
-            _record(ctx, "rate_limited", 429, ip, error_code="consent_locked")
-            return _error_page(TEXT["err_too_many"], 429, extra={"Retry-After": str(retry)})
-        given = (form.get("server_token") or [""])[0]
-        if not hmac.compare_digest(given.encode("utf-8"), ctx.token.encode("utf-8")):
-            _record(ctx, "auth_error", 401, ip, error_code="consent_token")
-            if throttle.failure(ip, req["nonce"], now):
-                rt.nonces.consume(req["nonce"], now)           # burned: the page is used up
-                return _error_page(TEXT["err_burned"], 400)
-            return _error_page(TEXT["err_wrong_token"], 401)
-        throttle.success(ip, req["nonce"])
+        retry = throttle.nonce_retry(req["nonce"], now)
+        if retry is not None:                                 # this page's own pause after wrong guesses
+            return _refused(ctx, ip, retry)
+        key = ip or "?"
+        if rt._ip_waiting.get(key, 0) >= CONSENT_MAX_WAITING:
+            return _refused(ctx, ip, int(throttle.MAX_DELAY_S))
+        rt._ip_waiting[key] = rt._ip_waiting.get(key, 0) + 1
+        try:
+            async with rt.ip_lock(ip):                        # one judgement at a time per address, after its delay
+                delay = throttle.delay_for(ip, time.time())
+                if delay > 0:
+                    await rt.sleep(delay)
+                now = time.time()
+                given = (form.get("server_token") or [""])[0]
+                if not hmac.compare_digest(given.encode("utf-8"), ctx.token.encode("utf-8")):
+                    slowed_before = throttle.delay_for(ip, now) > 0
+                    burned = throttle.failure(ip, req["nonce"], now)
+                    if not slowed_before and throttle.delay_for(ip, now) > 0:   # only the transition is its own row
+                        _record(ctx, "rate_limited", 401, ip, error_code="consent_slowed")
+                    if ctx.extras["mcp"].guard.on_failure(ip, "consent_token", None) is None:
+                        _record(ctx, "auth_error", 401, ip, error_code="consent_token")
+                    if burned:
+                        rt.nonces.consume(req["nonce"], now)   # the page is used up: same answer as any used page
+                        return _error_page(TEXT["err_used"])
+                    return _error_page(TEXT["err_wrong_token"], 401)
+                throttle.success(ip, req["nonce"])
+        finally:
+            rt._ip_waiting[key] -= 1
+            if not rt._ip_waiting[key]:
+                del rt._ip_waiting[key]
     decision = (form.get("decision") or [""])[0]
     if decision not in ("allow", "deny"):
         return _error_page(TEXT["err_bad_request"])
