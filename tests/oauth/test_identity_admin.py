@@ -68,6 +68,7 @@ def _pat(ctx, name="my pat"):
 
 def test_tokens_list_merges_pats_and_grants(oauth_client, oauth_ctx, dcr_client):
     _raw, pat_id = _pat(oauth_ctx)
+    oauth_ctx.store.con.execute("UPDATE api_tokens SET created_at=created_at-5 WHERE id=?", (pat_id,))   # distinct times: no tie
     m = mint_tokens(oauth_ctx, scopes=("doc4ai:read", "doc4ai:convert"), client_id=dcr_client["client_id"])
     oauth_ctx.store.insert_mcp_call(status="ok", token_id=m.grant_id, method="tools/list")
     toks = oauth_client.get("/api/mcp/tokens").json()["tokens"]
