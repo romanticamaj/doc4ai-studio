@@ -22,7 +22,7 @@ test("create token → SDK call → live connection and log → revoke → 401 l
   await page.getByRole("button", { name: "建立 token" }).click();
   await page.getByLabel("名稱").fill("e2e laptop");
   await page.getByRole("checkbox", { name: /doc4ai:manage/ }).check();
-  await expect(page.getByText(/高風險/)).toBeVisible();
+  await expect(page.getByText(/只給你信任的用戶端/)).toBeVisible();
   await page.getByRole("button", { name: "建立" }).click();
   const field = page.getByRole("textbox", { name: /token/i }).or(page.locator("input[readonly][value^='doc4ai_pat_']"));
   await expect(field.first()).toBeVisible();

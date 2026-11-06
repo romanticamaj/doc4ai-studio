@@ -35,7 +35,8 @@ test("read is preselected and locked; risky scopes show a warning; the body matc
   expect(read).toBeChecked();
   expect(read).toBeDisabled();
   await userEvent.click(screen.getByRole("checkbox", { name: /doc4ai:manage/ }));
-  expect(screen.getByText(/高風險/)).toBeInTheDocument();
+  expect(screen.getByText(/這把 token 能取消工作、重新轉換文件。只給你信任的用戶端。/)).toBeInTheDocument();
+  expect(screen.queryByText(/高風險/)).toBeNull();
   expect(screen.queryByRole("radio", { name: "永不過期" })).toBeNull();
   await userEvent.type(screen.getByLabelText("名稱"), "laptop");
   await userEvent.click(screen.getByRole("radio", { name: "180 天" }));

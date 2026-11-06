@@ -1,4 +1,4 @@
-import { TriangleAlert } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -152,9 +152,9 @@ export function CreateTokenDialog({
               })}
             </ul>
             {highRisk.length > 0 && (
-              <p className="flex items-start gap-1.5 text-xs text-danger">
-                <TriangleAlert className="mt-px size-3.5 shrink-0" />
-                高風險：這把 token 能{highRisk.map((s) => RISK_TEXT[s]).join("，也能")}。只給你信任的用戶端。
+              <p className="flex items-start gap-1.5 text-xs text-warn">
+                <CircleAlert className="mt-px size-3.5 shrink-0" />
+                這把 token 能{highRisk.map((s) => RISK_TEXT[s]).join("，也能")}。只給你信任的用戶端。
               </p>
             )}
           </fieldset>
