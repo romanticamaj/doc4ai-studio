@@ -68,8 +68,8 @@ APPLICATION_TYPES = (None, "native", "web")
 
 class ClientError(Exception):
     """`code` is the OAuth error (invalid_redirect_uri, invalid_client_metadata, rate_limited) or an internal reason
-    for the authorize error page (unknown_client, invalid_client_id, cimd_disabled, cimd_fetch_failed,
-    client_disabled); `message` is shown to the user."""
+    for the authorize error page (unknown_client, invalid_client_id, cimd_disabled, cimd_fetch_failed); `message`
+    is shown to the user."""
 
     def __init__(self, code: str, message: str, retry_after: int | None = None):
         super().__init__(f"{code}: {message}")
@@ -320,8 +320,6 @@ class ClientRegistry:
         row = self.store.get_oauth_client(client_id)
         if row is None or row.get("kind") != "dcr":
             raise ClientError("unknown_client", "找不到這個 client")
-        if row.get("disabled_at") is not None:
-            raise ClientError("client_disabled", "這個 client 已停用")
         return row
 
     def _resolve_cimd(self, client_id: str, now: float) -> dict:
@@ -331,11 +329,8 @@ class ClientRegistry:
         if problem:
             raise ClientError("invalid_client_id", problem)
         row = self.store.get_oauth_client(client_id)
-        if row is not None and row.get("kind") == "cimd":
-            if row.get("disabled_at") is not None:
-                raise ClientError("client_disabled", "這個 client 已停用")
-            if (row.get("cache_until") or 0) > now:
-                return row
+        if row is not None and row.get("kind") == "cimd" and (row.get("cache_until") or 0) > now:
+            return row
         try:
             with self._lock:
                 failed = self._failed.get(client_id)

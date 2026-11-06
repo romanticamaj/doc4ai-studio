@@ -19,7 +19,8 @@ _SOURCE_COPY_COLS = (("source_copy_path", "TEXT"), ("source_copy_status", "TEXT"
                      ("source_copy_at", "REAL"), ("source_copy_size", "INTEGER"), ("source_copy_mtime_ns", "INTEGER"))
 _OAUTH_CLIENT_COLS = (("kind", "TEXT"), ("client_uri", "TEXT"), ("logo_uri", "TEXT"), ("software_id", "TEXT"),
                       ("software_version", "TEXT"), ("application_type", "TEXT"), ("metadata_json", "TEXT"),
-                      ("fetched_at", "REAL"), ("cache_until", "REAL"), ("disabled_at", "REAL"))
+                      ("fetched_at", "REAL"), ("cache_until", "REAL"))
+# (no disabled_at: this version has no per-client disable switch; revocation is per grant — verifier INFO 2026-11-06)
 _OAUTH_DDL = """
 CREATE TABLE IF NOT EXISTS oauth_codes(
   code_hash TEXT PRIMARY KEY, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, code_challenge TEXT NOT NULL,

@@ -93,9 +93,8 @@ def test_dcr_client_resolution(oauth_ctx):
     assert reg.resolve(row["client_id"], now=T0)["kind"] == "dcr"
     with pytest.raises(ClientError, match="找不到"):
         reg.resolve("doc4ai_cl_nobody", now=T0)
-    oauth_ctx.store.con.execute("UPDATE oauth_clients SET disabled_at=1 WHERE client_id=?", (row["client_id"],))
-    with pytest.raises(ClientError):
-        reg.resolve(row["client_id"], now=T0)
+    with pytest.raises(ClientError, match="找不到"):
+        reg.resolve("https-looking-but-not-a-url", now=T0)
 
 
 @pytest.mark.parametrize("registered,presented,ok", [

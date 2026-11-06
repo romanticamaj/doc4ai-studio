@@ -5,7 +5,7 @@ import time
 from aidoc.store import SCHEMA_VERSION, Store
 
 V8_CLIENT_COLS = {"kind", "client_uri", "logo_uri", "software_id", "software_version", "application_type", "metadata_json",
-                  "fetched_at", "cache_until", "disabled_at"}
+                  "fetched_at", "cache_until"}
 DAY = 86400
 
 
@@ -51,7 +51,7 @@ def test_store_surface_round_trip(tmp_path):
                           fetched_at=now, cache_until=now + 60)
     c = s.get_oauth_client("https://claude.ai/x")
     assert c["kind"] == "cimd" and c["redirect_uris"] == ["http://localhost/callback"] and c["metadata"] == {"a": 1}
-    assert c["disabled_at"] is None and c["cache_until"] == now + 60
+    assert "disabled_at" not in c and c["cache_until"] == now + 60
     s.upsert_oauth_client(client_id="https://claude.ai/x", kind="cimd", name="Claude Code 2", redirect_uris=["http://127.0.0.1/cb"])
     c2 = s.get_oauth_client("https://claude.ai/x")
     assert c2["name"] == "Claude Code 2" and c2["created_at"] == c["created_at"] and len(s.list_oauth_clients()) == 1

@@ -107,6 +107,8 @@ class OAuthTokenVerifier:
         row = self.store.get_oauth_token_by_hash(OT.hash_(self.secret, raw))
         if row is None or row["kind"] != "at":
             return AuthFailure("unknown_token", seen)
+        if row["client_id"].startswith("https://") and not cfg.oauth.allow_cimd:
+            return AuthFailure("unknown_token", seen)          # CIMD switched off: its connections stop with it
         gid = row["grant_id"]
         if row["revoked_at"] is not None or row["grant_revoked_at"] is not None:
             return AuthFailure("revoked", seen, gid)

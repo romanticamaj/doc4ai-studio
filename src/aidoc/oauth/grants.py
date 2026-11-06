@@ -54,6 +54,11 @@ def verify_pkce(verifier, challenge: str) -> bool:
     return hmac.compare_digest(digest, challenge)
 
 
+def cimd_client(client_id: str) -> bool:
+    """A client identified by its metadata document URL (CIMD), as opposed to a DCR registration."""
+    return client_id.startswith("https://")
+
+
 def source_label(client: dict | None, client_id: str) -> str:
     """Where a connection comes from, as the admin shows it: the CIMD document's host (claude.ai) or the DCR id's
     display prefix (doc4ai_cl_xxxx)."""
@@ -151,6 +156,8 @@ class GrantService:
                 self.revoke_grant(row["grant_id"], "refresh_replay", now)
                 raise OAuthError("invalid_grant", BAD_REFRESH)
             if row["expires_at"] <= now or row["absolute_expires_at"] <= now or row["client_id"] != client_id:
+                raise OAuthError("invalid_grant", BAD_REFRESH)
+            if cimd_client(row["client_id"]) and not self.ctx.config.oauth.allow_cimd:   # switched off: no new tokens
                 raise OAuthError("invalid_grant", BAD_REFRESH)
             if form.get("resource") is not None and form.get("resource") != row["resource"]:
                 raise OAuthError("invalid_target", "resource does not match the grant")
