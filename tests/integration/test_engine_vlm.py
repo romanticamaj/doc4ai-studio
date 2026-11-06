@@ -83,6 +83,10 @@ def test_vlm_recall(vlm_env, fixtures, name, expected):
     assert r >= RECALL_MIN, f"{name}: recall {r:.3f} < {RECALL_MIN}"
 
 
+# Its real budget: two whole documents (formula.pdf, text.pdf) through the VLM page by page. Against the local Ollama
+# gemma4:12b it took 258 s on 2026-11-06, near the 300 s default per-test timeout (pyproject); a cold model load adds
+# more. 900 s is about 3.5x the measured time: a hang still fails, a slow but working model does not.
+@pytest.mark.timeout(900)
 def test_vlm_formula_and_table(vlm_env, fixtures):
     _, _, md = vlm_env(fixtures / "formula.pdf", engine="vlm")
     assert "$" in md or "\\sum" in md or "∑" in md
