@@ -100,12 +100,6 @@ export function OauthSection({ original }: { original: OauthSettings }) {
           );
         }}
       >
-        <div className="border-b px-4 py-3">
-          <h3 className="text-[13px] font-semibold">OAuth 授權</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            用戶端加入 /mcp 時不貼 token，改開瀏覽器到「授權連線」頁按允許。關閉後只剩 PAT，401 回到原本的格式。
-          </p>
-        </div>
         <div className="divide-y px-4">
           <SwitchRow label="啟用" hint="/oauth/*、well-known 與 401 的 resource_metadata" checked={flags.enabled}
                      onChange={(v) => setFlags((f) => ({ ...f, enabled: v }))} />

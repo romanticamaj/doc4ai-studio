@@ -26,7 +26,10 @@ function setup() {
 test("fields, inline range error, and a save that sends only the changes", async () => {
   const user = userEvent.setup();
   const puts = setup();
-  expect(screen.getByRole("heading", { name: "OAuth 授權" })).toBeInTheDocument();
+  // the page's section title names it; the card repeats neither the title nor the description (browser tester)
+  expect(screen.getByRole("form", { name: "OAuth 授權" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading")).toBeNull();
+  expect(screen.queryByText(/用戶端加入 \/mcp 時不貼 token/)).toBeNull();
   for (const l of ["啟用", "允許自動註冊（DCR）", "允許 CIMD"]) expect(screen.getByRole("switch", { name: l })).toBeChecked();
   const minutes = screen.getByLabelText("存取憑證有效分鐘數");
   expect(minutes).toHaveValue(60);

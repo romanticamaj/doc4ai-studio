@@ -181,7 +181,7 @@ export default function SettingsPage() {
 
         {settings.data?.oauth && (
           <section aria-labelledby="oauth-h" id="oauth">
-            <SectionTitle id="oauth-h" title="OAuth 授權" description="本機 MCP 的瀏覽器授權連線；連上的用戶端會出現在 MCP 頁的 Tokens。" />
+            <SectionTitle id="oauth-h" title="OAuth 授權" description="用戶端加入 /mcp 時不必貼 token，改在瀏覽器的「授權連線」頁按允許；連上的用戶端會出現在 MCP 頁的 Tokens。關閉後只剩 PAT。" />
             <OauthSection original={settings.data.oauth} />
           </section>
         )}
