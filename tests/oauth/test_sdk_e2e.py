@@ -120,7 +120,7 @@ def test_sdk_oauth_flow_dcr(live_oauth, oauth_ctx):
     grants = oauth_ctx.store.list_oauth_grants()
     assert len(grants) == 1 and grants[0]["client_id"] == storage.client.client_id and grants[0]["resource"] == f"{live_oauth}/mcp"
     assert oauth_ctx.store.get_oauth_client(storage.client.client_id)["kind"] == "dcr"
-    assert "本機註冊的 client" in browser.pages[0] and "doc4ai-sdk-test" in browser.pages[0]
+    assert "本機註冊的用戶端" in browser.pages[0] and "doc4ai-sdk-test" in browser.pages[0]
     from fastapi.testclient import TestClient
 
     from aidoc.server.app import create_app

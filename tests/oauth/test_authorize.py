@@ -30,7 +30,7 @@ def test_consent_page_dcr_loopback(oauth_client, dcr_client):
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html"), r.text
     html = r.text
     assert TEXT["title"] in html and "Test IDE" in html and "未驗證" in html and CB in html and TEXT["loopback_note"] in html
-    assert f"本機註冊的 client（{dcr_client['client_id']}）" in html and ISSUER in html
+    assert f"本機註冊的用戶端（{dcr_client['client_id']}）" in html and ISSUER in html
     assert 'name="request" value="' in html and 'type="password"' not in html and TEXT["loopback_only"] in html
     assert re.search(r'value="doc4ai:read"[^>]*checked', html) and re.search(r'value="doc4ai:convert"[^>]*checked', html)
     assert not re.search(r'value="doc4ai:manage"[^>]*checked', html) and html.count(TEXT["high_risk"]) == 1
@@ -55,7 +55,7 @@ def test_bad_redirect_or_client_never_redirects(oauth_client, dcr_client, fake_c
              ({"redirect_uri": None}, TEXT["err_bad_redirect"]),
              ({"client_id": "doc4ai_cl_nobody"}, TEXT["err_unknown_client"]),
              ({"client_id": None}, TEXT["err_unknown_client"]),
-             ({"client_id": "https://nobody.test/m"}, "無法取得 client 的描述文件"),
+             ({"client_id": "https://nobody.test/m"}, "無法取得用戶端的描述文件"),
              ({"state": None}, TEXT["err_missing_state"])]
     for over, text in cases:
         r = oauth_client.get("/oauth/authorize", params=auth_params(dcr_client, **over), follow_redirects=False)

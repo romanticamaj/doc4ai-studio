@@ -66,7 +66,7 @@ def test_render_consent_dcr_private_token_mode():
                                  redirect_uri="cursor://anysphere.cursor-mcp/oauth/callback", redirect_kind="private",
                                  requested_scopes=["doc4ai:read", "doc4ai:convert:local"], checked_scopes=["doc4ai:read"],
                                  needs_token=True))
-    assert "本機註冊的 client（doc4ai_cl_abcdEFGH1234567890xyzw）" in html and "<strong>claude.ai</strong>" not in html
+    assert "本機註冊的用戶端（doc4ai_cl_abcdEFGH1234567890xyzw）" in html and "<strong>claude.ai</strong>" not in html
     assert C.TEXT["private_note"] in html and "cursor://anysphere.cursor-mcp/oauth/callback" in html
     assert 'type="password" name="server_token"' in html and C.TEXT["loopback_only"] not in html
     assert html.count(C.TEXT["high_risk"]) == 1 and not re.search(r'value="doc4ai:convert:local"[^>]*checked', html)
@@ -87,4 +87,16 @@ def test_text_constants_exist():
                 "err_bad_redirect", "err_unknown_client", "err_cimd", "err_missing_state", "err_bad_host"):
         assert C.TEXT[key]
     assert C.TEXT["title"] == "授權連線" and C.TEXT["loopback_only"] == "只有在這台電腦的瀏覽器能看到這個頁面。"
-    assert C.TEXT["err_bad_redirect"] == "回呼位址不在這個 client 登記的清單內"
+    assert C.TEXT["err_bad_redirect"] == "回呼位址不在這個用戶端登記的清單內"
+
+
+def test_user_visible_text_says_yonghuduan_not_client():
+    """Browser tester: one language for what a person reads — 用戶端, never the English "client"."""
+    import re
+    for v in (view(), view(source_kind="dcr", source_label="doc4ai_cl_x", redirect_uri="cursor://a.b/cb", redirect_kind="private",
+                           needs_token=True)):
+        text = re.sub(r"<[^>]+>", " ", C.render_consent(v))
+        assert not re.search(r"\bclient\b", text, re.IGNORECASE), text
+        assert "用戶端" in text
+    for key, value in C.TEXT.items():
+        assert not re.search(r"\bclient\b", value, re.IGNORECASE), key

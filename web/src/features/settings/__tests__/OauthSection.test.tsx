@@ -28,7 +28,7 @@ test("fields, inline range error, and a save that sends only the changes", async
   const puts = setup();
   expect(screen.getByRole("heading", { name: "OAuth 授權" })).toBeInTheDocument();
   for (const l of ["啟用", "允許自動註冊（DCR）", "允許 CIMD"]) expect(screen.getByRole("switch", { name: l })).toBeChecked();
-  const minutes = screen.getByLabelText("access token 分鐘");
+  const minutes = screen.getByLabelText("存取憑證有效分鐘數");
   expect(minutes).toHaveValue(60);
   await user.clear(minutes);
   await user.type(minutes, "2");
@@ -45,8 +45,16 @@ test("fields, inline range error, and a save that sends only the changes", async
 test("refresh days cannot pass the absolute limit", async () => {
   const user = userEvent.setup();
   setup();
-  const days = screen.getByLabelText("refresh 天數");
+  const days = screen.getByLabelText("閒置多少天需重新授權");
   await user.clear(days);
   await user.type(days, "120");
   expect(screen.getByRole("alert")).toHaveTextContent("請輸入 1–90 的整數");
+});
+
+test("labels and hints read as natural Chinese", () => {
+  setup();
+  expect(screen.getByLabelText("存取憑證有效分鐘數")).toBeInTheDocument();
+  expect(screen.getByLabelText("閒置多少天需重新授權")).toBeInTheDocument();
+  expect(screen.getByText("連線閒置超過這個天數，就需要重新授權；從授權起最長 90 天")).toBeInTheDocument();
+  expect(screen.queryByText(/access token|refresh/)).toBeNull();
 });

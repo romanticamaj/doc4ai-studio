@@ -57,7 +57,7 @@ test("consent page: content, phone and desktop width, deny, approve → token �
   await expect(page.getByText("E2E IDE（自報名稱，未驗證）")).toBeVisible();
   await expect(page.getByText(CB)).toBeVisible();
   await expect(page.getByText("回到這台電腦上的程式")).toBeVisible();
-  await expect(page.getByText(`本機註冊的 client（${clientId}）`)).toBeVisible();
+  await expect(page.getByText(`本機註冊的用戶端（${clientId}）`)).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /doc4ai:read/ })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: /doc4ai:convert/ })).toBeChecked();
   const manage = page.getByRole("checkbox", { name: /doc4ai:manage/ });

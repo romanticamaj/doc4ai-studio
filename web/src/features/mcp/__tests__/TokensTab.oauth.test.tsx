@@ -76,6 +76,6 @@ test("clients of an OAuth connection carry the pill", async () => {
       <MemoryRouter><ClientsTab /></MemoryRouter>
     </QueryClientProvider>,
   );
-  const table = await screen.findByRole("table", { name: "歷史 client" });
+  const table = await screen.findByRole("table", { name: "歷史用戶端" });
   expect(within(table).getByText("OAuth", { selector: "span" })).toBeInTheDocument();
 });

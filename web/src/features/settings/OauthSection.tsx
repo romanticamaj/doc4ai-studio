@@ -113,9 +113,9 @@ export function OauthSection({ original }: { original: OauthSettings }) {
                      onChange={(v) => setFlags((f) => ({ ...f, allow_dcr: v }))} />
           <SwitchRow label="允許 CIMD" hint="client_id 是 https 網址的用戶端（Claude Code）" checked={flags.allow_cimd}
                      onChange={(v) => setFlags((f) => ({ ...f, allow_cimd: v }))} />
-          <RangeRow label="access token 分鐘" hint="到期後用戶端自動以 refresh token 換新" unit="分鐘" value={nums.access_ttl_min}
+          <RangeRow label="存取憑證有效分鐘數" hint="到期後用戶端會自動換發新的憑證，不必重新授權" unit="分鐘" value={nums.access_ttl_min}
                     range={OAUTH_LIMITS.access_ttl_min} onValue={(v) => setNums((n) => ({ ...n, access_ttl_min: v }))} />
-          <RangeRow label="refresh 天數" hint={`閒置這麼多天就要重新授權（最長 ${original.refresh_max_days} 天）`} unit="天"
+          <RangeRow label="閒置多少天需重新授權" hint={`連線閒置超過這個天數，就需要重新授權；從授權起最長 ${original.refresh_max_days} 天`} unit="天"
                     value={nums.refresh_ttl_days} range={ranges.refresh_ttl_days}
                     onValue={(v) => setNums((n) => ({ ...n, refresh_ttl_days: v }))} />
         </div>

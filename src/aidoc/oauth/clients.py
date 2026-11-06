@@ -324,17 +324,17 @@ class ClientRegistry:
     # ---- resolution (authorize, token)
     def resolve(self, client_id: str, now: float) -> dict:
         if not isinstance(client_id, str) or not client_id:
-            raise ClientError("unknown_client", "找不到這個 client")
+            raise ClientError("unknown_client", "找不到這個用戶端")
         if client_id.lower().startswith(("https:", "http:")):
             return self._resolve_cimd(client_id, now)
         row = self.store.get_oauth_client(client_id)
         if row is None or row.get("kind") != "dcr":
-            raise ClientError("unknown_client", "找不到這個 client")
+            raise ClientError("unknown_client", "找不到這個用戶端")
         return row
 
     def _resolve_cimd(self, client_id: str, now: float) -> dict:
         if not self.ctx.config.oauth.allow_cimd:
-            raise ClientError("cimd_disabled", "這台伺服器未允許以 URL 識別的 client（oauth.allow_cimd）")
+            raise ClientError("cimd_disabled", "這台伺服器未允許以網址識別的用戶端（oauth.allow_cimd）")
         problem = cimd_id_problem(client_id)
         if problem:
             raise ClientError("invalid_client_id", problem)
@@ -516,7 +516,7 @@ class ClientRegistry:
         self._make_room(ip, now)
         stored = {k: body[k] for k in DCR_STORED_KEYS if k in body}           # only what RFC 7591 defines and we use
         self.store.upsert_oauth_client(
-            client_id=cid, kind="dcr", name=name or "未命名 client", redirect_uris=uris, client_uri=opt.get("client_uri"),
+            client_id=cid, kind="dcr", name=name or "未命名用戶端", redirect_uris=uris, client_uri=opt.get("client_uri"),
             logo_uri=opt.get("logo_uri"), software_id=opt.get("software_id"), software_version=opt.get("software_version"),
             application_type=body.get("application_type"), metadata_json=stored)
         with self._lock:

@@ -67,8 +67,8 @@ export function CallsTab() {
       <div className="flex flex-wrap items-center gap-2">
         <TokenSelect value={filters.token_id ?? ALL} onChange={(v) => set({ token_id: pick(v) })} />
         <FilterSelect
-          label="篩選 client"
-          allLabel="全部 client"
+          label="篩選用戶端"
+          allLabel="全部用戶端"
           value={filters.client_id ?? ALL}
           options={(clients.data?.clients ?? []).map((c) => ({ value: c.id, label: `${clientLabel(c)}${c.token_name ? `（${c.token_name}）` : ""}` }))}
           onChange={(v) => set({ client_id: pick(v) })}

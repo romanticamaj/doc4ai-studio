@@ -23,8 +23,17 @@ test("renders active cards and the history table", async () => {
   expect(card).toHaveTextContent("2026-07-28");
   expect(card).toHaveTextContent("100.64.0.9");
   expect(card).toHaveTextContent("12");
-  const history = screen.getByRole("table", { name: "歷史 client" });
+  const history = screen.getByRole("table", { name: "歷史用戶端" });
   expect(history).toHaveTextContent("cursor 1.0");
   expect(history).toHaveTextContent("2025-11-25");
   expect(screen.queryByRole("article", { name: /cursor/ })).toBeNull();
+});
+
+
+test("the clients tab says 用戶端, not client", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+    new Response(JSON.stringify(String(input).includes("/tokens") ? { tokens: [] } : { clients: [] }), { status: 200 }));
+  render(<QueryClientProvider client={new QueryClient()}><ClientsTab /></QueryClientProvider>);
+  await screen.findByText(/還沒有用戶端連過/);
+  expect(document.body.textContent ?? "").not.toMatch(/\bclient\b/i);
 });

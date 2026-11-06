@@ -51,7 +51,7 @@ test("client cards say 活躍 and the history marks a revoked token", async () =
   wrap(<ClientsTab />);
   const card = await screen.findByRole("article", { name: /claude-code/ });
   expect(card).toHaveTextContent("活躍");
-  expect(screen.getByRole("table", { name: "歷史 client" })).toHaveTextContent("已撤銷");
+  expect(screen.getByRole("table", { name: "歷史用戶端" })).toHaveTextContent("已撤銷");
 });
 
 test("the two time selectors have distinct names", async () => {

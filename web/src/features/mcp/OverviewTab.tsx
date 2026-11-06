@@ -201,7 +201,7 @@ function Metrics({ s, stats }: { s: McpStatus; stats?: McpStats }) {
   const p95s = (stats?.tools ?? []).map((t) => t.p95_ms ?? 0);
   const p95 = p95s.length ? `${Math.max(...p95s)} ms` : "—";
   const cells: { label: string; value: string; extra?: React.ReactNode; tone?: string }[] = [
-    { label: "活躍 client（5 分鐘）", value: String(s.active_clients) },
+    { label: "活躍用戶端（5 分鐘）", value: String(s.active_clients) },
     {
       label: "24 小時呼叫",
       value: String(s.calls_24h),

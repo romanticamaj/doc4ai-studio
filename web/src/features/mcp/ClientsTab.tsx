@@ -42,13 +42,13 @@ export function ClientsTab() {
   }, []);
   const clients = useMcpClients(token === ALL ? {} : { token_id: token });
 
-  if (clients.isError) return <ErrorState title="無法讀取 client" error={clients.error} onRetry={() => clients.refetch()} />;
+  if (clients.isError) return <ErrorState title="無法讀取用戶端" error={clients.error} onRetry={() => clients.refetch()} />;
   const { active, history } = splitClients(clients.data?.clients ?? [], now);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground text-pretty">client 名稱與版本由用戶端自報，只供辨識，不是安全邊界。</p>
+        <p className="text-xs text-muted-foreground text-pretty">用戶端名稱與版本為自報，只供辨識，不是安全邊界。</p>
         <TokenSelect value={token} onChange={setToken} />
       </div>
 
@@ -58,7 +58,7 @@ export function ClientsTab() {
           {clients.isPending ? (
             <Skeleton className="h-28" />
           ) : active.length === 0 ? (
-            <EmptyState icon={MonitorSmartphone} title="目前沒有活躍的 client" description="用戶端送出請求後會出現在這裡。" className="py-8" />
+            <EmptyState icon={MonitorSmartphone} title="目前沒有活躍的用戶端" description="用戶端送出請求後會出現在這裡。" className="py-8" />
           ) : (
             <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {active.map((c) => (
@@ -72,18 +72,18 @@ export function ClientsTab() {
       </Panel>
 
       <Panel>
-        <PanelHeader title="歷史" description="超過 5 分鐘沒有請求的 client。" />
+        <PanelHeader title="歷史" description="超過 5 分鐘沒有請求的用戶端。" />
         {clients.isPending ? (
           <div className="p-4">
             <Skeleton className="h-16" />
           </div>
         ) : history.length === 0 ? (
           <p className="px-4 py-6 text-center text-[13px] text-muted-foreground">
-            {active.length ? "沒有其他 client。" : "還沒有 client 連過"}
+            {active.length ? "沒有其他用戶端。" : "還沒有用戶端連過"}
           </p>
         ) : (
           <div className="relative overflow-x-auto">
-            <table aria-label="歷史 client" className="w-full min-w-[780px] text-[13px]">
+            <table aria-label="歷史用戶端" className="w-full min-w-[780px] text-[13px]">
               <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2 font-medium">client</th>

@@ -224,7 +224,7 @@ MCP clients that support OAuth (Claude Code, Cursor, VS Code, the MCP Python SDK
 claude mcp add --transport http doc4ai http://127.0.0.1:3333/mcp
 ```
 
-Then in Claude Code type `/mcp`, choose `doc4ai`, and pick 認證 (Authenticate). Your browser opens Doc4AI's 「授權連線」 page: it shows the client's self-reported name (marked 未驗證), where it comes from (bold host such as `claude.ai`, or 「本機註冊的 client」), the exact address the browser returns to, and the permissions. `doc4ai:read` and `doc4ai:convert` are ticked; `doc4ai:convert:local` and `doc4ai:manage` are marked 高風險 and stay off unless you tick them. Press 允許連線 and the browser hands the connection back to Claude Code. Cursor (`~/.cursor/mcp.json`) and VS Code (`.vscode/mcp.json`) need only the URL:
+Then in Claude Code type `/mcp`, choose `doc4ai`, and pick 認證 (Authenticate). Your browser opens Doc4AI's 「授權連線」 page: it shows the client's self-reported name (marked 未驗證), where it comes from (bold host such as `claude.ai`, or 「本機註冊的用戶端」), the exact address the browser returns to, and the permissions. `doc4ai:read` and `doc4ai:convert` are ticked; `doc4ai:convert:local` and `doc4ai:manage` are marked 高風險 and stay off unless you tick them. Press 允許連線 and the browser hands the connection back to Claude Code. Cursor (`~/.cursor/mcp.json`) and VS Code (`.vscode/mcp.json`) need only the URL:
 
 ```json
 { "mcpServers": { "doc4ai": { "url": "http://127.0.0.1:3333/mcp" } } }
