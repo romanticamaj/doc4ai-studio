@@ -2,7 +2,7 @@
 
 - 狀態：**已修正**（2026-10-22）。偵測：`src/aidoc/scanchecks.py`，接進 `quality.assess` 與 `pipeline.check_document`；根因修正：`mineru_runner.undrain`。
 - 建立：2026-10-22
-- 回報：真實樣本評估（`docs/superpowers/evals/2026-10-22-real-sample-eval-record.md`），驗收時由協調者列為最重要的後續。
+- 回報：真實樣本評估（2026-10-22），驗收時由協調者列為最重要的後續。
 - 嚴重度：高。內容遺失或錯頁，品質層級卻是 `ok`、`pages_flagged` 0，使用者不會被提醒，也不會觸發修復或換引擎。
 
 ## 現象

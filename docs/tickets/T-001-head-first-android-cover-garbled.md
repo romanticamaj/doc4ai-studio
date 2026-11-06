@@ -114,4 +114,4 @@ PDF 裡的 Comic Sans 等手寫體字型以 Type0／Identity-H 嵌入、**沒有
 - 品質檢查的亂碼規則：`src/aidoc/quality.py`
 - Docling runner：`src/aidoc/engines/runner/docling_runner.py`（目前 `FULL_PAGE` 只改 `ocr.mode`，未換 backend）
 - docling-parse 自繪頁面圖：`envs/docling/.venv/Lib/site-packages/docling/backend/docling_parse_backend.py`
-- 頁碼與逐頁品質系統性修正：`docs/superpowers/specs/2026-10-01-per-page-quality-and-page-map.md`
+- 頁碼與逐頁品質系統性修正：per-page quality spec（2026-10-01）

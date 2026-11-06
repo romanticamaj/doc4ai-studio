@@ -34,3 +34,6 @@ bench/corpus/b/
 bench/corpus/external/
 bench/corpus/fetch.status.json
 bench/results/
+
+# internal specs, plans and QA notes: kept locally, not published
+docs/superpowers/

@@ -21,19 +21,15 @@ What exists today:
 
 Document view — source PDF and Markdown side by side, scrolled in sync:
 
-![Document view](docs/superpowers/screenshots/05-document-light.png)
+![Document view](docs/images/document-view.png)
 
 A 315-page PDF converted in eight 40-page segments:
 
-![Job detail with segments](docs/superpowers/screenshots/03-job-detail-light.png)
+![Job detail with segments](docs/images/job-segments.png)
 
 Library with engine and quality per document:
 
-![Library](docs/superpowers/screenshots/04-library-light.png)
-
-MCP admin — endpoint, live numbers and ready-to-paste client configuration:
-
-![MCP overview](docs/superpowers/screenshots/10-mcp-overview-light.png)
+![Library](docs/images/library.png)
 
 ## Requirements
 
@@ -133,7 +129,7 @@ allow_no_key = true                      # local servers need no key; otherwise 
 - `aidoc setup vlm` (or 「測試連線」 in Settings) sends one built-in test image and checks the answer.
 - The VLM engine **does not extract images** (no layout boxes): pictures become `<!-- image missing -->`.
 - The **local backend** (a llama.cpp server with PaddleOCR-VL-1.6 managed by aidoc) is **not available yet**: the
-  feasibility spike did not pass its acceptance rule on this hardware (`docs/superpowers/spikes/2026-10-vlm-ocr.md`).
+  feasibility spike did not pass its acceptance rule on this hardware.
 
 ## Output
 
@@ -412,16 +408,15 @@ another engine's repair.
 No results are published yet. Before a table goes here, `verify` must track the ground truth (Spearman ρ ≥ 0.6
 between its score and the page text accuracy, page recall ≥ 0.9). The first run on 2026-10-12 did not pass
 (ρ 0.48, recall 0.16 — precision was 1.00: the pages it flags are bad, but it misses most bad pages, mainly OCR
-misreadings in scans and paragraphs moved to a neighbouring page), nor did the re-run on 2026-10-13 after the page-level checks were added (ρ 0.47, recall 0.05 under the unchanged gate definition). The record, with the reasons and what the run
-showed about routing, is in [the verify spec, §10](docs/superpowers/specs/2026-10-05-verify-and-benchmark-design.md).
+misreadings in scans and paragraphs moved to a neighbouring page), nor did the re-run on 2026-10-13 after the page-level checks were added (ρ 0.47, recall 0.05 under the unchanged gate definition).
 On 2026-10-20 the user redefined the gate (rows and pages `verify` can judge; ρ ≥ 0.6, page precision and recall
 ≥ 0.9 over every page-level reason; scans reported separately) and it was run once on a fresh-seed Tier A plus
-Tier B: ρ 0.63, precision 0.83, recall 0.72 — not passed, so still nothing is published (spec §10.5).
-A separate real-sample evaluation (6 Traditional Chinese scans, 4 arXiv papers, 2 English controls; pre-registered rules) ran once on 2026-10-22 and was **invalid**: the shared English-control check failed (NED 0.70 / 0.59 < 0.85), so all three decisions are `insufficient` and nothing changed: the zh scan route, the formula route, and the local VLM backend. [Record](docs/superpowers/evals/2026-10-22-real-sample-eval-record.md).
+Tier B: ρ 0.63, precision 0.83, recall 0.72 — not passed, so still nothing is published.
+A separate real-sample evaluation (6 Traditional Chinese scans, 4 arXiv papers, 2 English controls; pre-registered rules) ran once on 2026-10-22 and was **invalid**: the shared English-control check failed (NED 0.70 / 0.59 < 0.85), so all three decisions are `insufficient` and nothing changed: the zh scan route, the formula route, and the local VLM backend.
 
 ## Docs
 
-Design specs, implementation plans and research notes live in `docs/superpowers/`.
+Integration guides for RAG platforms live in [`docs/integrations/`](docs/integrations/).
 
 ## 繁體中文
 

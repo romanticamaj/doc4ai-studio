@@ -2,7 +2,7 @@
 
 - 狀態：**已修正**（2026-10-22）。`DoclingEngine.build_request()` 對頁面超過上限的 PDF 改送縮放後的副本。
 - 建立：2026-10-22
-- 回報：真實樣本評估（`docs/superpowers/evals/2026-10-22-real-sample-eval-record.md`）。驗收時由協調者指出。
+- 回報：真實樣本評估（2026-10-22）。驗收時由協調者指出。
 - 嚴重度：中。整份文件沒有任何文字，但品質層級是 `low`，使用者會被提醒；`auto` 走 MinerU 優先，所以預設路由不會中，只有 `--engine docling` 或 Docling 當修復引擎時會中。
 
 ## 現象

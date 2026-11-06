@@ -18,8 +18,3 @@ def test_readme_oauth_section():
     # the threat model states what a web page can still do and what it cannot (no "zero capability" claim; 2026-11-06)
     assert "can still make the browser" in sec and "no open redirect" in sec and "5-second deadline" in sec
     assert "lock you out" in sec
-
-
-def test_index_amendments():
-    index = ROOT.joinpath("docs/superpowers/plans/2026-10-05-mcp-distribution-index.md").read_text(encoding="utf-8")
-    assert "2026-11-05-local-mcp-oauth" in index and "schema v8" in index and "grant id" in index

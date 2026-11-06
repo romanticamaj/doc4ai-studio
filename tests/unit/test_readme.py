@@ -8,7 +8,7 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 
 def test_every_local_image_and_link_exists():
     targets = re.findall(r"\]\((?!https?://|#|mailto:)([^)\s]+)\)", README)
-    assert any(t.startswith("docs/superpowers/screenshots/") for t in targets)
+    assert any(t.startswith("docs/images/") for t in targets)
     for t in targets:
         assert (ROOT / t.split("#")[0]).exists(), t
 

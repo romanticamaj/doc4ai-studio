@@ -201,7 +201,7 @@ def summary(run: Path) -> str:
 
 
 def record_skeleton(run: Path) -> str:
-    """The committed record (docs/superpowers/evals/…-record.md): the summary's sections plus empty Deviations and
+    """The committed record (…-record.md): the summary's sections plus empty Deviations and
     Commentary for the person who ran it."""
     run = Path(run)
     parts = [TITLE + " — 紀錄", "", f"run 目錄：`bench/results/{run.name}/`（不進版控）", ""]

@@ -148,7 +148,7 @@ export function VlmBackendForm({
             {!localSupported && (
               <p className="flex items-start gap-1.5 text-warn">
                 <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-                本機後端尚未支援此平台（spike 結果見 docs/superpowers/spikes/2026-10-vlm-ocr.md）。可改用 openai 後端接本機的 LM Studio／Ollama。
+                本機後端尚未支援此平台。可改用 openai 後端接本機的 LM Studio／Ollama。
               </p>
             )}
             <Row label="Preset" htmlFor="vlm-preset">

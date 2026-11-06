@@ -1,6 +1,6 @@
 """SDK middleware: principal ContextVar for the handler, tools/list scope filter (D3), one log row per message.
 
-Spike findings this module depends on (docs/superpowers/spikes/2026-10-mcp-sdk.md):
+Spike findings this module depends on:
 * S4 — `rctx.request` is the Starlette Request in both eras; the gate's `CallState` sits in `scope["state"]`.
   In the 2026-07-28 era a `tools/call` with arguments makes the SDK run an *internal* `tools/list` through this
   chain (same request); it is filtered like any listing but never logged (`rctx.method != state.method`).

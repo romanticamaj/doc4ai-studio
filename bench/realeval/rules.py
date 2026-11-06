@@ -27,7 +27,7 @@ VLM_COVER_PHRASE = "wouldn't it be dreamy"
 VLM_RENDER_DPI = 200
 VLM_MAX_LONG_SIDE_PX = 1400
 VLM_MAX_TOKENS = 4096
-VLM_PINNED = {   # sha256 from docs/superpowers/spikes/2026-10-vlm-ocr.md
+VLM_PINNED = {   # sha256 from the VLM OCR spike
     "llamacpp_zip": "419de1292bcb772824fec45e4bc3722e79459e8d89c552578bafdad51266294a",
     "cudart_zip": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
     "gguf": "f3ae46ec885050acf4b3d31944431e1fd90d50664fb09126af4a3c050ba14ee8",

@@ -1,6 +1,6 @@
 """VLM engine on real samples (VLM spec §11.5, plan Task 13).
 
-The local backend is not delivered (spike S1 rule 4, docs/superpowers/spikes/2026-10-vlm-ocr.md), so these run the
+The local backend is not delivered (spike S1 rule 4), so these run the
 `openai` backend against a real OpenAI-compatible endpoint named by AIDOC_VLM_REAL_BASE_URL / AIDOC_VLM_REAL_MODEL
 (e.g. Ollama on loopback: http://127.0.0.1:11434/v1, gemma4:12b; AIDOC_VLM_API_KEY when it needs a key). Without
 them the tests skip — and FAIL in acceptance mode (AIDOC_REQUIRE_MANUAL=1). Pages only go where that URL points."""

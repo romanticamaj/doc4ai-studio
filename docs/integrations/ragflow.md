@@ -3,7 +3,7 @@
 **可行性：B** — 協定相容，但有兩個限制：RAGFlow 只會連**公開可路由**的位址，而且它會先試兩次 docling 切段請求。
 
 依據：RAGFlow `v1.0.0-rc1` 的 `internal/parser/parser/pdf_parser_docling.go`、`internal/common/http.go`
-（查證日 2026-10-10，spike `docs/superpowers/spikes/2026-10-compat.md` S1）；`docs/faq.mdx`「How do I use an
+（查證日 2026-10-10）；`docs/faq.mdx`「How do I use an
 external Docling Serve server」。
 
 ## 設定

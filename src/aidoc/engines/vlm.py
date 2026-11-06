@@ -1,5 +1,5 @@
 """VLM OCR engine (spec 2026-10-05 VLM §4): one engine name, backends "openai" (any OpenAI-compatible vision
-endpoint) and "local" (deferred: spike S1 rule 4, docs/superpowers/spikes/2026-10-vlm-ocr.md). The runner runs on
+endpoint) and "local" (deferred: spike S1 rule 4). The runner runs on
 the host interpreter; there is no envs/vlm/.venv."""
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from aidoc.models import ConvertOptions, ProbeResult
 
 # Spike S1 (Task 1) fell through to decision rule 4: the local backend is not delivered on any platform yet.
 LOCAL_SUPPORTED = False
-LOCAL_UNSUPPORTED_MSG = ("vlm: the local backend is not supported on this platform yet "
-                         "(see docs/superpowers/spikes/2026-10-vlm-ocr.md); use backend = \"openai\"")
+LOCAL_UNSUPPORTED_MSG = ("vlm: the local backend is not supported on this platform yet"
+                         "; use backend = \"openai\"")
 
 
 def sanitize_model(model: str) -> str:

@@ -1,5 +1,5 @@
 """Local PaddleOCR-VL-1.6 measurement over a loopback llama-server, exactly as spike S1 measured it
-(spec 2026-10-22 §5.6; docs/superpowers/spikes/2026-10-vlm-ocr.md).
+(spec 2026-10-22 §5.6; VLM OCR spike).
 
 One user message per page = the page image (PyMuPDF, 200 dpi, long side ≤ 1400 px, PNG data URI) + the text "OCR:";
 max_tokens 4096, temperature 0, one request at a time, no retry; a `length` answer is scored as it came. Recall is the

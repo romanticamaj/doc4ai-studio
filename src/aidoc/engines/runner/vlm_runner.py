@@ -6,7 +6,7 @@ backend "openai"; the local llama.cpp backend is not delivered yet — spike S1 
 Every page gets a `<!-- page: k -->` marker (page_map_method "vlm_per_page"); refusals and truncations are reported
 as failed_pages; usage goes to result.json["vlm"].
 
-Endpoint quirks handled here (spike S2, docs/superpowers/spikes/2026-10-vlm-ocr.md): `max_tokens` and
+Endpoint quirks handled here (spike S2): `max_tokens` and
 `max_completion_tokens` are both sent (local servers know only the first); `detail` is sent only when configured;
 `usage` may be missing; a whole page may come back wrapped in a ```markdown fence; LaTeX may use \\( \\) delimiters.
 """

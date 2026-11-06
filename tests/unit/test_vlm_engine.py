@@ -40,7 +40,7 @@ def test_openai_availability_needs_switch_and_key(tmp_path, monkeypatch):
 
 
 def test_local_backend_is_not_supported_yet(tmp_path, monkeypatch):
-    """Spike S1 rule 4 (docs/superpowers/spikes/2026-10-vlm-ocr.md): only the openai backend is delivered."""
+    """Spike S1 rule 4: only the openai backend is delivered."""
     monkeypatch.setenv("AIDOC_ENVS", str(tmp_path / "envs"))
     env = tmp_path / "envs" / "vlm"
     env.mkdir(parents=True)

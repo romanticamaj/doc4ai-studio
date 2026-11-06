@@ -4,7 +4,7 @@
 `/v1/convert/file`；Doc4AI Studio 在同一個路徑說同一種話，背後跑的是 Doc4AI 的路由、逐頁品質檢查與修復。
 
 依據：Open WebUI v0.11.4（2026-09-21）`backend/open_webui/retrieval/loaders/main.py` 的 `DoclingLoader`
-（查證日 2026-10-05／2026-10-10；規格 `docs/superpowers/specs/2026-10-05-docling-compat-api-design.md` §3.2、§8.1）。
+（查證日 2026-10-05／2026-10-10）。
 
 ## 1. 在 Doc4AI 建一把 token
 

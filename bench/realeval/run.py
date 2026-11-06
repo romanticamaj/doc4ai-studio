@@ -40,7 +40,7 @@ from bench.realeval.normalize import apply_errata
 CONFIGS = ["auto", "docling", "mineru"]
 PARTS = ("scans", "formulas", "vlm")
 CONTROL_DOC = "en-aashto-usrn-1984"                     # spec §7.0 check 3
-SPEC = "docs/superpowers/specs/2026-10-22-real-sample-eval-design.md"
+SPEC = "bench/realeval/rules.py"            # the pre-registered rules
 HARNESS = "bench/realeval/run.py"
 COVER_DEFAULT = ROOT / "tests" / "fixtures" / "manual" / "hfad_cover_p1.pdf"
 ARTEFACT_FILES = {"llamacpp_zip": "llama-b11559-bin-win-cuda-13.4-x64.zip",

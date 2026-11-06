@@ -88,7 +88,7 @@ def test_setup_vlm_local_is_not_supported_yet(tmp_root):
     cfg.vlm.backend = "local"
     logs = []
     assert not se.setup("vlm", cfg, logs.append, run=lambda *a, **k: None)
-    assert any("not supported on this platform yet" in s and "2026-10-vlm-ocr.md" in s for s in logs)
+    assert any("not supported on this platform yet" in s and "openai" in s for s in logs)
     assert not paths.ready_marker("vlm").exists()
 
 
