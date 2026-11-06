@@ -294,12 +294,11 @@ async def authorize_get(request: Request):
     if not state:
         return _error_page(TEXT["err_missing_state"])
     # from here on the client and its redirect URI are known. Before consent, errors go back to it (with state and
-    # iss) only when the redirect URI is loopback (a program listening on this computer), or when the user already
-    # approved this client (it holds a live grant). An https or private-use redirect URI from an unverified client
-    # document or registration would otherwise make this server an open redirector or a launcher of arbitrary
-    # handlers without any consent (RFC 9700 §4.11.2; verifier F3, review 2026-11-06): it gets the error page here.
-    local_redirect = classify_redirect(redirect_uri) == "loopback" or \
-        ctx.store.client_has_live_grant(client["client_id"], now)
+    # iss) only when the redirect URI is loopback: a program listening on this computer. Any other kind (https, a
+    # private-use scheme) from an unverified client document or registration would make this server an open
+    # redirector or a launcher of handlers without any consent (RFC 9700 §4.11.2; verifier F3, review 2026-11-06),
+    # whatever grants the client holds: those get the error page here.
+    local_redirect = classify_redirect(redirect_uri) == "loopback"
 
     def back(error: str, description: str):
         if not local_redirect:

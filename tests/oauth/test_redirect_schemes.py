@@ -1,9 +1,10 @@
-"""Private-use redirect schemes and pre-consent error redirects (verifier F3 + F6, coordinator review 2026-11-06).
+"""Redirect URI rules and pre-consent error redirects (verifier F3 + F6, review 2026-11-06).
 
-Rule: a private-use redirect URI is accepted only when its scheme is reverse-domain style (contains a dot, RFC 8252
-§7.1) or is a verified native-client scheme (NATIVE_SCHEMES), never a browser or system handler, and its
-scheme-specific part never embeds another URL. Before consent, errors are redirected only to loopback redirect URIs;
-any other kind gets the local error page unless the client already holds a live grant."""
+Rule: whitespace / control characters and a `%` in scheme or authority refuse any URI. A private-use URI is accepted
+only when it is one of NATIVE_REDIRECTS exactly, or its scheme is reverse-domain style (a dot, RFC 8252 §7.1) and not a
+browser or system handler, under the strict grammar scheme:/path or scheme://host[:port]/path (no ':' after the
+separator in path or query). Before consent, errors are redirected only to loopback redirect URIs; everything else,
+whatever grants the client holds, gets the local error page."""
 import time
 
 import pytest
@@ -68,17 +69,16 @@ def test_pre_consent_error_for_a_private_scheme_client_renders_locally(oauth_cli
     assert r.status_code == 400 and "location" not in r.headers and TEXT["error_title"] in r.text
 
 
-def test_pre_consent_error_redirects_once_the_client_has_a_live_grant(oauth_client, oauth_ctx):
-    row = register_client(oauth_client, redirect_uris=(CURSOR_CB,), name="Cursor")
-    m = mint_tokens(oauth_ctx, client_id=row["client_id"], redirect=CURSOR_CB)
-    r = oauth_client.get("/oauth/authorize", params=auth_params(row, redirect_uri=CURSOR_CB, response_type="token"),
-                         follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"].startswith(CURSOR_CB + "?error=unsupported_response_type")
-    from aidoc.oauth.grants import GrantService
-    GrantService(oauth_ctx).revoke_grant(m.grant_id, "admin", time.time())             # no live grant any more
-    r = oauth_client.get("/oauth/authorize", params=auth_params(row, redirect_uri=CURSOR_CB, response_type="token"),
-                         follow_redirects=False)
-    assert r.status_code == 400 and "location" not in r.headers
+def test_pre_consent_error_never_redirects_to_a_non_loopback_uri_even_with_a_grant(oauth_client, oauth_ctx):
+    """Review 2026-11-06 #1: an existing grant must not open the error path to an attacker-chosen redirect URI: the
+    grant was approved for one URI, the error request names another. Before consent only loopback URIs get a 302."""
+    row = register_client(oauth_client, redirect_uris=("http://127.0.0.1/callback", "https://evil.example/land", CURSOR_CB))
+    mint_tokens(oauth_ctx, client_id=row["client_id"])                                 # a live grant (loopback redirect)
+    for uri in ("https://evil.example/land", CURSOR_CB):
+        r = oauth_client.get("/oauth/authorize", params=auth_params(row, redirect_uri=uri, response_type="token"),
+                             follow_redirects=False)
+        assert r.status_code == 400 and "location" not in r.headers and TEXT["error_title"] in r.text, uri
+    assert not hasattr(oauth_ctx.store, "client_has_live_grant")                       # one definition of "live" only
 
 
 def test_loopback_errors_still_redirect(oauth_client):
@@ -102,5 +102,38 @@ def test_cursor_real_payload_registers_and_completes_the_flow(oauth_client):
     assert t.status_code == 200 and t.json()["access_token"].startswith("doc4ai_at_")
 
 
-def test_native_schemes_are_only_verified_ones():
-    assert clients.NATIVE_SCHEMES == frozenset({"cursor"})
+def test_native_redirects_are_exact_uris():
+    """Review #3: verified native clients are allowlisted by their exact redirect URI, not by scheme."""
+    assert clients.NATIVE_REDIRECTS == frozenset({CURSOR_CB})
+    assert classify_redirect(CURSOR_CB) == "private"
+    for uri in (CURSOR_CB + "?x=1", "cursor://x/y", "cursor://anysphere.cursor-mcp/oauth/other", "CURSOR://anysphere.cursor-mcp/oauth/callback"):
+        assert classify_redirect(uri) is None, uri
+
+
+@pytest.mark.parametrize("uri", [
+    "com.example.app:/cb\tx", "com.example.app:/c\nb", "com.example.app:/cb\r\n", "cursor://anysphere.cursor-mcp/oauth/callback\t",
+    "http://127.0.0.1/cb\r\nSet-Cookie: x", "http://127.0.0.1/c b", " https://a.example/cb", "https://a.example/cb\x00",
+    "https://a.example/cb\x7f", "https://a.example/\x0bcb",
+])
+def test_whitespace_and_control_characters_refused_for_every_kind(uri):
+    """Review #2: no parser differential and nothing that could split a Location header."""
+    assert classify_redirect(uri) is None
+
+
+@pytest.mark.parametrize("uri", [
+    "http://127.0.0.1%2f@evil.example/cb", "https://evil%2eexample/cb", "https://a.example%40evil.example/cb",
+    "com.example.app://ho%73t/cb", "com%2eexample.app:/cb",
+])
+def test_percent_encoded_scheme_or_authority_refused(uri):
+    assert classify_redirect(uri) is None
+
+
+@pytest.mark.parametrize("uri,ok", [
+    ("com.example.app:/cb", True), ("com.example.app:/cb?x=1", True), ("com.example.app://host:8080/cb", True),
+    ("com.example.app://host/cb", True), ("com.example.app:/a:b", False), ("com.example.app:/cb?x=a:b", False),
+    ("com.example.app://host:80x/cb", False), ("com.example.app:cb", False), ("com.example.app://host", False),
+    ("com.example.app://ho_st/cb", False),
+])
+def test_private_uri_strict_grammar(uri, ok):
+    """Review #2: scheme:/path or scheme://host[:port]/path, no ':' after the separator in path or query."""
+    assert (classify_redirect(uri) == "private") is ok

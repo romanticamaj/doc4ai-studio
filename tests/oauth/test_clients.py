@@ -124,7 +124,8 @@ def test_redirect_matching_rules(registered, presented, ok):
 def test_classify_redirect():
     assert classify_redirect("https://a.example/cb") == "https"
     assert classify_redirect("http://127.0.0.1:5/cb") == "loopback" and classify_redirect("http://[::1]/cb") == "loopback"
-    assert classify_redirect("cursor://x/y") == "private" and classify_redirect("com.example.app:/cb") == "private"
+    assert classify_redirect("cursor://anysphere.cursor-mcp/oauth/callback") == "private"
+    assert classify_redirect("com.example.app:/cb") == "private" and classify_redirect("cursor://x/y") is None
     for bad in ("http://evil/cb", "javascript:alert(1)", "JavaScript:x", "data:text/html,x", "file:///etc/passwd", "ftp://x/y",
                 "https://a/b#f", "https:///nohost", "", "no-scheme", "1abc://x", "x://" + "a" * 600, None, 3):
         assert classify_redirect(bad) is None, bad

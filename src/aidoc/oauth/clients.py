@@ -45,18 +45,23 @@ DCR_UNUSED_MAX = 50                  # never-granted DCR clients kept server-wid
 DCR_ATTEMPT_FACTOR = 5               # flood ceiling: registrations per source per hour = dcr_per_hour_per_ip × this
 DCR_STORED_KEYS = ("client_name", "redirect_uris", "token_endpoint_auth_method", "grant_types", "response_types",
                    "application_type", "scope", "software_id", "software_version", "client_uri", "logo_uri")
-# Private-use redirect schemes (RFC 8252 §7.1; verifier F6, coordinator review 2026-11-06): accepted only when the
-# scheme is reverse-domain style (contains a dot) or a verified native-client scheme, never a browser / system handler,
-# and never with another URL embedded in what follows the scheme.
-NATIVE_SCHEMES = frozenset({"cursor"})       # verified: Cursor registers cursor://anysphere.cursor-mcp/oauth/callback
-#   (spec 2026-11-05 §2 source). Add another only after checking the redirect its real client registers.
+# Redirect URI rules (RFC 8252; verifier F6, review 2026-11-06). Any whitespace or control character refuses a URI of
+# any kind before parsing (no parser differential, nothing that could split a Location header), and so does a `%` in
+# the scheme or authority. A private-use URI is accepted only when it is one of NATIVE_REDIRECTS exactly, or its
+# scheme is reverse-domain style (contains a dot, RFC 8252 §7.1) and not a browser / system handler, and it follows
+# the strict grammar scheme:/path or scheme://host[:port]/path, with no ':' after the separator in path or query.
+NATIVE_REDIRECTS = frozenset({
+    "cursor://anysphere.cursor-mcp/oauth/callback",       # verified: Cursor's own DCR registration (spec §2 source)
+})                                                        # add one only after checking its real client's registration
 BLOCKED_SCHEMES = frozenset({"javascript", "data", "file", "vbscript", "blob", "about", "ftp", "ws", "wss", "mailto", "tel",
                              "intent", "view-source", "search-ms", "shell", "chrome", "edge", "opera", "firefox", "safari",
                              "res", "mk", "its", "ms-its", "jar", "filesystem"})
 BLOCKED_SCHEME_PREFIXES = ("ms-", "microsoft", "windows", "search", "chrome", "edge", "firefox", "opera", "safari",
                            "android", "intent", "view-", "file", "shell", "x-apple", "com.apple", "com.microsoft")
-_EMBEDDED_URL = re.compile(r"^/*(?:https?:|[a-z][a-z0-9+.\-]*:(?!\d))", re.IGNORECASE)
-_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*$")
+_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*$")
+_CONTROL_OR_SPACE = re.compile(r"[\x00-\x20\x7f]")
+_PRIVATE_GRAMMAR = re.compile(r"^[a-z][a-z0-9+.\-]*:(?://[a-z0-9.\-]+(?::\d{1,5})?/|/(?!/))[^?:#%]*(?:\?[^:#]*)?$",
+                              re.IGNORECASE)
 GRANT_TYPES = ("authorization_code", "refresh_token")
 APPLICATION_TYPES = (None, "native", "web")
 
@@ -222,11 +227,15 @@ def fetch_json(url: str, *, max_bytes: int, timeout: float, ssl_context=None) ->
 
 def classify_redirect(uri) -> str | None:
     """"https" | "loopback" | "private" (RFC 8252 §7.1 private-use scheme) | None (never acceptable)."""
-    if not isinstance(uri, str) or not uri or len(uri) > URI_MAX or "#" in uri:
+    if not isinstance(uri, str) or not uri or len(uri) > URI_MAX or "#" in uri or _CONTROL_OR_SPACE.search(uri):
         return None
+    if uri in NATIVE_REDIRECTS:
+        return "private"
     try:
         u = urlsplit(uri)
     except ValueError:
+        return None
+    if "%" in u.scheme or "%" in u.netloc:                  # no percent-encoded scheme / authority tricks
         return None
     scheme = u.scheme.lower()
     if not scheme or not _SCHEME_RE.match(scheme):
@@ -241,11 +250,9 @@ def classify_redirect(uri) -> str | None:
         if scheme == "https":
             return "https"
         return "loopback" if host.lower() in LOOPBACK_HOSTS else None
-    if scheme in BLOCKED_SCHEMES or scheme.startswith(BLOCKED_SCHEME_PREFIXES):
+    if scheme in BLOCKED_SCHEMES or scheme.startswith(BLOCKED_SCHEME_PREFIXES) or "." not in scheme:
         return None
-    if "." not in scheme and scheme not in NATIVE_SCHEMES:
-        return None
-    if _EMBEDDED_URL.match(uri[len(scheme) + 1:]):          # e.g. x.app:https://evil, x.app://javascript:...
+    if not _PRIVATE_GRAMMAR.match(uri):                     # e.g. x.app:https://evil, x.app://javascript:...
         return None
     return "private"
 
