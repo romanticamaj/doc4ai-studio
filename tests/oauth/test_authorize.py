@@ -384,3 +384,31 @@ def test_cross_site_post_renders_the_error_card(oauth_client, dcr_client):
         assert r.status_code == 403 and r.headers["content-type"].startswith("text/html")
         assert TEXT["error_title"] in r.text and TEXT["err_cross_site"] in r.text and '"error"' not in r.text
         assert r.headers["x-frame-options"] == "DENY" and "location" not in r.headers
+
+
+def _browser_form(html: str, untick_all: bool = True) -> dict:
+    """What a browser submits for this page: hidden inputs, plus checked, enabled checkboxes (none when untick_all)."""
+    fields: dict[str, list[str]] = {}
+    for tag in re.findall(r"<input[^>]*>", html):
+        name = re.search(r'name="([^"]+)"', tag)
+        value = re.search(r'value="([^"]*)"', tag)
+        if not name:
+            continue
+        kind = re.search(r'type="([^"]+)"', tag).group(1)
+        if kind == "hidden" or (kind == "checkbox" and "checked" in tag and "disabled" not in tag and not untick_all):
+            fields.setdefault(name.group(1), []).append(value.group(1) if value else "")
+    return fields
+
+
+def test_unticking_every_optional_scope_is_not_a_dead_end(oauth_client, dcr_client):
+    """Browser tester: with every box unticked the page used to end on a 400. doc4ai:read is required: shown checked
+    and disabled (必要) and always sent as a hidden field, so the submit grants read only."""
+    v, c = pkce()
+    html = oauth_client.get("/oauth/authorize", params=auth_params(dcr_client, c, scope="doc4ai:read doc4ai:convert doc4ai:manage")).text
+    assert re.search(r'<input type="checkbox" value="doc4ai:read" checked disabled>', html)
+    assert '<input type="hidden" name="scopes" value="doc4ai:read">' in html and TEXT["required"] in html
+    r = oauth_client.post("/oauth/authorize", data={**_browser_form(html), "decision": "allow"},
+                          headers={"Origin": ISSUER, "Sec-Fetch-Site": "same-origin"}, follow_redirects=False)
+    assert r.status_code == 302, r.text
+    t = exchange(oauth_client, dcr_client, location_query(r)["code"], v)
+    assert t.json()["scope"] == "doc4ai:read"

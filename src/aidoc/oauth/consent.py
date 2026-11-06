@@ -26,8 +26,9 @@ TEXT = {
     "private_note": "會交給本機應用程式",
     "server": "這台伺服器",
     "scopes": "允許的權限",
-    "scopes_note": "（用戶端請求了但你沒勾的權限不會給；至少要有 doc4ai:read）",
+    "scopes_note": "（用戶端請求了但你沒勾的權限不會給；doc4ai:read 是每個連線都需要的）",
     "high_risk": "高風險",
+    "required": "必要",
     "server_token": "伺服器 token",
     "loopback_only": "只有在這台電腦的瀏覽器能看到這個頁面。",
     "deny": "拒絕",
@@ -55,6 +56,7 @@ SCOPE_TEXT = {
     "doc4ai:manage": "取消工作、重新轉換文件",
 }
 HIGH_RISK = frozenset({"doc4ai:convert:local", "doc4ai:manage"})
+REQUIRED_SCOPE = "doc4ai:read"
 CONSENT_HEADERS = {
     # no form-action: Chrome applies it to the 302 after the POST, which must go to the client's redirect URI (spec §1.2)
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; frame-ancestors 'none'; "
@@ -262,8 +264,15 @@ def render_consent(v: ConsentView) -> str:
         note = f'<br><span class="note">{e(TEXT["private_note"])} {e(scheme)}://…</span>'
     rows = []
     for s in v.requested_scopes:
-        checked = " checked" if s in v.checked_scopes else ""
         risk = f'<span class="danger">{e(TEXT["high_risk"])}</span>' if s in HIGH_RISK else ""
+        if s == REQUIRED_SCOPE:
+            # every connection needs read: shown ticked and fixed, always sent (no JS on this page; a disabled
+            # checkbox is never submitted, so a hidden field carries it) - unticking the rest cannot end on a 400
+            rows.append(f'<li><label><input type="checkbox" value="{e(s)}" checked disabled> <code>{e(s)}</code> '
+                        f'<span>{e(SCOPE_TEXT.get(s, s))}</span><span class="note">{e(TEXT["required"])}</span></label>'
+                        f'<input type="hidden" name="scopes" value="{e(s)}"></li>')
+            continue
+        checked = " checked" if s in v.checked_scopes else ""
         rows.append(f'<li><label><input type="checkbox" name="scopes" value="{e(s)}"{checked}> <code>{e(s)}</code> '
                     f'<span>{e(SCOPE_TEXT.get(s, s))}</span>{risk}</label></li>')
     if v.needs_token:
