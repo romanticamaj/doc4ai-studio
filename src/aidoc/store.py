@@ -919,6 +919,11 @@ class Store:
 
     _UNUSED_DCR = "kind='dcr' AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.client_id)"
 
+    def client_has_live_grant(self, client_id, now: float) -> bool:
+        """The user approved this client before and the connection still stands (not revoked, not past its limit)."""
+        return self._q1("SELECT 1 FROM oauth_grants WHERE client_id=? AND revoked_at IS NULL AND absolute_expires_at > ?",
+                        (client_id, now)) is not None
+
     def unused_dcr_clients(self) -> list[str]:
         """DCR client ids that never got a grant, oldest first."""
         return [r[0] for r in self.con.execute(f"SELECT client_id FROM oauth_clients WHERE {self._UNUSED_DCR} "

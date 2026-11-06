@@ -287,9 +287,10 @@ def test_errors_never_redirect_to_an_https_client(oauth_client, fake_cimd, over)
     assert r.status_code == 400 and "location" not in r.headers
 
 
-def test_errors_still_return_to_loopback_and_private_clients(oauth_client):
-    for uri, presented in (("http://127.0.0.1/callback", CB), ("cursor://anysphere.cursor-mcp/oauth/callback",
-                                                                "cursor://anysphere.cursor-mcp/oauth/callback")):
+def test_errors_still_return_to_loopback_clients(oauth_client):
+    """Private-use schemes get the local page before consent unless the client holds a live grant (review 2026-11-06,
+    tests/oauth/test_redirect_schemes.py)."""
+    for uri, presented in (("http://127.0.0.1/callback", CB), ("http://localhost/callback", "http://localhost:4444/callback")):
         row = register_client(oauth_client, redirect_uris=(uri,))
         r = oauth_client.get("/oauth/authorize", params=auth_params(row, redirect_uri=presented, response_type="token"),
                              follow_redirects=False)

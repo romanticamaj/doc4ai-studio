@@ -45,7 +45,17 @@ DCR_UNUSED_MAX = 50                  # never-granted DCR clients kept server-wid
 DCR_ATTEMPT_FACTOR = 5               # flood ceiling: registrations per source per hour = dcr_per_hour_per_ip × this
 DCR_STORED_KEYS = ("client_name", "redirect_uris", "token_endpoint_auth_method", "grant_types", "response_types",
                    "application_type", "scope", "software_id", "software_version", "client_uri", "logo_uri")
-BLOCKED_SCHEMES = frozenset({"javascript", "data", "file", "vbscript", "blob", "about", "ftp", "ws", "wss", "mailto", "tel"})
+# Private-use redirect schemes (RFC 8252 §7.1; verifier F6, coordinator review 2026-11-06): accepted only when the
+# scheme is reverse-domain style (contains a dot) or a verified native-client scheme, never a browser / system handler,
+# and never with another URL embedded in what follows the scheme.
+NATIVE_SCHEMES = frozenset({"cursor"})       # verified: Cursor registers cursor://anysphere.cursor-mcp/oauth/callback
+#   (spec 2026-11-05 §2 source). Add another only after checking the redirect its real client registers.
+BLOCKED_SCHEMES = frozenset({"javascript", "data", "file", "vbscript", "blob", "about", "ftp", "ws", "wss", "mailto", "tel",
+                             "intent", "view-source", "search-ms", "shell", "chrome", "edge", "opera", "firefox", "safari",
+                             "res", "mk", "its", "ms-its", "jar", "filesystem"})
+BLOCKED_SCHEME_PREFIXES = ("ms-", "microsoft", "windows", "search", "chrome", "edge", "firefox", "opera", "safari",
+                           "android", "intent", "view-", "file", "shell", "x-apple", "com.apple", "com.microsoft")
+_EMBEDDED_URL = re.compile(r"^/*(?:https?:|[a-z][a-z0-9+.\-]*:(?!\d))", re.IGNORECASE)
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*$")
 GRANT_TYPES = ("authorization_code", "refresh_token")
 APPLICATION_TYPES = (None, "native", "web")
@@ -231,7 +241,11 @@ def classify_redirect(uri) -> str | None:
         if scheme == "https":
             return "https"
         return "loopback" if host.lower() in LOOPBACK_HOSTS else None
-    if scheme in BLOCKED_SCHEMES:
+    if scheme in BLOCKED_SCHEMES or scheme.startswith(BLOCKED_SCHEME_PREFIXES):
+        return None
+    if "." not in scheme and scheme not in NATIVE_SCHEMES:
+        return None
+    if _EMBEDDED_URL.match(uri[len(scheme) + 1:]):          # e.g. x.app:https://evil, x.app://javascript:...
         return None
     return "private"
 
@@ -396,6 +410,9 @@ class ClientRegistry:
         uris = doc.get("redirect_uris")
         if not isinstance(uris, list) or not uris or not all(isinstance(u, str) and u and len(u) <= URI_MAX for u in uris):
             raise fail("redirect_uris must be a non-empty list of strings")
+        bad = [u for u in uris if classify_redirect(u) is None]
+        if bad:                                                # the same rule as DCR registration
+            raise fail(f"redirect_uris contains a URI that is not allowed ({bad[0][:60]})")
         if doc.get("token_endpoint_auth_method") not in (None, "none"):
             raise fail("token_endpoint_auth_method must be none")
         name = doc.get("client_name")
