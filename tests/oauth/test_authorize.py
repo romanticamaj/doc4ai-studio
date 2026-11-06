@@ -374,3 +374,13 @@ def test_https_client_can_still_be_approved(oauth_client):
     html = oauth_client.get("/oauth/authorize", params=auth_params(row, redirect_uri="https://www.cursor.com/agents/mcp/oauth/callback")).text
     r = consent_post(oauth_client, html)
     assert r.status_code == 302 and r.headers["location"].startswith("https://www.cursor.com/agents/mcp/oauth/callback?code=")
+
+
+def test_cross_site_post_renders_the_error_card(oauth_client, dcr_client):
+    """Browser tester: a refused cross-site consent POST shows the localized 無法授權 card, not raw JSON."""
+    html = oauth_client.get("/oauth/authorize", params=auth_params(dcr_client)).text
+    for headers in ({"Origin": "http://evil.test"}, {"Origin": ISSUER, "Sec-Fetch-Site": "cross-site"}):
+        r = consent_post(oauth_client, html, headers=headers)
+        assert r.status_code == 403 and r.headers["content-type"].startswith("text/html")
+        assert TEXT["error_title"] in r.text and TEXT["err_cross_site"] in r.text and '"error"' not in r.text
+        assert r.headers["x-frame-options"] == "DENY" and "location" not in r.headers

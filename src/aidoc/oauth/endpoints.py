@@ -356,8 +356,8 @@ async def authorize_post(request: Request):
     if iss is None:
         return _error_page(TEXT["err_bad_host"])
     # CSRF (spec §6.2): a browser says where the form came from; only this page itself may submit it
-    if _cross_site(request, iss):
-        return oauth_json({"error": "cross_origin", "error_description": TEXT["err_cross_site"]}, 403)
+    if _cross_site(request, iss):                              # a person sees this in the browser: the error card
+        return _error_page(TEXT["err_cross_site"], 403)
     ip, now = _ip(request), time.time()                     # ip: the socket peer (no forwarded headers are trusted)
     rt = runtime(request)
     ok, retry = rt.authorize_post_limiter.acquire(f"authz-post:{ip}", now=now)
