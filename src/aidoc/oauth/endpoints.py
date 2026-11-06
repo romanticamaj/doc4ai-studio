@@ -262,9 +262,15 @@ async def authorize_get(request: Request):
     state = q.get("state")
     if not state:
         return _error_page(TEXT["err_missing_state"])
-    # from here on the client and its redirect URI are known: errors go back to it, with state and iss
+    # from here on the client and its redirect URI are known. Errors go back to it (with state and iss) only when the
+    # redirect URI returns to a program on this computer (loopback or a private-use scheme). An https redirect URI
+    # comes from an unverified client document or registration: answering it with a 302 before any consent would make
+    # this server an open redirector (RFC 9700 §4.11.2; verifier F3), so it gets the error page here instead.
+    local_redirect = classify_redirect(redirect_uri) in ("loopback", "private")
 
     def back(error: str, description: str):
+        if not local_redirect:
+            return _error_page(TEXT["err_param"], reason=f"{error}: {description}")
         return _redirect(redirect_uri, {"error": error, "error_description": description, "state": state, "iss": iss})
     if q.get("response_type") != "code":
         return back("unsupported_response_type", "only response_type=code is supported")

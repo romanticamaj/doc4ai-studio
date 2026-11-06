@@ -46,6 +46,7 @@ TEXT = {
     "err_too_many": "嘗試太多次，請稍後再試。",
     "err_cross_site": "這個表單只能從授權頁本身送出。",
     "err_client": "client 設定有誤：{reason}",
+    "err_param": "授權請求的參數有誤，請回到應用程式重新開始。",
 }
 SCOPE_TEXT = {
     "doc4ai:read": "讀取文件庫（搜尋、讀取、分段）",

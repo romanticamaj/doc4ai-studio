@@ -219,3 +219,39 @@ def test_disabled_is_404(oauth_client, oauth_ctx, dcr_client):
     oauth_ctx.config.oauth.enabled = False
     assert oauth_client.get("/oauth/authorize", params=auth_params(dcr_client)).status_code == 404
     assert consent_post(oauth_client, html).status_code == 404
+
+
+@pytest.mark.parametrize("over", [{"response_type": "token"}, {"code_challenge_method": "plain"}, {"scope": "bogus"},
+                                  {"resource": "https://elsewhere.example/mcp"}])
+def test_errors_never_redirect_to_an_https_client(oauth_client, fake_cimd, over):
+    """Verifier F3 (RFC 9700 §4.11.2): before any consent, an error is redirected only to a loopback or private-use
+    redirect URI (a program on this computer). An https redirect URI gets the error page here, so an attacker's
+    client document cannot make this server an open redirector."""
+    url = "https://evil.example/cimd.json"
+    fake_cimd.put(url, {"client_id": url, "client_name": "x", "redirect_uris": ["https://evil.example/land"]})
+    row = {"client_id": url}
+    r = oauth_client.get("/oauth/authorize", params=auth_params(row, redirect_uri="https://evil.example/land", **over),
+                         follow_redirects=False)
+    assert r.status_code == 400 and "location" not in r.headers and "evil.example/land?" not in r.text
+    assert TEXT["error_title"] in r.text
+    dcr = register_client(oauth_client, redirect_uris=("https://www.cursor.com/agents/mcp/oauth/callback",), name="DCR web")
+    r = oauth_client.get("/oauth/authorize", params=auth_params(dcr, redirect_uri="https://www.cursor.com/agents/mcp/oauth/callback",
+                                                                **over), follow_redirects=False)
+    assert r.status_code == 400 and "location" not in r.headers
+
+
+def test_errors_still_return_to_loopback_and_private_clients(oauth_client):
+    for uri, presented in (("http://127.0.0.1/callback", CB), ("cursor://anysphere.cursor-mcp/oauth/callback",
+                                                                "cursor://anysphere.cursor-mcp/oauth/callback")):
+        row = register_client(oauth_client, redirect_uris=(uri,))
+        r = oauth_client.get("/oauth/authorize", params=auth_params(row, redirect_uri=presented, response_type="token"),
+                             follow_redirects=False)
+        assert r.status_code == 302 and r.headers["location"].startswith(presented + "?error=unsupported_response_type")
+
+
+def test_https_client_can_still_be_approved(oauth_client):
+    """The rule only covers unauthenticated error redirects: after the user clicks, an https client gets its code."""
+    row = register_client(oauth_client, redirect_uris=("https://www.cursor.com/agents/mcp/oauth/callback",))
+    html = oauth_client.get("/oauth/authorize", params=auth_params(row, redirect_uri="https://www.cursor.com/agents/mcp/oauth/callback")).text
+    r = consent_post(oauth_client, html)
+    assert r.status_code == 302 and r.headers["location"].startswith("https://www.cursor.com/agents/mcp/oauth/callback?code=")
