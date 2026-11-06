@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from aidoc.oauth.clients import ClientError, ClientRegistry
+from aidoc.oauth.clients import DCR_METADATA_MAX, ClientError, ClientRegistry
 from aidoc.oauth.metadata import DEFAULT_CHALLENGE_SCOPE, NO_STORE, issuer_or_none, not_found, unknown_host
 
 __all__ = ["AUTHORIZE_GET_PER_MIN", "DEFAULT_CHALLENGE_SCOPE", "OAuthRuntime", "router"]
@@ -52,6 +52,14 @@ def oauth_json(body: dict, status: int = 200, headers: dict | None = None) -> JS
     return JSONResponse(body, status_code=status, headers={**NO_STORE, **(headers or {})})
 
 
+def _cross_site(request: Request, iss: str) -> bool:
+    """A browser request from another site: an Origin other than this issuer (`null` included), or Sec-Fetch-Site
+    other than same-origin / none. Requests without either header come from programs, not web pages."""
+    origin, site = request.headers.get("origin"), request.headers.get("sec-fetch-site")
+    return (origin is not None and origin.strip().lower().rstrip("/") != iss) or \
+        (site is not None and site.strip().lower() not in ("same-origin", "none"))
+
+
 def _gate(request: Request):
     """(issuer, None) or (None, response) for a disabled server or an unknown Host."""
     ctx = request.app.state.ctx
@@ -68,12 +76,21 @@ async def register(request: Request):
     ctx = request.app.state.ctx
     if ctx.config.oauth.enabled and not ctx.config.oauth.allow_dcr:
         return not_found()
-    _iss, refused = _gate(request)
+    iss, refused = _gate(request)
     if refused is not None:
         return refused
+    # verifier F2: a web page must not register clients (and use up the quota) with a no-cors text/plain POST
+    if _cross_site(request, iss):
+        return oauth_json({"error": "cross_origin", "error_description": "client registration is not accepted cross-site"}, 403)
+    ctype = (request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    if ctype != "application/json":
+        return oauth_json({"error": "invalid_client_metadata", "error_description": "the body must be application/json"}, 400)
     raw = await request.body()
+    if len(raw) > DCR_METADATA_MAX:
+        return oauth_json({"error": "invalid_client_metadata",
+                           "error_description": f"the registration is larger than {DCR_METADATA_MAX} bytes"}, 400)
     try:
-        body = json.loads(raw) if len(raw) <= REGISTER_MAX_BYTES else None
+        body = json.loads(raw)
     except (ValueError, RecursionError):
         body = None
     try:
@@ -301,9 +318,7 @@ async def authorize_post(request: Request):
     if iss is None:
         return _error_page(TEXT["err_bad_host"])
     # CSRF (spec §6.2): a browser says where the form came from; only this page itself may submit it
-    origin, site = request.headers.get("origin"), request.headers.get("sec-fetch-site")
-    if (origin is not None and origin.strip().lower().rstrip("/") != iss) or \
-            (site is not None and site.strip().lower() not in ("same-origin", "none")):
+    if _cross_site(request, iss):
         return oauth_json({"error": "cross_origin", "error_description": TEXT["err_cross_site"]}, 403)
     ip, now = _ip(request), time.time()
     form = await _consent_form(request)

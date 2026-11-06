@@ -171,9 +171,14 @@ def test_dcr_register_and_limits(oauth_client, oauth_ctx):
         b = oauth_client.post("/oauth/register", json={**body, **bad})
         assert b.status_code == 400 and b.json()["error"] == err, (bad, b.text)
     assert oauth_client.post("/oauth/register", content=b"not json", headers={"Content-Type": "application/json"}).status_code == 400
-    # 1 + 8 bad + 1 non-JSON = 10 attempts this hour; the limit is 20 per IP
-    for _ in range(10):
+    # 1 + 8 bad + 1 non-JSON = 10 attempts this hour; the flood ceiling is 20 × DCR_ATTEMPT_FACTOR per source.
+    # Past 20 unused registrations the oldest unused one gives way (verifier F2), so registering keeps working ...
+    from aidoc.oauth.clients import DCR_ATTEMPT_FACTOR
+    ceiling = oauth_ctx.config.oauth.dcr_per_hour_per_ip * DCR_ATTEMPT_FACTOR
+    for _ in range(ceiling - 10):
         assert oauth_client.post("/oauth/register", json=body).status_code == 201
+    assert len([c for c in oauth_ctx.store.list_oauth_clients() if c["kind"] == "dcr"]) == 20
+    # ... until the flood ceiling
     r = oauth_client.post("/oauth/register", json=body)
     assert r.status_code == 429 and r.json()["error"] == "rate_limited" and "retry-after" in r.headers
     oauth_ctx.config.oauth.allow_dcr = False
@@ -184,8 +189,9 @@ def test_dcr_window_resets(oauth_ctx):
     reg = ClientRegistry(oauth_ctx)
     oauth_ctx.config.oauth.dcr_per_hour_per_ip = 2
     body = {"redirect_uris": ["http://localhost/cb"]}
-    reg.register_dcr(body, "1.1.1.1", T0)
-    reg.register_dcr(body, "1.1.1.1", T0 + 1)
+    from aidoc.oauth.clients import DCR_ATTEMPT_FACTOR
+    for i in range(2 * DCR_ATTEMPT_FACTOR):                                # the flood ceiling: 2 × DCR_ATTEMPT_FACTOR
+        reg.register_dcr(body, "1.1.1.1", T0 + i / 100)
     with pytest.raises(ClientError, match="rate"):
         reg.register_dcr(body, "1.1.1.1", T0 + 2)
     reg.register_dcr(body, "2.2.2.2", T0 + 2)                              # another address has its own window

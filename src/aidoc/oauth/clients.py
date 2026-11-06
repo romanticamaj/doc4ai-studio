@@ -40,6 +40,11 @@ URI_MAX = 512
 NAME_MAX = 100
 DCR_MAX_REDIRECTS = 10
 DCR_FIELD_MAX = 512
+DCR_METADATA_MAX = 16384             # a registration body (and what is stored of it) is at most this many bytes
+DCR_UNUSED_MAX = 50                  # never-granted DCR clients kept server-wide; the oldest unused gives way
+DCR_ATTEMPT_FACTOR = 5               # flood ceiling: registrations per source per hour = dcr_per_hour_per_ip × this
+DCR_STORED_KEYS = ("client_name", "redirect_uris", "token_endpoint_auth_method", "grant_types", "response_types",
+                   "application_type", "scope", "software_id", "software_version", "client_uri", "logo_uri")
 BLOCKED_SCHEMES = frozenset({"javascript", "data", "file", "vbscript", "blob", "about", "ftp", "ws", "wss", "mailto", "tel"})
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*$")
 GRANT_TYPES = ("authorization_code", "refresh_token")
@@ -277,7 +282,8 @@ class ClientRegistry:
         self.ctx = ctx
         self._fetches: dict[str, deque] = {}
         self._failed: dict[str, tuple[float, str]] = {}      # client_id -> (until, reason): the negative cache
-        self._dcr: dict[str, tuple[float, int]] = {}         # ip -> (window start, attempts)
+        self._dcr: dict[str, tuple[float, int]] = {}         # ip -> (window start, attempts): the flood ceiling
+        self._dcr_recent: dict[str, deque] = {}               # ip -> (ts, client_id) registered in the last hour
         self._lock = threading.Lock()
 
     @property
@@ -401,7 +407,8 @@ class ClientRegistry:
 
     # ---- DCR (RFC 7591 subset)
     def _count_dcr(self, ip: str | None, now: float) -> None:
-        limit = self.ctx.config.oauth.dcr_per_hour_per_ip
+        """Flood ceiling only: a source may attempt dcr_per_hour_per_ip × DCR_ATTEMPT_FACTOR registrations an hour."""
+        limit = self.ctx.config.oauth.dcr_per_hour_per_ip * DCR_ATTEMPT_FACTOR
         key = ip or "?"
         with self._lock:
             start, n = self._dcr.get(key, (now, 0))
@@ -416,14 +423,37 @@ class ClientRegistry:
                 for k in [k for k, (s, _n) in self._dcr.items() if now - s >= 3600]:
                     del self._dcr[k]
 
+    def _make_room(self, ip: str | None, now: float) -> None:
+        """Verifier F2: junk registrations must not lock a real client out. A source keeps at most dcr_per_hour_per_ip
+        unused (never-granted) registrations from the last hour, the server at most DCR_UNUSED_MAX: past either, the
+        oldest unused registration is deleted to make room. A client that got a grant is never touched."""
+        limit = self.ctx.config.oauth.dcr_per_hour_per_ip
+        key = ip or "?"
+        with self._lock:
+            q = self._dcr_recent.setdefault(key, deque())
+            while q and now - q[0][0] >= 3600:
+                q.popleft()
+            live = deque((t, cid) for t, cid in q if self.store.is_unused_dcr_client(cid))
+            while len(live) >= limit:
+                _t, cid = live.popleft()
+                if self.store.delete_unused_dcr_client(cid):
+                    log.info("DCR: %s unused registrations from %s; removed the oldest (%s)", limit, key, cid[:14])
+            self._dcr_recent[key] = live
+        unused = self.store.unused_dcr_clients()                         # oldest first; leave room for the new one
+        for cid in unused[: max(0, len(unused) - (DCR_UNUSED_MAX - 1))]:
+            self.store.delete_unused_dcr_client(cid)
+
     def register_dcr(self, body, ip: str | None, now: float) -> dict:
-        """Every attempt counts toward the hourly limit (also malformed ones); returns the RFC 7591 response."""
+        """Every attempt counts toward the flood ceiling (also malformed ones); a valid registration first makes room
+        among unused ones (see _make_room). Returns the RFC 7591 response."""
         self._count_dcr(ip, now)
 
         def meta(msg):
             return ClientError("invalid_client_metadata", msg)
         if not isinstance(body, dict):
             raise meta("the body must be a JSON object")
+        if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > DCR_METADATA_MAX:
+            raise meta(f"the registration is larger than {DCR_METADATA_MAX} bytes")
         uris = body.get("redirect_uris")
         if not isinstance(uris, list) or not 1 <= len(uris) <= DCR_MAX_REDIRECTS:
             raise ClientError("invalid_redirect_uri", f"redirect_uris must list 1 to {DCR_MAX_REDIRECTS} URIs")
@@ -454,10 +484,14 @@ class ClientRegistry:
             opt[key] = v
         cid = generate_client_id()
         name = name.strip() if isinstance(name, str) else None
+        self._make_room(ip, now)
+        stored = {k: body[k] for k in DCR_STORED_KEYS if k in body}           # only what RFC 7591 defines and we use
         self.store.upsert_oauth_client(
             client_id=cid, kind="dcr", name=name or "未命名 client", redirect_uris=uris, client_uri=opt.get("client_uri"),
             logo_uri=opt.get("logo_uri"), software_id=opt.get("software_id"), software_version=opt.get("software_version"),
-            application_type=body.get("application_type"), metadata_json=body)
+            application_type=body.get("application_type"), metadata_json=stored)
+        with self._lock:
+            self._dcr_recent.setdefault(ip or "?", deque()).append((now, cid))
         out = {"client_id": cid, "client_id_issued_at": int(now), "token_endpoint_auth_method": "none",
                "redirect_uris": uris, "grant_types": grants, "response_types": rtypes, **opt}
         if name:

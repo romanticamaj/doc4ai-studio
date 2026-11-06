@@ -917,6 +917,20 @@ class Store:
         c = self.get_oauth_client(g["client_id"])
         return {"name": (c or {}).get("name") or g["client_id"], "kind": "oauth", "status": self.grant_status(g, now)}
 
+    _UNUSED_DCR = "kind='dcr' AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.client_id)"
+
+    def unused_dcr_clients(self) -> list[str]:
+        """DCR client ids that never got a grant, oldest first."""
+        return [r[0] for r in self.con.execute(f"SELECT client_id FROM oauth_clients WHERE {self._UNUSED_DCR} "
+                                               "ORDER BY created_at, rowid")]
+
+    def is_unused_dcr_client(self, client_id) -> bool:
+        return self._q1(f"SELECT 1 FROM oauth_clients WHERE client_id=? AND {self._UNUSED_DCR}", (client_id,)) is not None
+
+    def delete_unused_dcr_client(self, client_id) -> bool:
+        """Deletes the client only while it is DCR and has no grant (checked in the same statement)."""
+        return self.con.execute(f"DELETE FROM oauth_clients WHERE client_id=? AND {self._UNUSED_DCR}", (client_id,)).rowcount == 1
+
     def token_names(self) -> dict[str, tuple[str, str]]:
         """id -> (display name, kind) over PATs and OAuth grants (a grant is named after its client)."""
         out = {r["id"]: (r["name"], "pat") for r in self.con.execute("SELECT id, name FROM api_tokens")}
