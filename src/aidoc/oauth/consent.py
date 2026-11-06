@@ -44,6 +44,7 @@ TEXT = {
     "err_scopes": "至少要允許 doc4ai:read，且只能允許 client 請求的權限。",
     "err_wrong_token": "伺服器 token 不正確。",
     "err_too_many": "嘗試太多次，請稍後再試。",
+    "err_burned": "這個授權頁輸錯伺服器 token 太多次，已失效；請回到應用程式重新開始。",
     "err_cross_site": "這個表單只能從授權頁本身送出。",
     "err_client": "client 設定有誤：{reason}",
     "err_param": "授權請求的參數有誤，請回到應用程式重新開始。",
@@ -127,6 +128,58 @@ class NonceSet:
 
     def __len__(self) -> int:
         return len(self._seen)
+
+
+class ConsentThrottle:
+    """Token-mode consent guessing (verifier F4). Per address: IP_LIMIT wrong server tokens inside WINDOW_S lock it for
+    LOCK_S, doubling with every further lockout up to MAX_LOCK_S; while locked every POST is refused, the right token
+    included, so the lockout really limits guessing. Per consent page (nonce): from the 2nd wrong guess a pause of
+    1, 2, 4 … s before the next try, and the NONCE_LIMIT-th wrong guess burns the page."""
+
+    IP_LIMIT, WINDOW_S, LOCK_S, MAX_LOCK_S = 10, 60.0, 60.0, 3600.0
+    NONCE_LIMIT = 5
+    MAX_KEYS = 10000
+
+    def __init__(self):
+        self._ip: dict[str, dict] = {}             # ip -> {fails: [ts], until, lockouts}
+        self._nonce: dict[str, tuple[int, float]] = {}   # nonce -> (wrong guesses, not before)
+        self._lock = threading.Lock()
+
+    def retry_after(self, ip: str | None, nonce: str, now: float) -> int | None:
+        """Seconds to wait when this address or this page is paused, else None."""
+        with self._lock:
+            st = self._ip.get(ip or "?")
+            waits = []
+            if st and st["until"] > now:
+                waits.append(st["until"] - now)
+            n = self._nonce.get(nonce)
+            if n and n[1] > now:
+                waits.append(n[1] - now)
+        return max(1, int(max(waits) + 0.999)) if waits else None
+
+    def failure(self, ip: str | None, nonce: str, now: float) -> bool:
+        """Count one wrong token; True when this page is now burned."""
+        with self._lock:
+            if len(self._ip) > self.MAX_KEYS:
+                self._ip = {k: v for k, v in self._ip.items() if v["until"] > now or (v["fails"] and now - v["fails"][-1] < self.WINDOW_S)}
+            if len(self._nonce) > self.MAX_KEYS:
+                self._nonce.clear()
+            st = self._ip.setdefault(ip or "?", {"fails": [], "until": 0.0, "lockouts": 0})
+            st["fails"] = [t for t in st["fails"] if now - t < self.WINDOW_S] + [now]
+            if len(st["fails"]) >= self.IP_LIMIT:
+                st["until"] = now + min(self.MAX_LOCK_S, self.LOCK_S * 2 ** st["lockouts"])
+                st["lockouts"] += 1
+                st["fails"] = []
+            wrong = self._nonce.get(nonce, (0, 0.0))[0] + 1
+            self._nonce[nonce] = (wrong, now + (2 ** (wrong - 2) if wrong >= 2 else 0))
+            return wrong >= self.NONCE_LIMIT
+
+    def success(self, ip: str | None, nonce: str) -> None:
+        with self._lock:
+            self._nonce.pop(nonce, None)
+            st = self._ip.get(ip or "?")
+            if st:
+                st["fails"] = []
 
 
 @dataclass

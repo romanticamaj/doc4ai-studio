@@ -1,5 +1,6 @@
 """/oauth/authorize (spec 2026-11-05 §5.3 (1)–(3), §6): the 授權連線 page, its CSRF-safe POST, token-mode credential, iss."""
 import re
+import time
 
 import pytest
 
@@ -164,29 +165,75 @@ def test_signed_request_bound_to_host(oauth_client, dcr_client):
     assert r.status_code == 400
 
 
-def test_token_mode_requires_server_token(token_oauth_client, token_oauth_ctx):
+def test_token_mode_requires_server_token(token_oauth_client, token_oauth_ctx, monkeypatch):
+    import aidoc.oauth.endpoints as E
+    clock = [time.time()]
+    monkeypatch.setattr(E.time, "time", lambda: clock[0])
     row = register_client(token_oauth_client)
     html = token_oauth_client.get("/oauth/authorize", params=auth_params(row)).text
     assert 'type="password" name="server_token"' in html and TEXT["loopback_only"] not in html
     assert consent_post(token_oauth_client, html).status_code == 401                         # no token
     r = consent_post(token_oauth_client, html, server_token="wrong")
     assert r.status_code == 401 and TEXT["err_wrong_token"] in r.text
+    assert consent_post(token_oauth_client, html, server_token=SERVER_TOKEN).status_code == 429   # paused 1 s (2nd wrong)
+    clock[0] += 1
     assert consent_post(token_oauth_client, html, server_token=SERVER_TOKEN).status_code == 302   # the same page still works
     assert consent_post(token_oauth_client, html, server_token=SERVER_TOKEN).status_code == 400   # ...once
     html = token_oauth_client.get("/oauth/authorize", params=auth_params(row)).text
     assert consent_post(token_oauth_client, html, server_token=SERVER_TOKEN, decision="deny").status_code == 302
 
 
-def test_consent_bruteforce_429_and_logged(token_oauth_client, token_oauth_ctx):
+def _fresh(client, row):
+    return client.get("/oauth/authorize", params=auth_params(row)).text
+
+
+def test_consent_lockout_refuses_even_the_right_token(token_oauth_client, token_oauth_ctx, monkeypatch):
+    """Verifier F4: 10 wrong server tokens from one address lock it out, and while locked even the RIGHT token is
+    refused (429), so guessing is really throttled. The lockout doubles each time; it ends after its window."""
+    import aidoc.oauth.endpoints as E
+    clock = [time.time()]
+    monkeypatch.setattr(E.time, "time", lambda: clock[0])
     row = register_client(token_oauth_client)
-    html = token_oauth_client.get("/oauth/authorize", params=auth_params(row)).text
-    for _ in range(10):
-        assert consent_post(token_oauth_client, html, server_token="wrong").status_code == 401
-    r = consent_post(token_oauth_client, html, server_token="wrong")
-    assert r.status_code == 429 and "retry-after" in r.headers and TEXT["err_too_many"] in r.text
+    for _ in range(10):                                                  # a fresh page each time: the per-page cap stays out
+        assert consent_post(token_oauth_client, _fresh(token_oauth_client, row), server_token="wrong").status_code == 401
+    r = consent_post(token_oauth_client, _fresh(token_oauth_client, row), server_token=SERVER_TOKEN)
+    assert r.status_code == 429 and TEXT["err_too_many"] in r.text and int(r.headers["retry-after"]) == 60
+    assert _codes(token_oauth_ctx) == 0
     rows = [c for c in token_oauth_ctx.store.list_mcp_calls(limit=50) if c["method"] == "oauth/authorize"]
     assert len([c for c in rows if c["status"] == "auth_error" and c["error_code"] == "consent_token"]) == 10
-    assert all("wrong" not in str(c) for c in rows)
+    assert any(c["status"] == "rate_limited" and c["error_code"] == "consent_locked" for c in rows)
+    assert all("wrong" not in str(c) and SERVER_TOKEN not in str(c) for c in rows)
+    clock[0] += 61                                                       # the lockout ends ...
+    assert consent_post(token_oauth_client, _fresh(token_oauth_client, row), server_token=SERVER_TOKEN).status_code == 302
+    for _ in range(10):                                                  # ... and a second one lasts twice as long
+        consent_post(token_oauth_client, _fresh(token_oauth_client, row), server_token="wrong")
+    r = consent_post(token_oauth_client, _fresh(token_oauth_client, row), server_token=SERVER_TOKEN)
+    assert r.status_code == 429 and int(r.headers["retry-after"]) == 120
+
+
+def test_consent_nonce_burned_after_wrong_guesses(token_oauth_client, token_oauth_ctx, monkeypatch):
+    """One consent page allows at most 5 wrong server tokens, with a growing pause between them; then it is used up."""
+    import aidoc.oauth.endpoints as E
+    clock = [time.time()]
+    monkeypatch.setattr(E.time, "time", lambda: clock[0])
+    row = register_client(token_oauth_client)
+    html = _fresh(token_oauth_client, row)
+    assert consent_post(token_oauth_client, html, server_token="w1").status_code == 401
+    assert consent_post(token_oauth_client, html, server_token="w2").status_code == 401
+    r = consent_post(token_oauth_client, html, server_token=SERVER_TOKEN)     # 1 s pause after the 2nd wrong guess
+    assert r.status_code == 429 and r.headers["retry-after"] == "1"
+    for i, pause in ((3, 2), (4, 4)):
+        clock[0] += 60
+        assert consent_post(token_oauth_client, html, server_token=f"w{i}").status_code == 401
+        r = consent_post(token_oauth_client, html, server_token=SERVER_TOKEN)
+        assert r.status_code == 429 and r.headers["retry-after"] == str(pause)
+    clock[0] += 60
+    r = consent_post(token_oauth_client, html, server_token="w5")
+    assert r.status_code == 400 and TEXT["err_burned"] in r.text                # the 5th wrong guess burns the page
+    clock[0] += 60
+    r = consent_post(token_oauth_client, html, server_token=SERVER_TOKEN)
+    assert r.status_code == 400 and _codes(token_oauth_ctx) == 0
+    assert consent_post(token_oauth_client, _fresh(token_oauth_client, row), server_token=SERVER_TOKEN).status_code == 302
 
 
 def test_unknown_host_never_becomes_issuer(oauth_client, dcr_client):

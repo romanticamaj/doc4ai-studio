@@ -26,7 +26,7 @@ class OAuthRuntime:
 
     def __init__(self, ctx):
         from aidoc.mcp.ratelimit import RateLimiter
-        from aidoc.oauth.consent import NonceSet
+        from aidoc.oauth.consent import ConsentThrottle, NonceSet
         self.ctx = ctx
         self.registry = ClientRegistry(ctx)
         self.authorize_limiter = RateLimiter(lambda: AUTHORIZE_GET_PER_MIN)
@@ -34,6 +34,7 @@ class OAuthRuntime:
         # threadpool or the event loop, so slow client documents cannot starve other requests (verifier F1)
         self.executor = ThreadPoolExecutor(max_workers=OAUTH_WORKERS, thread_name_prefix="aidoc-oauth")
         self.nonces = NonceSet(ttl_s=1800)                 # the longest consent_ttl_s: a nonce outlives its request
+        self.consent_throttle = ConsentThrottle()           # token-mode guessing (verifier F4)
 
     async def resolve(self, client_id: str, now: float) -> dict:
         import asyncio
@@ -338,13 +339,19 @@ async def authorize_post(request: Request):
         return _error_page(TEXT["err_bad_request"])           # the page was served for another Host
     rt = runtime(request)
     if ctx.token:
+        throttle = rt.consent_throttle
+        retry = throttle.retry_after(ip, req["nonce"], now)
+        if retry is not None:                                 # locked: refused even with the right token
+            _record(ctx, "rate_limited", 429, ip, error_code="consent_locked")
+            return _error_page(TEXT["err_too_many"], 429, extra={"Retry-After": str(retry)})
         given = (form.get("server_token") or [""])[0]
         if not hmac.compare_digest(given.encode("utf-8"), ctx.token.encode("utf-8")):
-            retry = ctx.extras["mcp"].guard.on_failure(ip, "consent_token", None)
-            if retry is not None:
-                return _error_page(TEXT["err_too_many"], 429, extra={"Retry-After": str(retry)})
             _record(ctx, "auth_error", 401, ip, error_code="consent_token")
+            if throttle.failure(ip, req["nonce"], now):
+                rt.nonces.consume(req["nonce"], now)           # burned: the page is used up
+                return _error_page(TEXT["err_burned"], 400)
             return _error_page(TEXT["err_wrong_token"], 401)
+        throttle.success(ip, req["nonce"])
     decision = (form.get("decision") or [""])[0]
     if decision not in ("allow", "deny"):
         return _error_page(TEXT["err_bad_request"])

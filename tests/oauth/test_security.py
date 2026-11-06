@@ -26,8 +26,9 @@ from tests.oauth.conftest import (
 # row: SDK end to end
 from tests.oauth.test_authorize import (  # noqa: F401
     test_bad_redirect_or_client_never_redirects,  # row: redirect manipulation / open redirect
-    test_consent_bruteforce_429_and_logged,  # row: server token brute force
     test_consent_csrf_rejected_and_headers,  # row: consent CSRF / clickjacking / auto-consent
+    test_consent_lockout_refuses_even_the_right_token,  # row: server token brute force
+    test_consent_nonce_burned_after_wrong_guesses,
     test_consent_nonce_single_use,
     test_consent_shows_host_and_redirect,  # row: CIMD impersonation / localhost risk
     test_get_never_issues_code,
@@ -241,7 +242,8 @@ def test_checklist_is_complete():
         "DCR 洪水": ["test_dcr_register_and_limits", "test_prune_oauth"],
         "同意頁 CSRF／點擊劫持／自動同意": ["test_consent_csrf_rejected_and_headers", "test_consent_headers", "test_get_never_issues_code",
                                   "test_consent_nonce_single_use"],
-        "server token 暴力": ["test_token_mode_requires_server_token", "test_consent_bruteforce_429_and_logged"],
+        "server token 暴力": ["test_token_mode_requires_server_token", "test_consent_lockout_refuses_even_the_right_token",
+                         "test_consent_nonce_burned_after_wrong_guesses"],
         "loopback 模式無憑證但 Host 受限": ["test_unknown_host_never_becomes_issuer"],
         "token 外洩到 log": ["test_oauth_secrets_never_logged", "test_redaction_new_prefixes"],
         "401 洩漏": ["test_401_shape_with_prm", "test_401_missing_token_has_no_error_code"],
