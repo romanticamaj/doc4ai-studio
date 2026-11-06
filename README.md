@@ -80,6 +80,34 @@ AIDOC_TOKEN="$(cat data/serve.token)" uv run aidoc serve --host 0.0.0.0
 
 While the server runs, `aidoc convert` and `aidoc batch` hand their work to its queue.
 
+### Windows Firewall
+
+On `127.0.0.1` (the default) Windows Firewall is not involved: it never prompts for or blocks loopback traffic, and
+no token is needed.
+
+Binding a network address (`--host 0.0.0.0`) makes Windows ask whether `python.exe` may accept connections. The rule
+it creates names the full path of that executable, and the Python that `uv run` uses lives in a versioned folder
+(e.g. `%APPDATA%\uv\python\cpython-3.12.13-windows-x86_64-none\python.exe`): every Python upgrade is a new program to
+the firewall and asks again. Dismissing the prompt (Cancel, or no network type ticked) silently creates a **Block**
+rule, after which the server is unreachable from other devices with no further prompt.
+
+Allow the port instead of the program, once, in an elevated PowerShell:
+
+```powershell
+New-NetFirewallRule -DisplayName "Doc4AI 3333" -Direction Inbound -Protocol TCP -LocalPort 3333 -Action Allow -Profile Private
+```
+
+- Use the port you serve on (`--port`; the default is 8765).
+- `-Profile Private` keeps the port closed on networks Windows treats as Public (cafés, hotel Wi-Fi). A Tailscale
+  interface must be set to Private for the rule to apply to it.
+- Remove Block rules left by a dismissed prompt:
+
+  ```powershell
+  Get-NetFirewallRule -Direction Inbound | Where-Object { $_.DisplayName -eq 'python.exe' -and $_.Action -eq 'Block' } | Remove-NetFirewallRule
+  ```
+
+- Remove the port rule when you go back to `127.0.0.1`: `Remove-NetFirewallRule -DisplayName "Doc4AI 3333"`.
+
 ## VLM OCR (optional, off by default)
 
 A fourth engine, `vlm`, sends page images to any **OpenAI-compatible vision endpoint** (Ollama or LM Studio on this
@@ -224,7 +252,7 @@ MCP clients that support OAuth (Claude Code, Cursor, VS Code, the MCP Python SDK
 claude mcp add --transport http doc4ai http://127.0.0.1:3333/mcp
 ```
 
-Then in Claude Code type `/mcp`, choose `doc4ai`, and pick 認證 (Authenticate). Your browser opens Doc4AI's 「授權連線」 page: it shows the client's self-reported name (marked 未驗證), where it comes from (bold host such as `claude.ai`, or 「本機註冊的用戶端」), the exact address the browser returns to, and the permissions. `doc4ai:read` and `doc4ai:convert` are ticked; `doc4ai:convert:local` and `doc4ai:manage` are marked 高風險 and stay off unless you tick them. Press 允許連線 and the browser hands the connection back to Claude Code. Cursor (`~/.cursor/mcp.json`) and VS Code (`.vscode/mcp.json`) need only the URL:
+Then in Claude Code type `/mcp`, choose `doc4ai`, and pick 認證 (Authenticate). Your browser opens Doc4AI's 「授權連線」 page: it shows the client's self-reported name (marked 未驗證), where it comes from (bold host such as `claude.ai`, or 「本機註冊的用戶端」), the exact address the browser returns to, and the permissions. `doc4ai:read` and `doc4ai:convert` are ticked; `doc4ai:convert:local` and `doc4ai:manage` carry a small ! mark and stay off unless you tick them. Press 允許連線 and the browser hands the connection back to Claude Code. Cursor (`~/.cursor/mcp.json`) and VS Code (`.vscode/mcp.json`) need only the URL:
 
 ```json
 { "mcpServers": { "doc4ai": { "url": "http://127.0.0.1:3333/mcp" } } }
