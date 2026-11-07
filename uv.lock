@@ -675,6 +675,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "mcp" },
     { name = "nvidia-ml-py" },
     { name = "psutil" },
@@ -693,7 +694,6 @@ bench = [
     { name = "rapidfuzz", version = "3.14.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 dev = [
-    { name = "httpx" },
     { name = "openpyxl" },
     { name = "pillow" },
     { name = "pytest" },
@@ -706,6 +706,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=2.2,<2.3" },
     { name = "nvidia-ml-py", specifier = ">=12" },
     { name = "psutil", specifier = ">=6" },
@@ -722,7 +723,6 @@ bench = [
     { name = "rapidfuzz", specifier = ">=3" },
 ]
 dev = [
-    { name = "httpx", specifier = ">=0.27" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "pillow", specifier = ">=10" },
     { name = "pytest", specifier = ">=8" },

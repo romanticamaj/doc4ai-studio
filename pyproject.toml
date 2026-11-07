@@ -10,6 +10,7 @@ dependencies = [
   "nvidia-ml-py>=12",
   "tomli>=2; python_version < '3.11'",
   "tomlkit>=0.12",
+  "httpx>=0.27",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "mcp>=2.2,<2.3",
@@ -34,7 +35,6 @@ dev = [
   "python-pptx>=1.0",
   "openpyxl>=3.1",
   "pillow>=10",
-  "httpx>=0.27",
   "ruff>=0.6",
 ]
 # benchmark only (spec 2026-10-05 verify §3; index A25): bench/ is not part of the wheel and `doc4ai` never imports these

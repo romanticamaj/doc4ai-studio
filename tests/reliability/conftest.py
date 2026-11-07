@@ -36,8 +36,9 @@ def batch_proc():
 
 
 @pytest.fixture
-def wait_for():
+def wait_for(tmp_root):
     def wait(pred, timeout: float, interval: float = 0.1):
+        timeout *= 3 if os.environ.get("CI") else 1             # hosted runners are several times slower
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
@@ -46,7 +47,10 @@ def wait_for():
             except Exception:  # noqa: BLE001, S110  the DB may be mid-write in the other process
                 pass
             time.sleep(interval)
-        raise AssertionError(f"condition not met within {timeout}s")
+        errs = "".join(f"
+--- {f.name}
+{f.read_text(errors='replace')[-2000:]}" for f in sorted(tmp_root.glob("batch*.err")))
+        raise AssertionError(f"condition not met within {timeout}s{errs}")
     return wait
 
 
