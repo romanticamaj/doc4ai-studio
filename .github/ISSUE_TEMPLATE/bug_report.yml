@@ -1,0 +1,55 @@
+name: Bug report
+description: A conversion, the web studio, the CLI or the MCP server did something wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not attach confidential documents. A small sample that shows the same problem is enough.
+        Remove tokens, host names and private paths from logs. Security problems go through [SECURITY.md](https://github.com/romanticamaj/doc4ai-studio/blob/master/SECURITY.md), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. doc4ai convert sample.pdf
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Conversion quality
+        - Web studio
+        - CLI
+        - MCP or OAuth
+        - docling-serve compatible API
+        - Install or engine setup
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `doc4ai --version`
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS, GPU and engine
+      placeholder: Windows 11, RTX 4070, MinerU
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or the JSON sidecar
+      render: text
