@@ -47,10 +47,8 @@ def wait_for(tmp_root):
             except Exception:  # noqa: BLE001, S110  the DB may be mid-write in the other process
                 pass
             time.sleep(interval)
-        errs = "".join(f"
---- {f.name}
-{f.read_text(errors='replace')[-2000:]}" for f in sorted(tmp_root.glob("batch*.err")))
-        raise AssertionError(f"condition not met within {timeout}s{errs}")
+        logs = [f"--- {f.name}\n{f.read_text(errors='replace')[-2000:]}" for f in sorted(tmp_root.glob("batch*.err"))]
+        raise AssertionError("\n".join([f"condition not met within {timeout}s", *logs]))
     return wait
 
 
