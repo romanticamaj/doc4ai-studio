@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,10 +27,10 @@ def _added_removed(before: str, after: str) -> tuple[list[str], list[str]]:
 
 
 @pytest.mark.parametrize("value, needle", [
-    ("rel\\dir", "絕對路徑"), ("\\\\srv\\s\\x", "本機"), ("C:\\", "整個磁碟"), ("<data>\\x", "內部資料夾"),
+    ("rel\\dir", "絕對路徑"), ("\\\\srv\\s\\x", "本機"), ("<drive>", "整個磁碟"), ("<data>" + os.sep + "x", "內部資料夾"),
     ("C:\\" + "a" * 201, "200"), ("\\\\?\\C:\\x", "本機")])
 def test_put_root_dir_rejects(api, tmp_root, value, needle):
-    value = value.replace("<data>", str(tmp_root / "data"))
+    value = value.replace("<data>", str(tmp_root / "data")).replace("<drive>", tmp_root.anchor)
     r = api.put("/api/settings", json={"general": {"root_dir": value}})
     assert r.status_code == 422 and needle in r.json()["detail"]                         # A11: 6 cases
 

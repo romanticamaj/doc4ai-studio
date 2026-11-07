@@ -1,6 +1,7 @@
 """The Doc4AI folder (spec 2026-10-29 §3): resolution, validation, warnings (plan Task 1)."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -55,10 +56,10 @@ def test_env_overrides_root_dir(tmp_root, tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("value, needle", [
     (r"relative\dir", "絕對路徑"), (r"\\server\share\x", "本機"), (r"\\?\C:\x", "本機"),
-    ("C:\\", "整個磁碟"), (r"<data_dir>\lib", "內部資料夾"), ("C:\\" + "a" * 200, "200")])
+    ("<drive>", "整個磁碟"), ("<data_dir>" + os.sep + "lib", "內部資料夾"), ("C:\\" + "a" * 200, "200")])
 def test_root_dir_problem(value, needle, tmp_root):
     data = tmp_root / "data"
-    value = value.replace("<data_dir>", str(data))
+    value = value.replace("<data_dir>", str(data)).replace("<drive>", tmp_root.anchor)
     problem = root_dir_problem(value, data_dir=data, envs_dir=tmp_root / "envs")
     assert problem is not None and needle in problem
 
@@ -105,7 +106,7 @@ def test_root_is_normalized(tmp_root, tmp_path, monkeypatch):
     """Verifier P4: `lib\\x\\..` and `lib` are one folder, so planning and ownership checks see one path."""
     lib = tmp_path / "lib"
     lib.mkdir()
-    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(lib) + "\\x\\..")
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", os.path.join(str(lib), "x", ".."))
     cfg = load_config()
     assert cfg.library_root() == lib and cfg.source_root() == lib / "source"
 

@@ -353,7 +353,8 @@ def test_unreferenced_files_compare_real_paths(tmp_root, fixtures, monkeypatch):
     _, t = lb.convert(lb.place("spelled.pdf"))
     d = lb.doc(t)
     cp = Path(d["source_copy_path"])
-    alias = os.path.join(str(cp.parent.parent), "x", "..", cp.parent.name, cp.name.upper())
+    alias = os.path.join(str(cp.parent.parent), "x", "..", cp.parent.name,
+                         cp.name.upper() if os.name == "nt" else cp.name)
     lb.store.set_source_copy(d["id"], path=alias, status="copied", error=None,
                              size=d["source_copy_size"], mtime_ns=d["source_copy_mtime_ns"])
     assert unreferenced_files(lb.store, lb.cfg.source_root()) == 0

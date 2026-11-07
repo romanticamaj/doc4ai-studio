@@ -1,6 +1,7 @@
 """Schema v7: documents.source_copy_* (spec 2026-10-29 §9.1; plan Task 2, A2)."""
 from __future__ import annotations
 
+import os
 import sqlite3
 
 import pytest
@@ -92,7 +93,9 @@ def test_set_source_copy_and_lookup(tmp_path):
     d = s.get_document(a)
     assert (d["source_copy_path"], d["source_copy_status"], d["source_copy_size"], d["source_copy_mtime_ns"],
             d["source_copy_at"]) == ("C:\\lib\\source\\x\\x.pdf", "copied", 10, 99, 5.0)
-    assert s.document_by_source_copy("c:\\LIB\\source\\x\\X.pdf")["id"] == a
+    # paths compare the way the OS does: only Windows ignores case
+    spelled = "c:\\LIB\\source\\x\\X.pdf" if os.name == "nt" else "C:\\lib\\source\\x\\x.pdf"
+    assert s.document_by_source_copy(spelled)["id"] == a
     assert s.document_by_source_copy("C:\\other.pdf") is None
     _doc(s, 2)
     s.set_document_status(_doc(s, 3), "orphaned")

@@ -126,6 +126,6 @@ def test_copy_error_is_shown_relative_to_the_doc4ai_folder(client, ctx, tmp_root
     did = converted(client, ctx, tmp_root, fixtures)
     root = str(ctx.config.library_root())
     ctx.store.set_source_copy(did, path=None, status="failed",
-                              error=f"io_error: [errno 17] File exists: {root}\\source\\text")
+                              error=f"io_error: [errno 17] File exists: {root}{os.sep}source{os.sep}text")
     sc = client.get(f"/api/documents/{did}").json()["source_copy"]
-    assert sc["error"] == "io_error: [errno 17] File exists: source\\text" and root not in sc["error"]
+    assert sc["error"] == f"io_error: [errno 17] File exists: source{os.sep}text" and root not in sc["error"]

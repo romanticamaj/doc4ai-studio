@@ -196,7 +196,7 @@ def test_plan_reuses_matching_target(tmp_path, store):
     t.parent.mkdir(parents=True)
     t.write_bytes(b"same")
     before = t.stat().st_mtime_ns
-    p = plan_path(store, root, output_dir="C:\\out\\a", source_display="a.pdf", sha256=_sha(b"same"), doc_id=None)
+    p = plan_path(store, root, output_dir="/out/a", source_display="a.pdf", sha256=_sha(b"same"), doc_id=None)
     assert p.present and p.path == t and t.stat().st_mtime_ns == before
 
 
@@ -211,12 +211,12 @@ def test_plan_uses_sha8_dir_when_taken(tmp_path, store, taken):
         (root / "a").mkdir(parents=True)
         (root / "a" / "a.pdf").write_bytes(b"different content")
     elif taken == "db_owner":
-        other = _doc(store, 1, sha, "C:\\other\\a")
+        other = _doc(store, 1, sha, "/other/a")
         store.set_source_copy(other, path=str(root / "a" / "a.pdf"), status="copied", error=None)
     else:
         root.mkdir(parents=True)
         (root / "a").write_text("a file named like the folder", encoding="utf-8")
-    p = plan_path(store, root, output_dir="C:\\out\\a", source_display="a.pdf", sha256=sha, doc_id="me")
+    p = plan_path(store, root, output_dir="/out/a", source_display="a.pdf", sha256=sha, doc_id="me")
     assert p == source_copy.Planned(root / f"a-{sha[:8]}" / "a.pdf", False)
 
 
@@ -225,9 +225,9 @@ def test_plan_ignores_part_files_and_own_db_path(tmp_path, store):
     sha = _sha(b"mine")
     (root / "a").mkdir(parents=True)
     (root / "a" / ".a.pdf.0123abcd.part").write_bytes(b"half")
-    me = _doc(store, 1, sha, "C:\\out\\a")
+    me = _doc(store, 1, sha, "/out/a")
     store.set_source_copy(me, path=str(root / "a" / "a.pdf"), status="failed", error=None)
-    p = plan_path(store, root, output_dir="C:\\out\\a", source_display="a.pdf", sha256=sha, doc_id=me)
+    p = plan_path(store, root, output_dir="/out/a", source_display="a.pdf", sha256=sha, doc_id=me)
     assert p.path == root / "a" / "a.pdf" and not p.present
 
 
@@ -240,7 +240,7 @@ def test_plan_collision_only_when_every_place_is_taken(tmp_path, store, monkeypa
         (root / d).mkdir(parents=True)
         (root / d / "a.pdf").write_bytes(b"someone else")
     with pytest.raises(CopyError) as e:
-        plan_path(store, root, output_dir="C:\\out\\a", source_display="a.pdf", sha256=sha, doc_id=None)
+        plan_path(store, root, output_dir="/out/a", source_display="a.pdf", sha256=sha, doc_id=None)
     assert e.value.code == "collision"
     assert all((root / d / "a.pdf").read_bytes() == b"someone else" for d in ("a", f"a-{sha[:8]}", f"a-{sha[:8]}-2"))
 

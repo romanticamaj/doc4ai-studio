@@ -14,6 +14,10 @@ from tests.unit.test_backfill import lib  # noqa: F401  the 8-document library o
 from tests.unit.test_pipeline_source_copy import Lib
 
 
+def _lock(p: Path) -> bool:
+    return p.name == "aidoc.lock" or p.parent.name == "cli"
+
+
 def test_dry_run_prints_totals_and_exits_3(lib, capsys):  # noqa: F811
     tree = sorted(p for p in Path(lib.root).rglob("*") if p.is_file())
     rc = main(["sources", "backfill", "--dry-run"])
@@ -23,8 +27,9 @@ def test_dry_run_prints_totals_and_exits_3(lib, capsys):  # noqa: F811
     assert "copied 3   already present 1   missing original 2   sha mismatch 1   unreadable 0   failed 0   " \
            "skipped (orphaned) 1" in out
     assert "missing original:" in out and "(changed since conversion)" in out and str(lib.srcs["d7"]) in out
-    assert sorted(p for p in Path(lib.root).rglob("*") if p.is_file() and p.name != "aidoc.lock") == \
-        [p for p in tree if p.name != "aidoc.lock"]
+    # lock files are not results; on POSIX an empty data/cli/<pid>.lock stays until the next check clears it
+    assert sorted(p for p in Path(lib.root).rglob("*") if p.is_file() and not _lock(p)) == \
+        [p for p in tree if not _lock(p)]
 
 
 def test_json_equals_the_report_shape(lib, capsys):  # noqa: F811
@@ -98,7 +103,8 @@ def test_serverless_dry_run_writes_nothing(tmp_root, fixtures, monkeypatch, caps
 
     def tree():
         return sorted((p.relative_to(tmp_root).as_posix(), p.stat().st_size, p.stat().st_mtime_ns)
-                      for p in tmp_root.rglob("*") if p.is_file() and not p.name.startswith("aidoc.db"))
+                      for p in tmp_root.rglob("*")
+                      if p.is_file() and not p.name.startswith("aidoc.db") and not _lock(p))
     before = tree()
     assert main(["sources", "backfill", "--dry-run"]) == 0
     assert "dry run" in capsys.readouterr().out
