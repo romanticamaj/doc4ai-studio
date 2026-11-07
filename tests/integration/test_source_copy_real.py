@@ -1,6 +1,6 @@
 """A12 (spec 2026-10-29 §13-§14): a real PDF under a deep Chinese path is converted by the real engines, its source
 copy is verified, then the original is moved away and the work copy expires — and the Document view, reassess,
-verify and reconvert are all served by the copy. Run: AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow <this file>"""
+verify and reconvert are all served by the copy. Run: DOC4AI_REQUIRE_MANUAL=1 uv run pytest -m slow <this file>"""
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.cli import main
+from doc4ai.cli import main
 from tests.manual import manual_sample, require_engine
 
 pytestmark = pytest.mark.slow
@@ -44,9 +44,9 @@ def test_real_pdf_served_verified_reassessed_and_reconverted_from_its_copy(tmp_r
 
     # the original goes away and the work copy expires
     src.unlink()
-    from aidoc.config import load_config
-    from aidoc.sources import purge_expired_work_copies, resolve_source
-    from aidoc.store import Store
+    from doc4ai.config import load_config
+    from doc4ai.sources import purge_expired_work_copies, resolve_source
+    from doc4ai.store import Store
     store = Store(tmp_root / "data" / "aidoc.db")
     doc = store.list_documents()[0]
     store.update_document(doc["id"], work_copy_expires_at=time.time() - 1)
@@ -57,8 +57,8 @@ def test_real_pdf_served_verified_reassessed_and_reconverted_from_its_copy(tmp_r
 
     from fastapi.testclient import TestClient
 
-    from aidoc.reassess import reassess_document
-    from aidoc.server.app import build_context, create_app
+    from doc4ai.reassess import reassess_document
+    from doc4ai.server.app import build_context, create_app
     ctx = build_context(load_config(), token=None, start_workers=False)
     served = []
     try:

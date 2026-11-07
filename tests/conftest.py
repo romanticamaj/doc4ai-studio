@@ -11,27 +11,27 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 # ---- Doc4AI folder isolation (spec 2026-10-29 §12.4): no test may write into the repo's source/, the platform
-# default Doc4AI folder or the Doc4AI folder the repo's aidoc.toml names. Every test gets its own
-# AIDOC_LIBRARY_ROOT (tests of the resolution rules opt out with @pytest.mark.library_root_env), and the session
+# default Doc4AI folder or the Doc4AI folder the repo's doc4ai.toml names. Every test gets its own
+# DOC4AI_LIBRARY_ROOT (tests of the resolution rules opt out with @pytest.mark.library_root_env), and the session
 # fails when any of those folders changed (or was created).
 
 @pytest.fixture(autouse=True)
 def _isolated_library_root(request, tmp_path, monkeypatch):
     if request.node.get_closest_marker("library_root_env") is None:
-        monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_path / "library"))
+        monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_path / "library"))
 
 
 def _guarded_source_dirs() -> list[Path]:
-    from aidoc.config import default_library_root
+    from doc4ai.config import default_library_root
     # the repo's source/, the platform default Doc4AI folder (C:\doc4ai / ~/doc4ai, user decision 2026-10-29: it
-    # must not even be created by a test) and the root_dir the repo's aidoc.toml names
+    # must not even be created by a test) and the root_dir the repo's doc4ai.toml names
     dirs = [REPO / "source", default_library_root()]
     try:
         if sys.version_info >= (3, 11):
             import tomllib
         else:  # pragma: no cover
             import tomli as tomllib
-        with open(REPO / "aidoc.toml", "rb") as f:
+        with open(REPO / "doc4ai.toml", "rb") as f:
             rd = ((tomllib.load(f).get("general") or {}).get("root_dir") or "").strip()
         if rd:
             dirs.append(Path(rd) / "source")
@@ -58,11 +58,11 @@ def _snapshot(d: Path) -> set[tuple[str, int, int]]:
 
 
 def pytest_sessionstart(session):
-    session.config._aidoc_source_guard = {str(d): _snapshot(d) for d in _guarded_source_dirs()}
+    session.config._doc4ai_source_guard = {str(d): _snapshot(d) for d in _guarded_source_dirs()}
 
 
 def pytest_sessionfinish(session, exitstatus):
-    before = getattr(session.config, "_aidoc_source_guard", None)
+    before = getattr(session.config, "_doc4ai_source_guard", None)
     if before is None:
         return
     changed = [d for d, snap in before.items() if _snapshot(Path(d)) != snap]
@@ -81,11 +81,11 @@ def tmp_root(tmp_path, monkeypatch):
     root = tmp_path / "root"
     (root / "data").mkdir(parents=True)
     (root / "out").mkdir()
-    monkeypatch.setenv("AIDOC_ROOT", str(root))
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(root))
-    monkeypatch.setenv("AIDOC_DATA", str(root / "data"))
-    monkeypatch.delenv("AIDOC_CONFIG", raising=False)
-    monkeypatch.delenv("AIDOC_TOKEN", raising=False)
+    monkeypatch.setenv("DOC4AI_ROOT", str(root))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("DOC4AI_DATA", str(root / "data"))
+    monkeypatch.delenv("DOC4AI_CONFIG", raising=False)
+    monkeypatch.delenv("DOC4AI_TOKEN", raising=False)
     return root
 
 
@@ -98,8 +98,8 @@ def fixtures() -> Path:
 
 @pytest.fixture
 def ctx(tmp_root, monkeypatch):
-    from aidoc.config import load_config
-    from aidoc.server.app import build_context
+    from doc4ai.config import load_config
+    from doc4ai.server.app import build_context
     from tests.fakes.scenario import fake_env, write_scenario
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     c = build_context(load_config(), token=None, start_workers=False)
@@ -111,7 +111,7 @@ def ctx(tmp_root, monkeypatch):
 def client(ctx):
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(ctx), client=("127.0.0.1", 50000),            # a loopback client
                     base_url="http://127.0.0.1:8765") as c:
         yield c
@@ -119,8 +119,8 @@ def client(ctx):
 
 @pytest.fixture
 def token_ctx(tmp_root, monkeypatch):
-    from aidoc.config import load_config
-    from aidoc.server.app import build_context
+    from doc4ai.config import load_config
+    from doc4ai.server.app import build_context
     from tests.fakes.scenario import fake_env, write_scenario
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     c = build_context(load_config(), token="s3cret", start_workers=False)
@@ -137,7 +137,7 @@ def live_server(ctx):
 
     import uvicorn
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     server = uvicorn.Server(uvicorn.Config(create_app(ctx), host="127.0.0.1", port=0, log_level="warning",
                                            lifespan="on"))
     th = threading.Thread(target=server.run, daemon=True)
@@ -148,7 +148,7 @@ def live_server(ctx):
             raise RuntimeError("uvicorn did not start")
         _time.sleep(0.02)
     port = server.servers[0].sockets[0].getsockname()[1]
-    ctx.extras["bind_port"] = port                    # like `aidoc serve`: the port it really listens on
+    ctx.extras["bind_port"] = port                    # like `doc4ai serve`: the port it really listens on
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     th.join(10)
@@ -156,9 +156,9 @@ def live_server(ctx):
 
 @pytest.fixture(autouse=True)
 def _oauth_mode(request):
-    """AIDOC_TEST_OAUTH=0|1 runs a suite (tests/mcp, tests/compat) with [oauth] enabled forced off or on, so the PAT
+    """DOC4AI_TEST_OAUTH=0|1 runs a suite (tests/mcp, tests/compat) with [oauth] enabled forced off or on, so the PAT
     path is checked in both modes (local OAuth plan 2026-11-05, matrix M3). Unset: the config default (on)."""
-    flag = os.environ.get("AIDOC_TEST_OAUTH")
+    flag = os.environ.get("DOC4AI_TEST_OAUTH")
     if flag not in ("0", "1"):
         return
     for name in ("ctx", "token_ctx"):

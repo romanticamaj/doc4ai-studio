@@ -1,0 +1,535 @@
+from __future__ import annotations
+
+import os
+import re
+import sys
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
+
+import tomlkit
+
+from doc4ai import paths
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib
+
+
+ROOT_DIR_MAX = 200          # leaves room for \source\<159>\<150 + suffix> (spec 2026-10-29 §3.4 V6)
+LIBRARY_ROOT_ENV = "DOC4AI_LIBRARY_ROOT"
+
+
+def default_library_root() -> Path:
+    """The Doc4AI folder when none is set (user decision 2026-10-29): C:\\doc4ai on Windows, ~/doc4ai elsewhere."""
+    if sys.platform == "win32":
+        return Path("C:\\doc4ai")
+    return Path("~/doc4ai").expanduser()
+
+
+@dataclass
+class General:
+    output_dir: str = "out"
+    root_dir: str = ""                 # Doc4AI folder; "" = parent of output_dir (spec 2026-10-29 §3.2)
+    lang: str = "cht"
+    work_retention_days: int = 7
+    enable_audio: bool = False
+
+
+@dataclass
+class Engines:
+    mineru_tier: str = "basic"
+    docling_ocr: str = "rapidocr"
+    docling_page_batch_size: int = 16
+
+
+@dataclass
+class Limits:
+    upload_max_bytes: int = 2147483648
+    timeout_per_page_s: int = 60
+    timeout_min_s: int = 120
+    timeout_per_mb_s: int = 30
+    timeout_max_no_pages_s: int = 1800
+    startup_timeout_s: int = 900
+    disk_space_factor: int = 3
+    # ZIP-based inputs (Office, EPUB, ODF, .zip) are checked before any engine runs (decompression bombs)
+    archive_max_uncompressed_mb: int = 512
+    archive_max_entries: int = 10000
+    archive_max_entry_mb: int = 256
+    archive_max_ratio: int = 200
+    # memory cap of one engine runner process tree; 0 = automatic (75 % of RAM; MarkItDown 25 %, at most 8 GB)
+    engine_memory_mb: int = 0
+    markitdown_memory_mb: int = 0
+
+
+@dataclass
+class Server:
+    host: str = "127.0.0.1"
+    port: int = 8765
+    token: str = ""
+
+
+@dataclass
+class Mcp:
+    """[mcp] (spec 2026-10-01 MCP §10)."""
+    enabled: bool = True
+    allowed_hosts: list[str] = field(default_factory=list)      # extra Host values; the bound interface is added
+    local_path_roots: list[str] = field(default_factory=list)   # convert_path whitelist; empty = tool hidden
+    allow_drive_root: bool = False                              # a whole drive (C:\ or /) as a root needs this
+    default_token_ttl_days: int = 90
+    max_token_ttl_days: int = 365
+    allow_no_expiry: bool = False
+    rate_limit_per_min: int = 60
+    max_concurrent_jobs_per_token: int = 3
+    max_upload_mb: int = 20
+    response_token_budget: int = 8000
+    call_log_retention_days: int = 30
+    call_log_max_rows: int = 200000
+
+
+@dataclass
+class Preview:
+    """[preview] Office preview via LibreOffice (doc4ai.preview). soffice_path is read-only over the API."""
+    enabled: bool = True
+    soffice_path: str = ""          # empty = PATH, then the usual install locations
+    timeout_s: int = 180
+    max_mb: int = 200
+
+
+@dataclass
+class Compat:
+    """[compat] docling-serve compatible API (spec 2026-10-05 compat §7)."""
+    enabled: bool = True
+    sync_timeout_s: int = 600
+    max_file_mb: int = 200
+    max_source_mb: int = 50
+    embed_images_max_mb: int = 20
+    max_concurrent_jobs_per_token: int = 8
+    poll_max_wait_s: int = 60
+    task_retention_days: int = 30
+    json_content: str = "null"          # "null" | "doc4ai" (spike S1: RAGFlow reads md_content first)
+
+
+@dataclass
+class Vlm:
+    """[vlm] VLM OCR engine (spec 2026-10-05 VLM §8.3). backend "none" (default) changes nothing."""
+    backend: str = "none"                  # "none" | "local" | "openai"
+    use_as_fallback: bool = True
+    use_for_repair: bool = True
+    dpi: int = 150                         # remote; the local backend uses local_dpi
+    max_image_px: int = 2000               # remote: long-side limit
+    request_timeout_s: int = 120
+    max_output_tokens: int = 4096
+    # --- openai backend
+    remote_enabled: bool = False           # explicit consent: page images are sent to base_url
+    base_url: str = ""
+    model: str = ""
+    api_key_env: str = "DOC4AI_VLM_API_KEY"
+    api_key: str = ""                      # prefer the environment variable; masked over the API
+    allow_no_key: bool = False
+    max_concurrent: int = 2
+    remote_max_pages_per_doc: int = 200
+    remote_daily_page_budget: int = 500    # 0 = unlimited
+    # --- local backend (llama.cpp + GGUF)
+    local_preset: str = "paddleocr-vl-1.6"  # "paddleocr-vl-1.6" | "qwen2.5-vl-3b" | "custom"
+    local_dpi: int = 200
+    local_max_image_px: int = 1400
+    local_ctx_size: int = 8192
+    local_gguf: str = ""                   # preset "custom": absolute path
+    local_mmproj: str = ""
+    local_prompt_style: str = ""           # "" = by preset; "paddle_tasks" | "generic"
+
+
+@dataclass
+class Oauth:
+    """[oauth] local MCP OAuth (spec 2026-11-05 §9): an embedded authorization server for /mcp."""
+    enabled: bool = True                # /oauth/*, well-known metadata, resource_metadata in the 401; false = Phase 1
+    allow_cimd: bool = True             # clients whose client_id is an https URL (Claude Code)
+    allow_dcr: bool = True              # POST /oauth/register (Cursor, the Python SDK, Inspector)
+    access_ttl_min: int = 60
+    refresh_ttl_days: int = 30          # sliding
+    refresh_max_days: int = 90          # absolute, from the grant's creation
+    code_ttl_s: int = 300
+    consent_ttl_s: int = 600
+    dcr_per_hour_per_ip: int = 20
+
+
+# (low, high) — shared by load_config and PUT /api/settings; refresh_max_days must also be >= refresh_ttl_days
+OAUTH_RANGES = {"access_ttl_min": (5, 1440), "refresh_ttl_days": (1, 365), "refresh_max_days": (1, 730),
+                "code_ttl_s": (30, 600), "consent_ttl_s": (60, 1800), "dcr_per_hour_per_ip": (1, 1000)}
+OAUTH_FLAGS = ("enabled", "allow_cimd", "allow_dcr")
+
+
+def oauth_problem(o: Oauth) -> str | None:
+    """The first problem of an [oauth] section (load_config: refuse to start; PUT /api/settings: 422)."""
+    for key in OAUTH_FLAGS:
+        if not isinstance(getattr(o, key), bool):
+            return f"oauth.{key} must be true or false"
+    for key, (lo, hi) in OAUTH_RANGES.items():
+        val = getattr(o, key)
+        if not isinstance(val, int) or isinstance(val, bool) or not lo <= val <= hi:
+            return f"oauth.{key} must be an integer in {lo}..{hi}"
+    if o.refresh_max_days < o.refresh_ttl_days:
+        return "oauth.refresh_max_days must be >= oauth.refresh_ttl_days"
+    return None
+
+
+def _check_oauth(cfg: Doc4aiConfig, where: Path) -> None:
+    problem = oauth_problem(cfg.oauth)
+    if problem:
+        raise ConfigError(f"{where}: {problem}")
+
+
+VLM_BACKENDS = ("none", "local", "openai")
+VLM_PRESETS = ("paddleocr-vl-1.6", "qwen2.5-vl-3b", "custom")
+VLM_PROMPT_STYLES = ("", "paddle_tasks", "generic")
+# (key, low, high) — shared by load_config and PUT /api/settings
+VLM_RANGES = {"max_concurrent": (1, 8), "dpi": (72, 300), "local_dpi": (72, 300), "max_image_px": (512, 4096),
+              "local_max_image_px": (512, 4096), "local_ctx_size": (2048, 32768), "request_timeout_s": (10, 600),
+              "max_output_tokens": (256, 16384), "remote_max_pages_per_doc": (0, 10 ** 6),
+              "remote_daily_page_budget": (0, 10 ** 7)}
+
+
+def vlm_base_url_problem(url: str) -> str | None:
+    """None when `url` is an absolute http(s) URL without credentials or a query (spec §8.3)."""
+    from urllib.parse import urlsplit
+    try:
+        u = urlsplit(url)
+    except ValueError:
+        return "vlm.base_url is not a URL"
+    if u.scheme not in ("http", "https") or not u.netloc:
+        return "vlm.base_url must be an absolute http(s):// URL"
+    if "@" in u.netloc:
+        return "vlm.base_url must not contain credentials (@); use api_key_env"
+    if u.query or u.fragment:
+        return "vlm.base_url must not contain a query or fragment"
+    return None
+
+
+def vlm_problem(v: Vlm) -> str | None:
+    """The first fatal problem of a [vlm] section (load_config: refuse to start; PUT /api/settings: 422)."""
+    if v.backend not in VLM_BACKENDS:
+        return f"vlm.backend must be one of {list(VLM_BACKENDS)}"
+    if v.local_preset not in VLM_PRESETS:
+        return f"vlm.local_preset must be one of {list(VLM_PRESETS)}"
+    if v.local_prompt_style not in VLM_PROMPT_STYLES:
+        return f"vlm.local_prompt_style must be one of {list(VLM_PROMPT_STYLES)}"
+    for key, (lo, hi) in VLM_RANGES.items():
+        val = getattr(v, key)
+        if not isinstance(val, int) or isinstance(val, bool) or not lo <= val <= hi:
+            return f"vlm.{key} must be an integer in {lo}..{hi}"
+    if v.backend == "openai" or v.base_url:
+        problem = vlm_base_url_problem(v.base_url)
+        if problem:
+            return problem
+    if v.backend == "openai" and not v.model.strip():
+        return "vlm.model must be set for the openai backend"
+    return None
+
+
+def _check_vlm(cfg: Doc4aiConfig, where: Path) -> None:
+    v = cfg.vlm
+    problem = vlm_problem(v)
+    if problem:
+        raise ConfigError(f"{where}: {problem}")
+    if v.remote_enabled and v.backend != "openai":
+        cfg.warnings.append("vlm.remote_enabled is only meaningful with backend = \"openai\"; ignored")
+        v.remote_enabled = False
+    if v.api_key:
+        cfg.warnings.append("vlm.api_key is stored in doc4ai.toml; prefer the environment variable "
+                            f"{v.api_key_env or 'DOC4AI_VLM_API_KEY'}")
+    if v.local_preset == "custom" and v.backend == "local":
+        for key in ("local_gguf", "local_mmproj"):
+            val = getattr(v, key)
+            if not val or not Path(val).is_absolute() or not Path(val).is_file():
+                cfg.warnings.append(f"vlm.{key} must be an existing absolute path for local_preset = \"custom\"")
+
+
+class ConfigError(ValueError):
+    """doc4ai.toml holds a value that is unsafe to run with (the server refuses to start)."""
+
+
+_HOST_RE = re.compile(r"^[A-Za-z0-9.\-\[\]:*]+$")
+MCP_LISTS = ("allowed_hosts", "local_path_roots")
+
+
+def is_drive_root(value: str) -> bool:
+    p = Path(value)
+    try:
+        p = p.resolve()
+    except (OSError, RuntimeError):
+        pass
+    return p.parent == p
+
+
+def mcp_list_problem(key: str, value: str, allow_drive_root: bool = False) -> tuple[str, bool] | None:
+    """The one rule set for [mcp] list entries, shared by PUT /api/settings (422 on any problem) and load_config
+    (fatal problems refuse to start, the others are dropped with a warning). Returns (message, fatal) or None."""
+    if key == "allowed_hosts":
+        if not value or not _HOST_RE.match(value):
+            return f"mcp.allowed_hosts entry '{value}' is not a host[:port|:*]", False
+        return None
+    s = value.replace("\\", "/")
+    if s.startswith("//"):                         # UNC and \\?\ / \\.\ device paths alike
+        return f"mcp.local_path_roots entry '{value}' must be a local path (no UNC or \\\\?\\ paths)", True
+    p = Path(value)
+    if not p.is_absolute():
+        return f"mcp.local_path_roots entry '{value}' must be absolute", True
+    if is_drive_root(value) and not allow_drive_root:
+        return (f"mcp.local_path_roots entry '{value}' is a whole drive; name a folder, or set "
+                f"mcp.allow_drive_root = true if every file on it may be converted by path"), True
+    if not p.is_dir():
+        return f"mcp.local_path_roots entry '{value}' does not exist", False
+    return None
+
+
+def _check_mcp(cfg: Doc4aiConfig, where: Path) -> None:
+    days = cfg.mcp.call_log_retention_days
+    if not isinstance(days, int) or isinstance(days, bool) or days < 1:
+        raise ConfigError(f"{where}: mcp.call_log_retention_days must be an integer >= 1 (0 would delete the whole "
+                          f"MCP call log on every maintenance run)")
+    for key in MCP_LISTS:
+        val = getattr(cfg.mcp, key)
+        if not isinstance(val, list) or not all(isinstance(v, str) for v in val):
+            raise ConfigError(f"{where}: mcp.{key} must be a list of strings")
+        kept = []
+        for v in val:
+            problem = mcp_list_problem(key, v, bool(cfg.mcp.allow_drive_root))
+            if problem is None:
+                kept.append(v)
+            elif problem[1]:
+                raise ConfigError(f"{where}: {problem[0]}; fix or remove it and start again")
+            else:
+                cfg.warnings.append(f"{problem[0]}; ignored")
+        setattr(cfg.mcp, key, kept)
+    for root in cfg.mcp.local_path_roots:
+        if is_drive_root(root):
+            cfg.warnings.append(f"mcp.local_path_roots includes the drive root '{root}' (allowed by "
+                                f"mcp.allow_drive_root): any file on that drive can be converted by path")
+
+
+# ---- Doc4AI folder validation (spec 2026-10-29 §3.4): one rule set for load_config and the API.
+# The messages are the UI texts; the API passes them through unchanged.
+ROOT_MSG_ABSOLUTE = "必須是本機的絕對路徑"
+ROOT_MSG_LOCAL = "必須是本機的絕對路徑（不支援網路路徑、\\\\?\\ 或 \\\\.\\ 路徑）"
+ROOT_MSG_DRIVE = "不能是整個磁碟"
+ROOT_MSG_INTERNAL = "不能放在 Doc4AI 的內部資料夾（data\\）裡"
+ROOT_MSG_TOO_LONG = f"路徑太長（最多 {ROOT_DIR_MAX} 個字元）"
+ROOT_MSG_UNWRITABLE = "無法寫入這個資料夾"
+
+
+def _norm(p: Path | str) -> str:
+    return os.path.normcase(os.path.realpath(str(p)))
+
+
+def _inside(child: str, parent: str) -> bool:
+    try:
+        return os.path.commonpath([child, parent]) == parent
+    except ValueError:                       # different drives
+        return False
+
+
+def root_dir_problem(value: str, *, data_dir: Path, envs_dir: Path) -> str | None:
+    """V1-V4 and V6 of spec 2026-10-29 §3.4 (static checks; no filesystem writes). "" is always fine."""
+    if not isinstance(value, str):
+        return ROOT_MSG_ABSOLUTE
+    if value == "":
+        return None
+    if len(value) > ROOT_DIR_MAX:                                           # V6
+        return ROOT_MSG_TOO_LONG
+    if value.replace("\\", "/").startswith("//"):                           # V2: UNC, \\?\, \\.\
+        return ROOT_MSG_LOCAL
+    p = Path(value)
+    if not p.is_absolute():                                                 # V1
+        return ROOT_MSG_ABSOLUTE
+    if p.parent == p or Path(_norm(p)).parent == Path(_norm(p)):            # V3
+        return ROOT_MSG_DRIVE
+    inner = [_norm(p), _norm(p / "out"), _norm(p / "source")]
+    for internal in (_norm(data_dir), _norm(envs_dir)):                     # V4
+        if any(_inside(x, internal) for x in inner):
+            return ROOT_MSG_INTERNAL
+    data = _norm(data_dir)
+    if any(_inside(data, x) for x in inner[1:]):
+        return ROOT_MSG_INTERNAL
+    return None
+
+
+def _probe(d: Path) -> None:
+    probe = d / f".doc4ai-probe-{os.urandom(4).hex()}"
+    with open(probe, "xb") as f:
+        f.write(b"aidoc")
+    probe.unlink()
+
+
+def root_dir_writable(root: Path, *, create: bool) -> str | None:
+    """V5. create=True (PUT /settings): make root/out and root/source and write + delete a probe file in each.
+    create=False (root-check): an existing root must accept a probe file (written and removed inside it); for a
+    root that does not exist yet nothing at all is written and writability is NOT claimed (os.access only reads the
+    read-only attribute on Windows): only "the nearest existing ancestor is a folder" is checked; the real probe
+    happens on save (create=True). See nearest_existing()."""
+    root = Path(root)
+    try:
+        if create:
+            for sub in ("out", "source"):
+                d = root / sub
+                d.mkdir(parents=True, exist_ok=True)
+                _probe(d)
+            return None
+        anc = root
+        while not anc.exists():
+            if anc.parent == anc:
+                return ROOT_MSG_UNWRITABLE
+            anc = anc.parent
+        if not anc.is_dir():
+            return f"{ROOT_MSG_UNWRITABLE}（{anc} 不是資料夾）"
+        if anc == root:
+            _probe(anc)                      # the folder exists: files must be writable in it
+            return None
+        # not there yet: nothing is written outside the target (an unset field checks C:\doc4ai, and a probe must
+        # never land in the drive root); PUT /settings creates and probes it, first use reports its own errors
+        return None
+    except OSError as e:
+        return f"{ROOT_MSG_UNWRITABLE}（{e.strerror or e}）"
+
+
+def nearest_existing(root: Path) -> Path:
+    """The root itself when it exists, else its nearest existing ancestor."""
+    anc = Path(root)
+    while not anc.exists() and anc.parent != anc:
+        anc = anc.parent
+    return anc
+
+
+def _check_general(cfg: Doc4aiConfig, where: Path, raw_general: dict) -> None:
+    """[general] root_dir and DOC4AI_LIBRARY_ROOT: fatal problems refuse to start, the rest are warnings
+    (spec 2026-10-29 §3.4). Loading never writes anything (no probe file): the folder is created on first use."""
+    rd = cfg.general.root_dir
+    if not isinstance(rd, str):
+        raise ConfigError(f"{where}: general.root_dir must be a string")
+    envs = paths.envs_dir()
+    for label, value in (("general.root_dir", rd), (LIBRARY_ROOT_ENV, os.environ.get(LIBRARY_ROOT_ENV, "").strip())):
+        problem = root_dir_problem(value, data_dir=cfg.data_dir, envs_dir=envs)
+        if problem:
+            src = where if label == "general.root_dir" else "environment"
+            raise ConfigError(f"{src}: {label} = {value!r}: {problem}")
+    if "output_dir" in raw_general:            # the one-line migration note (user decision 2026-10-29)
+        cfg.warnings.append(f"general.output_dir = {cfg.general.output_dir!r} is no longer used: new conversions "
+                            f"go to {cfg.output_root()} (Doc4AI folder {cfg.library_root()}); converted documents "
+                            f"stay where they are")
+    anc = cfg.library_root()
+    while not anc.exists() and anc.parent != anc:
+        anc = anc.parent
+    if not anc.is_dir():
+        cfg.warnings.append(f"Doc4AI folder {cfg.library_root()}: {ROOT_MSG_UNWRITABLE}（{anc} 不是資料夾）")
+
+
+_SECTIONS = {"general": General, "engines": Engines, "limits": Limits, "server": Server, "mcp": Mcp,
+             "preview": Preview, "compat": Compat, "vlm": Vlm, "oauth": Oauth}
+
+
+@dataclass
+class Doc4aiConfig:
+    general: General = field(default_factory=General)
+    engines: Engines = field(default_factory=Engines)
+    limits: Limits = field(default_factory=Limits)
+    server: Server = field(default_factory=Server)
+    mcp: Mcp = field(default_factory=Mcp)
+    preview: Preview = field(default_factory=Preview)
+    compat: Compat = field(default_factory=Compat)
+    vlm: Vlm = field(default_factory=Vlm)
+    oauth: Oauth = field(default_factory=Oauth)
+    root: Path = field(default_factory=paths.project_root)
+    data_dir: Path = field(default_factory=paths.data_dir)
+    warnings: list[str] = field(default_factory=list)            # load-time problems that were ignored
+
+    # ---- the Doc4AI folder (spec 2026-10-29 §3.2): computed on every call, so a hot-applied setting counts at once
+    def root_from_env(self) -> bool:
+        return bool(os.environ.get(LIBRARY_ROOT_ENV, "").strip())
+
+    def root_configured(self) -> bool:
+        return self.root_from_env() or bool((self.general.root_dir or "").strip())
+
+    def _configured_root(self) -> Path | None:
+        env = os.environ.get(LIBRARY_ROOT_ENV, "").strip()
+        if env:
+            return Path(env)
+        rd = (self.general.root_dir or "").strip()
+        return Path(rd) if rd else None
+
+    def library_root(self) -> Path:
+        """DOC4AI_LIBRARY_ROOT > general.root_dir > the platform default (C:\\doc4ai, ~/doc4ai): user decision
+        2026-10-29, which replaced the spec's "parent of output_dir" rule. Normalized (realpath: `..`, 8.3 short
+        names, links) so one physical folder always has one spelling in plans and ownership checks."""
+        root = self._configured_root()
+        return Path(os.path.realpath(root if root is not None else default_library_root()))
+
+    def output_root(self) -> Path:
+        """Where new jobs write: always <root>/out. general.output_dir is a legacy key that is no longer used for new
+        conversions (existing documents keep their absolute output_dir)."""
+        return self.library_root() / "out"
+
+    def source_root(self) -> Path:
+        """Where source copies are written (the value at the time of writing; spec 2026-10-29 §4.4)."""
+        return self.library_root() / "source"
+
+    def to_dict(self) -> dict:
+        return {name: asdict(getattr(self, name)) for name in _SECTIONS}
+
+
+def config_path() -> Path:
+    env = os.environ.get("DOC4AI_CONFIG")
+    if env:
+        return Path(env)
+    new, old = paths.project_root() / "doc4ai.toml", paths.project_root() / "aidoc.toml"
+    return old if old.exists() and not new.exists() else new     # an install from before the rename
+
+
+def _build(section: str, cls, data: dict):
+    names = {f.name for f in fields(cls)}
+    for key in data:
+        if key not in names:
+            raise ValueError(f"unknown config key {section}.{key}")
+    return cls(**data)
+
+
+def load_config(path: Path | None = None) -> Doc4aiConfig:
+    p = Path(path) if path else config_path()
+    raw: dict = {}
+    if p.exists():
+        with open(p, "rb") as f:
+            raw = tomllib.load(f)
+    cfg = Doc4aiConfig()
+    for section, data in raw.items():
+        if section not in _SECTIONS:
+            raise ValueError(f"unknown config section {section}")
+        setattr(cfg, section, _build(section, _SECTIONS[section], data))
+    _check_general(cfg, p, raw.get("general") or {})
+    _check_mcp(cfg, p)
+    _check_vlm(cfg, p)
+    _check_oauth(cfg, p)
+    return cfg
+
+
+def save_config(cfg: Doc4aiConfig, path: Path | None = None, changes: dict | None = None) -> None:
+    """Write to doc4ai.toml, keeping the existing file's comments and layout (tomlkit). With `changes`
+    ({section: {key: value}}) only those keys are written; otherwise every value of `cfg` that differs from the file
+    (or is missing from it) is."""
+    p = Path(path) if path else config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    newline = "\n"
+    try:
+        raw = p.read_bytes().decode("utf-8") if p.exists() else ""
+        newline = "\r\n" if "\r\n" in raw else "\n"           # keep the file's own line endings (no whole-file diff)
+        doc = tomlkit.parse(raw.replace("\r\n", "\n")) if raw else tomlkit.document()
+    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError):
+        doc = tomlkit.document()
+    for section, values in (changes if changes is not None else cfg.to_dict()).items():
+        if section not in doc:
+            doc[section] = tomlkit.table()
+        table = doc[section]
+        for key, val in values.items():
+            if key not in table or table[key] != val:
+                table[key] = val
+    tmp = p.with_name(f".{p.name}.tmp")
+    tmp.write_text(tomlkit.dumps(doc).replace("\r\n", "\n"), encoding="utf-8", newline=newline)
+    os.replace(tmp, p)

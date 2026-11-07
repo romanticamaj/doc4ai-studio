@@ -4,10 +4,10 @@ import fs from "node:fs";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { goTo, pickPages, topPage } from "./syncHelpers.ts";
 
-const base = process.env.AIDOC_E2E_REAL_BASE_URL;
-const docId = process.env.AIDOC_E2E_REAL_DOC_ID;
-const pdfPath = process.env.AIDOC_E2E_REAL_PDF; // tests/fixtures/manual/ortho_p1-80.pdf
-const required = process.env.AIDOC_REQUIRE_MANUAL === "1";
+const base = process.env.DOC4AI_E2E_REAL_BASE_URL;
+const docId = process.env.DOC4AI_E2E_REAL_DOC_ID;
+const pdfPath = process.env.DOC4AI_E2E_REAL_PDF; // tests/fixtures/manual/ortho_p1-80.pdf
+const required = process.env.DOC4AI_REQUIRE_MANUAL === "1";
 
 const squash = (s: string) => s.normalize("NFKC").replace(/\u00ad|-\n/g, "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
@@ -28,7 +28,7 @@ test("real document: 20/20 positions, ≥ 18/20 content probes", async ({ page }
   test.setTimeout(240_000);
   const missing = !base || !docId || !pdfPath || !fs.existsSync(pdfPath);
   if (missing) {
-    if (required) throw new Error("AIDOC_E2E_REAL_BASE_URL / AIDOC_E2E_REAL_DOC_ID / AIDOC_E2E_REAL_PDF missing");
+    if (required) throw new Error("DOC4AI_E2E_REAL_BASE_URL / DOC4AI_E2E_REAL_DOC_ID / DOC4AI_E2E_REAL_PDF missing");
     test.skip(true, "real sync sample not configured");
   }
   await page.setViewportSize({ width: 1440, height: 900 });

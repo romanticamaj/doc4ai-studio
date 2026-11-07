@@ -1,12 +1,12 @@
 """docling-serve compatible API on the real engines (compat spec §9.3). Run:
-AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration/test_compat_real.py"""
+DOC4AI_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration/test_compat_real.py"""
 from __future__ import annotations
 
 import time
 
 import pytest
 
-from aidoc.mcp import tokens as T
+from doc4ai.mcp import tokens as T
 from tests.manual import manual_sample, require_engine
 
 pytestmark = pytest.mark.slow
@@ -16,9 +16,9 @@ pytestmark = pytest.mark.slow
 def real_compat(tmp_root):
     from fastapi.testclient import TestClient
 
-    from aidoc.config import load_config
-    from aidoc.mcp.tokens import load_or_create_secret
-    from aidoc.server.app import build_context, create_app
+    from doc4ai.config import load_config
+    from doc4ai.mcp.tokens import load_or_create_secret
+    from doc4ai.server.app import build_context, create_app
     ctx = build_context(load_config(), token=None, start_workers=False)
     ctx.queue.start()
     secret = load_or_create_secret(ctx.config.data_dir)

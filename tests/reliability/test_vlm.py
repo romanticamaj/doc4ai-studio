@@ -1,6 +1,6 @@
 """VLM engine end to end with fake engines and a fake OpenAI-compatible endpoint (VLM plan Task 12, spec §11.3).
 
-Tests marked ⚑ run the REAL vlm_runner.py against tests/fakes/vlm_server.py (AIDOC_FAKE_ENGINES_EXCEPT=vlm);
+Tests marked ⚑ run the REAL vlm_runner.py against tests/fakes/vlm_server.py (DOC4AI_FAKE_ENGINES_EXCEPT=vlm);
 the others use the fake runner's `vlm` engine."""
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ import psutil
 import pymupdf
 import pytest
 
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pipeline import run_task
-from aidoc.store import Store
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pipeline import run_task
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 from tests.fakes.vlm_server import FakeVlmServer
 
@@ -30,13 +30,13 @@ STICKY = [{"match": {"engine": n}, "behavior": "garbled_sticky"} for n in ("docl
 def _config(root: Path, base_url: str = "http://127.0.0.1:9/v1", **vlm) -> None:
     vals = {"backend": "openai", "base_url": base_url, "model": "fake-vlm", "remote_enabled": True, **vlm}
     lines = ["[vlm]"] + [f"{k} = {json.dumps(v)}" for k, v in vals.items()]
-    (root / "aidoc.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (root / "doc4ai.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 class Env:
     def __init__(self, root: Path, monkeypatch, fixtures: Path):
         self.root, self.mp, self.fixtures = root, monkeypatch, fixtures
-        monkeypatch.setenv("AIDOC_VLM_API_KEY", KEY)
+        monkeypatch.setenv("DOC4AI_VLM_API_KEY", KEY)
         self.sc = root / "sc.json"
         self.store = Store(root / "data" / "aidoc.db")
         self.logs: list[str] = []
@@ -45,7 +45,7 @@ class Env:
         fake_env(self.mp, write_scenario(self.sc, **kw))
 
     def real_vlm(self) -> None:
-        self.mp.setenv("AIDOC_FAKE_ENGINES_EXCEPT", "vlm")
+        self.mp.setenv("DOC4AI_FAKE_ENGINES_EXCEPT", "vlm")
 
     def task(self, src: Path, **opt) -> str:
         opts = ConvertOptions(output_dir=self.root / "out", **opt)
@@ -83,7 +83,7 @@ def _pdf(dst: Path, fixtures: Path, broken: int, text_pages: int) -> Path:
 
 def _track_runners(monkeypatch) -> list[int]:
     """PIDs of the runner processes THIS test starts (not every vlm_runner.py on the machine)."""
-    from aidoc.engines.host import RunnerHost
+    from doc4ai.engines.host import RunnerHost
     pids: list[int] = []
     orig = RunnerHost.start
 
@@ -264,8 +264,8 @@ def test_resume_after_interrupt_redoes_segments_when_the_model_changed(tmp_root,
     threading.Thread(target=stop_after_segment_0, daemon=True).start()
     assert e.run(tid, cancel=cancel) == TaskStatus.cancelled
     assert e.store.list_segments(tid)[0]["status"] == "done"
-    text = (tmp_root / "aidoc.toml").read_text(encoding="utf-8").replace('model = "fake-vlm"', 'model = "other-vlm"')
-    (tmp_root / "aidoc.toml").write_text(text, encoding="utf-8")
+    text = (tmp_root / "doc4ai.toml").read_text(encoding="utf-8").replace('model = "fake-vlm"', 'model = "other-vlm"')
+    (tmp_root / "doc4ai.toml").write_text(text, encoding="utf-8")
     e.scenario()
     e.logs.clear()
     calls_before = len((tmp_root / "calls.jsonl").read_text(encoding="utf-8").splitlines())

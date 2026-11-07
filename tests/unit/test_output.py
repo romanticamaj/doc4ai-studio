@@ -1,6 +1,6 @@
 import json
 
-from aidoc.output import (
+from doc4ai.output import (
     OutputWriter,
     build_sidecar,
     choose_output_dir,
@@ -8,7 +8,7 @@ from aidoc.output import (
     lookup_cached,
     read_sidecar,
 )
-from aidoc.store import Store
+from doc4ai.store import Store
 
 
 def test_choose_dir_plain_and_collision(tmp_root):

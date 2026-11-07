@@ -32,7 +32,7 @@ def _pretend_running(client, ctx, fixtures, engine):
 
 def test_setup_refused_while_that_engine_converts(client, ctx, fixtures, monkeypatch):
     calls = []
-    monkeypatch.setattr("aidoc.server.setup_runner.setup_engines.setup", lambda e, c, log, run=None: calls.append(e))
+    monkeypatch.setattr("doc4ai.server.setup_runner.setup_engines.setup", lambda e, c, log, run=None: calls.append(e))
     _pretend_running(client, ctx, fixtures, "docling")
     for eng in ("docling", "all"):
         r = client.post(f"/api/system/setup/{eng}")
@@ -44,7 +44,7 @@ def test_setup_refused_while_that_engine_converts(client, ctx, fixtures, monkeyp
 
 
 def test_setup_refused_while_a_task_is_still_probing(client, ctx, fixtures, monkeypatch):
-    monkeypatch.setattr("aidoc.server.setup_runner.setup_engines.setup", lambda e, c, log, run=None: True)
+    monkeypatch.setattr("doc4ai.server.setup_runner.setup_engines.setup", lambda e, c, log, run=None: True)
     _pretend_running(client, ctx, fixtures, None)                       # engine not chosen yet: could be any
     r = client.post("/api/system/setup/mineru")
     assert r.status_code == 409 and r.json()["error"] == "engine_busy"
@@ -62,7 +62,7 @@ def _join_setup(ctx):
 
 
 def test_access_log_redacts_query_token(caplog):
-    from aidoc.server.logfilter import install_access_log_redaction
+    from doc4ai.server.logfilter import install_access_log_redaction
     install_access_log_redaction()
     logger = logging.getLogger("uvicorn.access")
     with caplog.at_level(logging.INFO, logger="uvicorn.access"):
@@ -77,10 +77,10 @@ def test_access_log_redacts_query_token(caplog):
 
 
 def test_saving_settings_keeps_comments(client, ctx, tmp_root):
-    toml = tmp_root / "aidoc.toml"
+    toml = tmp_root / "doc4ai.toml"
     toml.write_text('[general]\n# where results go\noutput_dir = "out"  # relative\nlang = "cht"\n',
                     encoding="utf-8")
-    from aidoc.config import load_config
+    from doc4ai.config import load_config
     ctx.config = load_config()
     assert client.put("/api/settings", json={"general": {"lang": "en"}}).status_code == 200
     text = toml.read_text(encoding="utf-8")

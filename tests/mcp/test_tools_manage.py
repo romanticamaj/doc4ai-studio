@@ -15,8 +15,8 @@ def _err(res):
 
 
 def test_cancel_job(mcp_server, mcp_env, fixtures):
-    from aidoc.batch import register_source
-    from aidoc.models import ConvertOptions
+    from doc4ai.batch import register_source
+    from doc4ai.models import ConvertOptions
     ctx = mcp_env.ctx
     opts = ConvertOptions(output_dir=ctx.config.output_root())
     job = ctx.store.create_job(opts, "web")
@@ -32,8 +32,8 @@ def test_cancel_job(mcp_server, mcp_env, fixtures):
 
 
 def test_reconvert_document(mcp_server, mcp_env, fixtures, tmp_root):
-    from aidoc.batch import register_source
-    from aidoc.models import ConvertOptions
+    from doc4ai.batch import register_source
+    from doc4ai.models import ConvertOptions
     ctx = mcp_env.ctx
     src = tmp_root / "in.pdf"
     shutil.copy(fixtures / "text.pdf", src)
@@ -60,8 +60,8 @@ def test_reconvert_document(mcp_server, mcp_env, fixtures, tmp_root):
 
 
 def test_web_reconvert_endpoint_unchanged(client, ctx, fixtures, tmp_root):
-    from aidoc.batch import register_source
-    from aidoc.models import ConvertOptions
+    from doc4ai.batch import register_source
+    from doc4ai.models import ConvertOptions
     src = tmp_root / "in2.pdf"
     shutil.copy(fixtures / "text.pdf", src)
     opts = ConvertOptions(output_dir=ctx.config.output_root())

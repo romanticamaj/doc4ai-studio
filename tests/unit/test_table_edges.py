@@ -3,7 +3,7 @@ against the page's content, not the physical page (1-inch margins are ~8.6 % of 
 import importlib.util
 import sys
 
-from aidoc import paths
+from doc4ai import paths
 
 sys.path.insert(0, str(paths.runner_dir()))
 import _proto

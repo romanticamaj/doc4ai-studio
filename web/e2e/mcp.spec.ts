@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const port = Number(process.env.AIDOC_E2E_PORT ?? 8781);
+const port = Number(process.env.DOC4AI_E2E_PORT ?? 8781);
 
 function sdkCall(token: string): { code: number; out: string } {
   try {

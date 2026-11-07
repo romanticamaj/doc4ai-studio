@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from aidoc.mcp.snippets import PLACEHOLDER, readme_section, render_snippets
+from doc4ai.mcp.snippets import PLACEHOLDER, readme_section, render_snippets
 
 URL = "http://box.tail0.ts.net:3333/mcp"
 

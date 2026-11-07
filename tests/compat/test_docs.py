@@ -14,7 +14,7 @@ RECIPES = {"open-webui": "A", "ragflow": "B", "kotaemon": "B", "dify": "C", "cur
 
 
 def test_readme_has_the_rag_section_with_the_rendered_env_block():
-    from aidoc.mcp.snippets import openwebui_env
+    from doc4ai.mcp.snippets import openwebui_env
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "## RAG platforms (docling-serve compatible API)" in readme
     assert openwebui_env("http://<host>:<port>/mcp") in readme              # same single source as the token dialog

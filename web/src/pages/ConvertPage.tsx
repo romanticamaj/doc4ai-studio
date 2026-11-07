@@ -141,7 +141,7 @@ export default function ConvertPage() {
           <Panel>
             <PanelHeader
               title="本機路徑"
-              description="執行 aidoc serve 這台電腦上的檔案或資料夾，一行一個；資料夾會包含子資料夾。"
+              description="執行 doc4ai serve 這台電腦上的檔案或資料夾，一行一個；資料夾會包含子資料夾。"
             />
             <div className="p-4">
               <Label htmlFor="paths" className="sr-only">

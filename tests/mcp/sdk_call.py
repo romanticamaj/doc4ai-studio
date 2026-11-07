@@ -31,7 +31,7 @@ async def _session(url: str, token: str, mode: str, client_name: str):
 
 def _count(text: str) -> int:
     try:
-        from aidoc.chunk import count_tokens
+        from doc4ai.chunk import count_tokens
         return count_tokens(text)
     except Exception:  # noqa: BLE001  offline: bytes/3
         return len(text.encode("utf-8")) // 3

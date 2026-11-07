@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from aidoc import paths
-from aidoc.config import load_config
-from aidoc.engines.base import EngineError
-from aidoc.engines.host import RunnerHost, compute_timeout, runner_env
-from aidoc.models import ConvertOptions
+from doc4ai import paths
+from doc4ai.config import load_config
+from doc4ai.engines.base import EngineError
+from doc4ai.engines.host import RunnerHost, compute_timeout, runner_env
+from doc4ai.models import ConvertOptions
 from tests.fakes.scenario import write_scenario
 
 
 def make_host(tmp_path, monkeypatch, **sc):
-    monkeypatch.setenv("AIDOC_FAKE_SCENARIO", str(write_scenario(tmp_path / "sc.json", **sc)))
+    monkeypatch.setenv("DOC4AI_FAKE_SCENARIO", str(write_scenario(tmp_path / "sc.json", **sc)))
     return RunnerHost(Path(sys.executable), paths.runner_script("fake"), {}, startup_timeout_s=30)
 
 
@@ -94,7 +94,7 @@ def test_relative_workdir(tmp_path, monkeypatch):
 
 
 def test_clock_starts_at_ready_not_at_spawn(tmp_path, monkeypatch):
-    """Index A1: model loading before AIDOC_READY does not eat the conversion timeout."""
+    """Index A1: model loading before DOC4AI_READY does not eat the conversion timeout."""
     h = make_host(tmp_path, monkeypatch, startup_delay_s=2.5)
     h.start(tmp_path)
     try:
@@ -107,8 +107,8 @@ def test_clock_starts_at_ready_not_at_spawn(tmp_path, monkeypatch):
 def test_no_ready_within_startup_cap_is_transient_and_killed(tmp_path, monkeypatch):
     import psutil
 
-    from aidoc.models import ErrorKind
-    monkeypatch.setenv("AIDOC_FAKE_SCENARIO", str(write_scenario(tmp_path / "sc.json", startup_delay_s=60)))
+    from doc4ai.models import ErrorKind
+    monkeypatch.setenv("DOC4AI_FAKE_SCENARIO", str(write_scenario(tmp_path / "sc.json", startup_delay_s=60)))
     h = RunnerHost(Path(sys.executable), paths.runner_script("fake"), {}, startup_timeout_s=1.5)
     h.start(tmp_path)
     t0 = time.time()

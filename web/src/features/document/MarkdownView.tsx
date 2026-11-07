@@ -43,7 +43,7 @@ export function markdownUrl(url: string, docId: string, version?: string | numbe
   try {
     const origin = typeof location !== "undefined" ? location.origin : "http://localhost";
     const u = new URL(safe, `${origin}/documents/${docId}`);
-    // same origin or not: aidoc may be reached under several names (127.0.0.1, a LAN or tailnet address)
+    // same origin or not: doc4ai may be reached under several names (127.0.0.1, a LAN or tailnet address)
     if (/^\/api(\/|$)/i.test(u.pathname)) return "";
   } catch {
     return "";

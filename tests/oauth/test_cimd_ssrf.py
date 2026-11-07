@@ -9,7 +9,7 @@ import threading
 
 import pytest
 
-from aidoc.oauth import clients
+from doc4ai.oauth import clients
 
 
 class Dialed(Exception):

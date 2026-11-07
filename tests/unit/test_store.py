@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.models import Attempt, ConvertOptions, JobStatus, TaskStatus
-from aidoc.store import Store
+from doc4ai.models import Attempt, ConvertOptions, JobStatus, TaskStatus
+from doc4ai.store import Store
 
 
 @pytest.fixture
@@ -145,7 +145,7 @@ def test_store_is_safe_to_share_between_threads(store):
 
 
 def test_update_document_quality(tmp_path):
-    from aidoc.store import Store
+    from doc4ai.store import Store
     store = Store(tmp_path / "a.db")
     did = store.upsert_document(sha256="q" * 64, source_path="a.pdf", output_dir="out/q", engine="docling",
                                 quality={"score": 1.0, "level": "ok", "reasons": []}, pages=2, lang="cht",
@@ -158,8 +158,8 @@ def test_update_document_quality(tmp_path):
 def test_create_task_stores_work_path(tmp_path):
     from pathlib import Path
 
-    from aidoc.models import ConvertOptions
-    from aidoc.store import Store
+    from doc4ai.models import ConvertOptions
+    from doc4ai.store import Store
     store = Store(tmp_path / "a.db")
     job = store.create_job(ConvertOptions(output_dir=Path("out")), "web")
     tid, _ = store.create_task(job, "a.pdf", "s" * 64, 1, 1.0, "cht", "out/a", work_path="w/src.pdf")
@@ -167,7 +167,7 @@ def test_create_task_stores_work_path(tmp_path):
 
 
 def test_vlm_usage_upsert_and_today(tmp_path):
-    from aidoc.store import Store
+    from doc4ai.store import Store
     s = Store(tmp_path / "a.db")
     assert s.schema_version() >= 6
     s.add_vlm_usage("2026-10-05", "openai", "h:1", pages=3, requests=3, prompt_tokens=10, completion_tokens=5)
@@ -183,7 +183,7 @@ def test_vlm_usage_upsert_and_today(tmp_path):
 def test_v5_database_migrates_to_v6_with_data_intact(tmp_path):
     import sqlite3
 
-    from aidoc.store import Store
+    from doc4ai.store import Store
     db = tmp_path / "a.db"
     s = Store(db)
     job = s.create_job(ConvertOptions(output_dir=tmp_path), "web")

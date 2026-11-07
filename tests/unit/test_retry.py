@@ -4,16 +4,16 @@ import time
 
 import pytest
 
-from aidoc.config import load_config
-from aidoc.engines.base import EngineError
-from aidoc.engines.docling import DoclingEngine
-from aidoc.engines.mineru import MineruEngine
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, ErrorKind, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pipeline import run_task
-from aidoc.retry import RetryPolicy
-from aidoc.store import Store
+from doc4ai.config import load_config
+from doc4ai.engines.base import EngineError
+from doc4ai.engines.docling import DoclingEngine
+from doc4ai.engines.mineru import MineruEngine
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, ErrorKind, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pipeline import run_task
+from doc4ai.retry import RetryPolicy
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 P = RetryPolicy()
@@ -48,7 +48,7 @@ def test_oom_downgrades_then_fallback():
 def env(tmp_root, monkeypatch, fixtures):
     sc = write_scenario(tmp_root / "sc.json"); fake_env(monkeypatch, sc)
     cfg = load_config(); store = Store(tmp_root / "data" / "aidoc.db")
-    monkeypatch.setattr("aidoc.pipeline.RETRY_POLICY", RetryPolicy(max_transient=2, backoff=(0.05, 0.1)))
+    monkeypatch.setattr("doc4ai.pipeline.RETRY_POLICY", RetryPolicy(max_transient=2, backoff=(0.05, 0.1)))
 
     def make(name="text.pdf", **opt):
         src = tmp_root / name; shutil.copy(fixtures / name, src)
@@ -91,7 +91,7 @@ def test_timeout_is_transient(env):
 
 
 def test_cancel_during_backoff(env, monkeypatch):
-    monkeypatch.setattr("aidoc.pipeline.RETRY_POLICY", RetryPolicy(max_transient=2, backoff=(30.0, 30.0)))
+    monkeypatch.setattr("doc4ai.pipeline.RETRY_POLICY", RetryPolicy(max_transient=2, backoff=(30.0, 30.0)))
     write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "crash"}])
     tid = env["make"](); ev = threading.Event(); set_at = []
 

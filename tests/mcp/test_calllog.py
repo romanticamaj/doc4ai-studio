@@ -1,6 +1,6 @@
 import json
 
-from aidoc.mcp.calllog import ARGS_MAX, CallRecorder, summarize_args
+from doc4ai.mcp.calllog import ARGS_MAX, CallRecorder, summarize_args
 
 
 def _events(ctx, kind):

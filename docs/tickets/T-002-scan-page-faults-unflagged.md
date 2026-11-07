@@ -1,6 +1,6 @@
 # T-002 掃描頁（無文字層）的頁面錯誤沒有被標出：文件仍報 `ok`、0 頁被標
 
-- 狀態：**已修正**（2026-10-22）。偵測：`src/aidoc/scanchecks.py`，接進 `quality.assess` 與 `pipeline.check_document`；根因修正：`mineru_runner.undrain`。
+- 狀態：**已修正**（2026-10-22）。偵測：`src/doc4ai/scanchecks.py`，接進 `quality.assess` 與 `pipeline.check_document`；根因修正：`mineru_runner.undrain`。
 - 建立：2026-10-22
 - 回報：真實樣本評估（2026-10-22），驗收時由協調者列為最重要的後續。
 - 嚴重度：高。內容遺失或錯頁，品質層級卻是 `ok`、`pages_flagged` 0，使用者不會被提醒，也不會觸發修復或換引擎。
@@ -39,7 +39,7 @@ sidecar 範例：`{"level": "ok", "score": 1.0, "pages_flagged": 0, "page_map": 
 
 ## 修正
 
-### 1. 不需要文字層的頁面檢查：`src/aidoc/scanchecks.py`
+### 1. 不需要文字層的頁面檢查：`src/doc4ai/scanchecks.py`
 
 **量什麼**（`page_ink()`，只量文字層少於 20 字的頁）：
 

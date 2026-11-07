@@ -2,7 +2,7 @@
 import sqlite3
 import time
 
-from aidoc.store import SCHEMA_VERSION, Store
+from doc4ai.store import SCHEMA_VERSION, Store
 
 V8_CLIENT_COLS = {"kind", "client_uri", "logo_uri", "software_id", "software_version", "application_type", "metadata_json",
                   "fetched_at", "cache_until"}
@@ -140,7 +140,7 @@ def test_prune_oauth(tmp_path):
 
 
 def test_maintenance_runs_prune_oauth(ctx):
-    from aidoc.server.maintenance import Maintenance
+    from doc4ai.server.maintenance import Maintenance
     now = time.time()
     ctx.store.create_oauth_code(code_hash="gone", client_id="c", redirect_uri="x", code_challenge="c", scopes=["doc4ai:read"],
                                 resource="r", subject="owner", expires_at=now - 1)

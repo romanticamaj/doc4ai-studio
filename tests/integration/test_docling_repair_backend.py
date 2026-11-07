@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from aidoc import paths
+from doc4ai import paths
 from tests.manual import manual_sample, require_engine
 
 pytestmark = pytest.mark.slow
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
 
 def _run(pdf):
-    env = {**os.environ, "PYTHONUTF8": "1", "AIDOC_MODELS_DIR": str(paths.models_dir()),
+    env = {**os.environ, "PYTHONUTF8": "1", "DOC4AI_MODELS_DIR": str(paths.models_dir()),
            "HF_HOME": str(paths.models_dir() / "hf")}
     r = subprocess.run([str(paths.venv_python("docling")), "-c", SCRIPT, str(paths.runner_dir()), str(pdf)],
                        capture_output=True, text=True, encoding="utf-8", env=env, check=True)

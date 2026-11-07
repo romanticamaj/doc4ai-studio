@@ -4,8 +4,8 @@ import time
 
 import httpx
 
-from aidoc.mcp import tokens as PT
-from aidoc.oauth import tokens as OT
+from doc4ai.mcp import tokens as PT
+from doc4ai.oauth import tokens as OT
 from tests.mcp.conftest import mcp_call, mcp_list_tools, raw_post
 from tests.oauth.conftest import LIST, RES, mint_tokens
 
@@ -22,7 +22,7 @@ def _www(r):
 
 
 def test_chain_dispatches_by_prefix(oauth_client, oauth_ctx):
-    from aidoc.mcp.principal import AuthFailure, Principal, VerifierChain
+    from doc4ai.mcp.principal import AuthFailure, Principal, VerifierChain
     chain = oauth_ctx.extras["mcp"].verifier
     assert isinstance(chain, VerifierChain)
     m = mint_tokens(oauth_ctx, scopes=("doc4ai:read", "doc4ai:convert"))
@@ -43,7 +43,7 @@ def test_chain_dispatches_by_prefix(oauth_client, oauth_ctx):
     oauth_ctx.store.con.execute("UPDATE oauth_tokens SET expires_at=? WHERE kind='at'", (time.time() - 1,))
     r = chain.verify(m.access_token, resource=RES)
     assert r.reason == "expired" and r.token_id == m.grant_id
-    from aidoc.oauth.grants import GrantService
+    from doc4ai.oauth.grants import GrantService
     GrantService(oauth_ctx).revoke_grant(m.grant_id, "admin", time.time())
     assert chain.verify(m.access_token, resource=RES).reason == "revoked"
     oauth_ctx.config.oauth.enabled = False
@@ -56,7 +56,7 @@ def test_oauth_token_on_mcp_and_revocation(live_oauth, oauth_ctx):
     assert names == READ_TOOLS
     row = oauth_ctx.store.list_mcp_calls(limit=1)[0]
     assert row["token_id"] == m.grant_id and row["method"] == "tools/list" and row["status"] == "ok"
-    from aidoc.oauth.grants import GrantService
+    from doc4ai.oauth.grants import GrantService
     GrantService(oauth_ctx).revoke_grant(m.grant_id, "admin", time.time())
     r = raw_post(live_oauth, m.access_token, LIST)
     assert r.status_code == 401 and r.json()["error"] == "invalid_token"

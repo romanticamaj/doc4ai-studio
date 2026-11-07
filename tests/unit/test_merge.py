@@ -1,5 +1,5 @@
-from aidoc.models import TableEdge
-from aidoc.segment import SegmentPart, merge_segments, split_leading_gfm_table, split_trailing_gfm_table
+from doc4ai.models import TableEdge
+from doc4ai.segment import SegmentPart, merge_segments, split_leading_gfm_table, split_trailing_gfm_table
 
 T1 = "<!-- page: 40 -->\ntext\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n"
 T2 = "<!-- page: 41 -->\n| a | b |\n| --- | --- |\n| 3 | 4 |\n\nafter\n"

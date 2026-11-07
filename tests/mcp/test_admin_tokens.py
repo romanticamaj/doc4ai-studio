@@ -1,8 +1,8 @@
 import time
 
-from aidoc.mcp import tokens as T
-from aidoc.mcp.principal import PatVerifier, Principal
-from aidoc.mcp.tokens import load_or_create_secret
+from doc4ai.mcp import tokens as T
+from doc4ai.mcp.principal import PatVerifier, Principal
+from doc4ai.mcp.tokens import load_or_create_secret
 
 
 def _events(ctx, kind):
@@ -103,7 +103,7 @@ def test_token_list_counts_and_expiring_soon(client, ctx):
 def test_admin_api_needs_admin_auth(token_ctx):
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(token_ctx), base_url="http://192.168.1.20:8765") as c:
         assert c.get("/api/mcp/tokens").status_code == 401
         assert c.post("/api/mcp/tokens", json={"name": "x", "scopes": ["doc4ai:read"]}).status_code == 401

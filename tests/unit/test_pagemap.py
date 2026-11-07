@@ -1,7 +1,7 @@
 import pymupdf
 import pytest
 
-from aidoc.pagemap import page_map, splice_pages, split_pages, spot_check, squash
+from doc4ai.pagemap import page_map, splice_pages, split_pages, spot_check, squash
 
 WORDS = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray", "yankee", "zulu"]
 

@@ -27,7 +27,7 @@ test("upload → convert → preview", async ({ page }) => {
   expect(csp, "CSP violations or pdf.js font warnings").toEqual([]);
 });
 
-test("an HTML source with a script is never rendered on the aidoc origin (C1)", async ({ page, request }) => {
+test("an HTML source with a script is never rendered on the doc4ai origin (C1)", async ({ page, request }) => {
   const html = path.join(fixtures, "..", "..", "web", "e2e", ".data-xss.html");
   const fs = await import("node:fs");
   fs.writeFileSync(

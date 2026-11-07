@@ -3,8 +3,8 @@ that junk registrations cannot use to lock a real client out (the oldest unused 
 import json
 import time
 
-from aidoc.oauth import clients
-from aidoc.oauth.clients import ClientRegistry
+from doc4ai.oauth import clients
+from doc4ai.oauth.clients import ClientRegistry
 from tests.oauth.conftest import ISSUER, mint_tokens
 
 BODY = {"client_name": "Cursor", "redirect_uris": ["http://localhost:8787/callback"], "token_endpoint_auth_method": "none"}

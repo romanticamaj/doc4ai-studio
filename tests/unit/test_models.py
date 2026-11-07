@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from aidoc.models import (
+from doc4ai.models import (
     ENGINE_NAMES,
     SEGMENT_PAGES,
     TERMINAL_TASK,
@@ -44,7 +44,7 @@ def test_probe_and_quality_json():
     assert q.to_json() == {"score": 0.9, "level": "ok", "reasons": [], "metrics": {}}
 
 
-from aidoc.models import DocStatus, RawResult
+from doc4ai.models import DocStatus, RawResult
 
 
 def test_warn_level_and_doc_status():
@@ -92,12 +92,12 @@ def test_convert_options_vlm_remote_round_trip():
 
 
 def test_raw_result_extra_default():
-    from aidoc.models import RawResult
+    from doc4ai.models import RawResult
     assert RawResult(markdown="", image_paths=[], raw_dir=Path("."), has_page_markers=True).extra == {}
 
 
 def test_verify_report_shape():
-    from aidoc.models import EXIT_FAILED, EXIT_OK, EXIT_UNVERIFIABLE, EXIT_USAGE, VerifyReport
+    from doc4ai.models import EXIT_FAILED, EXIT_OK, EXIT_UNVERIFIABLE, EXIT_USAGE, VerifyReport
     r = VerifyReport(verify_version=1, aidoc_version="0.1.0", generated_at="2026-10-05T10:00:00+08:00",
                      input={"markdown": "a.md", "sha256": "x", "bytes": 1, "newline": "lf", "format_detected": "aidoc",
                             "markers_found": 3},

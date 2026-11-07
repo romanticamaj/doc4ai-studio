@@ -2,8 +2,8 @@
 
 
 def test_pinned_constants():
-    from aidoc import store
-    from aidoc.oauth import clients, endpoints, grants, tokens
+    from doc4ai import store
+    from doc4ai.oauth import clients, endpoints, grants, tokens
     assert store.SCHEMA_VERSION == 8
     assert (tokens.AT_PREFIX, tokens.RT_PREFIX, tokens.CODE_PREFIX, tokens.CLIENT_PREFIX) == (
         "doc4ai_at_", "doc4ai_rt_", "doc4ai_ac_", "doc4ai_cl_")

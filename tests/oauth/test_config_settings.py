@@ -2,8 +2,8 @@ import pytest
 
 
 def test_oauth_defaults_and_ranges(tmp_path):
-    from aidoc.config import ConfigError, load_config
-    p = tmp_path / "aidoc.toml"
+    from doc4ai.config import ConfigError, load_config
+    p = tmp_path / "doc4ai.toml"
     p.write_text("[server]\nport = 1\n", encoding="utf-8")
     o = load_config(p).oauth
     assert (o.enabled, o.allow_cimd, o.allow_dcr) == (True, True, True)

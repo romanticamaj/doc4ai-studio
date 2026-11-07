@@ -17,7 +17,7 @@ const pdfjsVersion: string = JSON.parse(fs.readFileSync(path.join(pdfjsDir, "pac
 function pdfjsAssets(): Plugin {
   let outDir = "dist";
   return {
-    name: "aidoc-pdfjs-assets",
+    name: "doc4ai-pdfjs-assets",
     configResolved(c) {
       outDir = path.resolve(c.root, c.build.outDir);
     },

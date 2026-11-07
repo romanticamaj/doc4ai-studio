@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 // VLM plan Task 11b: Settings → openai backend on a fake loopback endpoint → consent → test connection →
 // a file the three fake engines all grade low falls through to vlm (timeline + Library).
 const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../tests/fixtures");
-const scenarioPath = path.join(process.env.AIDOC_E2E_DIR!, "scenario.json");
-const vlmBase = `http://127.0.0.1:${process.env.AIDOC_E2E_VLM_PORT ?? 8782}/v1`;
+const scenarioPath = path.join(process.env.DOC4AI_E2E_DIR!, "scenario.json");
+const vlmBase = `http://127.0.0.1:${process.env.DOC4AI_E2E_VLM_PORT ?? 8782}/v1`;
 
 test("VLM: configure, consent, test connection, fall through to vlm", async ({ page }) => {
   const original = fs.readFileSync(scenarioPath, "utf-8");

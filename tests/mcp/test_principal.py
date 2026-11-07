@@ -2,9 +2,9 @@ import time
 
 import pytest
 
-from aidoc.mcp import tokens as T
-from aidoc.mcp.principal import SCOPES, AuthFailure, PatVerifier, Principal, current_principal, parse_bearer
-from aidoc.store import Store
+from doc4ai.mcp import tokens as T
+from doc4ai.mcp.principal import SCOPES, AuthFailure, PatVerifier, Principal, current_principal, parse_bearer
+from doc4ai.store import Store
 
 
 @pytest.fixture

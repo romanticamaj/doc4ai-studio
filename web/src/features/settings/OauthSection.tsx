@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { describeError } from "@/lib/errors";
 
-/** Ranges as the server checks them (aidoc.config.OAUTH_RANGES; spec 2026-11-05 §9). */
+/** Ranges as the server checks them (doc4ai.config.OAUTH_RANGES; spec 2026-11-05 §9). */
 export const OAUTH_LIMITS = { access_ttl_min: [5, 1440], refresh_ttl_days: [1, 365] } as const;
 type RangeKey = keyof typeof OAUTH_LIMITS;
 

@@ -5,9 +5,9 @@ import sqlite3
 
 import pytest
 
-from aidoc.store import _SOURCE_COPY_COLS, SCHEMA_VERSION, Store
+from doc4ai.store import _SOURCE_COPY_COLS, SCHEMA_VERSION, Store
 
-# the v6 documents table, verbatim from the v6 store (git show d307f47:src/aidoc/store.py)
+# the v6 documents table, verbatim from the v6 store (git show d307f47:src/doc4ai/store.py)
 _V6_DOCUMENTS = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS documents(

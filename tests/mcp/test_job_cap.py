@@ -3,7 +3,7 @@ import base64
 import shutil
 import threading
 
-from aidoc.models import ConvertOptions
+from doc4ai.models import ConvertOptions
 from tests.mcp.conftest import mcp_call
 
 
@@ -51,7 +51,7 @@ def test_concurrent_convert_calls_respect_the_cap(mcp_server, mcp_env):
 
 
 def test_reconvert_jobs_count_toward_the_cap(mcp_server, mcp_env, fixtures, tmp_root):
-    from aidoc.batch import register_source
+    from doc4ai.batch import register_source
     ctx = mcp_env.ctx
     src = tmp_root / "in.pdf"
     shutil.copy(fixtures / "text.pdf", src)
@@ -77,9 +77,9 @@ def test_reconvert_jobs_count_toward_the_cap(mcp_server, mcp_env, fixtures, tmp_
 def test_failed_reconvert_does_not_keep_a_slot(ctx, fixtures, tmp_root, monkeypatch):
     import pytest
 
-    from aidoc.batch import register_source
-    from aidoc.mcp.tools_convert import reserve_job
-    from aidoc.server.api.documents import start_reconvert
+    from doc4ai.batch import register_source
+    from doc4ai.mcp.tools_convert import reserve_job
+    from doc4ai.server.api.documents import start_reconvert
     src = tmp_root / "in.pdf"
     shutil.copy(fixtures / "text.pdf", src)
     opts = ConvertOptions(output_dir=ctx.config.output_root())

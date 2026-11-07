@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pipeline import options_key, run_task
-from aidoc.store import Store
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pipeline import options_key, run_task
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 VLM_ON = '[vlm]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9/v1"\nmodel = "m"\nremote_enabled = true\nremote_daily_page_budget = %d\nremote_max_pages_per_doc = %d\n'
@@ -17,9 +17,9 @@ VLM_ON = '[vlm]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9/v1"\nmodel =
 @pytest.fixture
 def env(tmp_root, monkeypatch, fixtures):
     def make(cfg_body="", budget=500, cap=200):
-        (tmp_root / "aidoc.toml").write_text(cfg_body or VLM_ON % (budget, cap), encoding="utf-8")
-        monkeypatch.setenv("AIDOC_CONFIG", str(tmp_root / "aidoc.toml"))
-        monkeypatch.setenv("AIDOC_VLM_API_KEY", "k")
+        (tmp_root / "doc4ai.toml").write_text(cfg_body or VLM_ON % (budget, cap), encoding="utf-8")
+        monkeypatch.setenv("DOC4AI_CONFIG", str(tmp_root / "doc4ai.toml"))
+        monkeypatch.setenv("DOC4AI_VLM_API_KEY", "k")
         sc = write_scenario(tmp_root / "sc.json"); fake_env(monkeypatch, sc)
         cfg = load_config(); store = Store(tmp_root / "data" / "aidoc.db")
         def task(name, **opt):
@@ -93,7 +93,7 @@ def test_repair_by_vlm_writes_role_repair_block(env):
 
 
 def test_cli_no_vlm_remote_and_engine_choice(tmp_root):
-    from aidoc.cli import build_parser, options_from_args
+    from doc4ai.cli import build_parser, options_from_args
     cfg = load_config()
     a = build_parser().parse_args(["convert", "x.pdf", "--no-vlm-remote", "--engine", "vlm"])
     o = options_from_args(a, cfg)
@@ -109,7 +109,7 @@ def test_api_job_carries_vlm_remote(client, ctx, tmp_root, fixtures):
 
 
 def test_maintenance_prunes_vlm_usage(ctx):
-    from aidoc.server.maintenance import Maintenance
+    from doc4ai.server.maintenance import Maintenance
     ctx.store.add_vlm_usage("2020-01-01", "openai", "h", 1, 1, 0, 0)
     assert Maintenance(ctx).run_once()["vlm_usage_pruned"] == 1
 

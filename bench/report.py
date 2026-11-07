@@ -112,7 +112,7 @@ def env_line(env: dict) -> str:
     vers = ", ".join(f"{k} {v.get('version') if isinstance(v, dict) else v}" for k, v in sorted(eng.items())
                      if (v.get("version") if isinstance(v, dict) else v))
     parts = [f"GPU {gpu.get('name', DASH)}" + (f"（驅動 {gpu['driver']}）" if gpu.get("driver") else ""),
-             f"引擎 {vers or DASH}", f"aidoc {env.get('aidoc_commit') or DASH}", f"日期 {str(env.get('date', DASH))[:10]}"]
+             f"引擎 {vers or DASH}", f"doc4ai {env.get('aidoc_commit') or DASH}", f"日期 {str(env.get('date', DASH))[:10]}"]
     if env.get("vlm"):
         v = env["vlm"]
         parts.append(f"VLM {v.get('model')} @ {v.get('endpoint_host')}（prompt v{v.get('prompt_version')}）")
@@ -173,7 +173,7 @@ def tier_b(rows: list[dict]) -> str | None:
                                     _agg(cr, _per_page, higher_better=False, digits=1)]) if cr else DASH)
         body.append(line)
     return _table(["文件群（樣本數，正解等級）", "指標"] + cols, body) + \
-        "\n\nL3 = 只有頁數等結構資訊，沒有逐字正解；分數是 `aidoc verify` 的結構檢查，不是文字正確率。"
+        "\n\nL3 = 只有頁數等結構資訊，沒有逐字正解；分數是 `doc4ai verify` 的結構檢查，不是文字正確率。"
 
 
 def tier_c(rows: list[dict]) -> str | None:

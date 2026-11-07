@@ -1,7 +1,7 @@
 """Item 8: observed clients cannot grow without bound, and stats never invent per-tool rows from junk names."""
 import time
 
-from aidoc.mcp.calllog import CLIENT_NAME_MAX, CLIENT_VERSION_MAX, CallRecorder
+from doc4ai.mcp.calllog import CLIENT_NAME_MAX, CLIENT_VERSION_MAX, CallRecorder
 
 
 def test_client_name_and_version_are_capped(ctx):
@@ -14,7 +14,7 @@ def test_client_name_and_version_are_capped(ctx):
 
 
 def test_idle_clients_are_pruned_by_maintenance(ctx):
-    from aidoc.server.maintenance import Maintenance
+    from doc4ai.server.maintenance import Maintenance
     now = time.time()
     old, _ = ctx.store.upsert_mcp_client(token_id="t", client_name="old", client_version="1", protocol_version=None,
                                          user_agent=None, ip=None, now=now - 91 * 86400)

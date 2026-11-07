@@ -12,7 +12,7 @@ const PROBLEM: Partial<Record<PatCheck, React.ReactNode>> = {
       <Link to="/mcp-admin?tab=tokens" className="underline underline-offset-2">
         Tokens 分頁
       </Link>{" "}
-      建立。啟動伺服器用的 API token（aidoc serve --token）只給這個網頁介面使用，不能拿來連 MCP。
+      建立。啟動伺服器用的 API token（doc4ai serve --token）只給這個網頁介面使用，不能拿來連 MCP。
     </>
   ),
   bearer: <>只要貼 token 本身，不要加「Bearer 」；設定裡已經有了。</>,

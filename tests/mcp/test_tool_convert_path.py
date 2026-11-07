@@ -5,8 +5,8 @@ import sys
 
 import pytest
 
-from aidoc.mcp.errors import ToolFailure
-from aidoc.mcp.tools_convert import check_local_path
+from doc4ai.mcp.errors import ToolFailure
+from doc4ai.mcp.tools_convert import check_local_path
 from tests.mcp.conftest import mcp_call
 
 
@@ -130,8 +130,8 @@ def test_file_being_converted_is_already_converting_in_both_tools(mcp_server, mc
     the job that is converting it."""
     import base64
 
-    from aidoc.batch import register_source
-    from aidoc.models import ConvertOptions
+    from doc4ai.batch import register_source
+    from doc4ai.models import ConvertOptions
     allowed, _ = roots
     ctx = mcp_env.ctx
     src = allowed / "sub" / "text.pdf"

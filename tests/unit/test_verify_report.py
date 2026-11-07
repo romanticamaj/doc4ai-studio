@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pymupdf
 
-from aidoc.cli import main
-from aidoc.pagemap import MARKER, split_pages
-from aidoc.verify import verify_markdown
-from aidoc.verify_report import render_html, thumbnails
+from doc4ai.cli import main
+from doc4ai.pagemap import MARKER, split_pages
+from doc4ai.verify import verify_markdown
+from doc4ai.verify_report import render_html, thumbnails
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures"
 

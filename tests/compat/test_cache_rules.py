@@ -39,8 +39,8 @@ def test_another_language_is_not_a_cache_hit(workers):
 
 def test_the_best_auto_result_wins_over_the_newest(ctx, make_doc):
     """Ranking: quality level (ok > warn > low), then score, then the newest."""
-    from aidoc.compat.jobs import find_cached
-    from aidoc.compat.options import parse_options
+    from doc4ai.compat.jobs import find_cached
+    from doc4ai.compat.options import parse_options
     sha = "c" * 64
     good = make_doc("good", pages=1, status="ok", quality={"score": 0.9, "level": "ok", "reasons": [], "pages": []}, sha=sha)
     time.sleep(0.01)

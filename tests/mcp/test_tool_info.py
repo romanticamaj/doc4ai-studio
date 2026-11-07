@@ -1,6 +1,6 @@
 import json
 
-from aidoc.mcp import docs as D
+from doc4ai.mcp import docs as D
 from tests.mcp.conftest import mcp_call, page_md
 
 
@@ -51,7 +51,7 @@ def test_get_document_info_shape(mcp_server, mcp_env, make_doc):
 
 
 def test_get_document_info_marks_stale_during_reconvert(mcp_server, mcp_env, make_doc):
-    from aidoc.models import ConvertOptions
+    from doc4ai.models import ConvertOptions
     doc = make_doc("busy", pages=1)
     job = mcp_env.ctx.store.create_job(ConvertOptions(output_dir=mcp_env.ctx.config.output_root()), "web")
     mcp_env.ctx.store.create_task(job, doc["source_path"], doc["sha256"], 1, 1.0, "cht", doc["output_dir"])
@@ -76,7 +76,7 @@ def test_output_missing_is_a_tool_error(mcp_server, mcp_env, make_doc):
 
 def test_get_document_info_fits_the_budget_for_a_badly_flagged_book(mcp_server, mcp_env, make_doc):
     """Review finding: 200 outline items + 200 flagged pages rendered to ~9,000 tokens (spec §1: ≤ 8,000)."""
-    from aidoc.mcp.budget import estimate_tokens
+    from doc4ai.mcp.budget import estimate_tokens
     q = {"score": 0.4, "level": "low", "reasons": ["pages_flagged"],
          "pages": [{"page": n, "reasons": ["broken_text_layer", "garbage"], "repaired_by": "docling"} for n in range(1, 401)]}
     md = "".join(page_md(n, heading=f"Section {n}: a fairly long heading title for page {n}") for n in range(1, 401))

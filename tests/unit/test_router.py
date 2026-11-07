@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.models import ConvertOptions, ProbeResult
-from aidoc.router import engine_supports, route
+from doc4ai.models import ConvertOptions, ProbeResult
+from doc4ai.router import engine_supports, route
 
 ALL = {"markitdown": True, "docling": True, "mineru": True}
 

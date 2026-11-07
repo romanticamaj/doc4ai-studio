@@ -13,10 +13,10 @@ from collections import Counter
 
 from rapidfuzz.distance import Levenshtein
 
-from aidoc.pagemap import split_pages
 from bench.metrics import DROPPED_SECTION_MAX
 from bench.realeval.normalize import norm_gt, norm_pred
 from bench.realeval.rules import BOOTSTRAP_N, EPS, ROUTE_DOC_BIG_LOSS, ROUTE_DOC_WIN, SEED
+from doc4ai.pagemap import split_pages
 
 
 def bag_prf(gt_sq: str, pred_sq: str) -> tuple[float, float, float]:

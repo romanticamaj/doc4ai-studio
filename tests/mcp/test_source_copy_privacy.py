@@ -24,8 +24,8 @@ def _text(result) -> str:
 
 
 def test_no_absolute_source_copy_path_anywhere(mcp_server, mcp_env, tmp_root, fixtures):
-    from aidoc.batch import register_source
-    from aidoc.models import ConvertOptions
+    from doc4ai.batch import register_source
+    from doc4ai.models import ConvertOptions
     ctx = mcp_env.ctx
     src = tmp_root / "Heading.pdf"
     shutil.copy(fixtures / "text.pdf", src)

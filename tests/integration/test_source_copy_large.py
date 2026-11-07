@@ -9,7 +9,7 @@ import tracemalloc
 
 import pytest
 
-from aidoc.source_copy import copy_verified
+from doc4ai.source_copy import copy_verified
 
 pytestmark = pytest.mark.slow
 
@@ -21,7 +21,7 @@ def test_two_gib_streaming_copy(tmp_path):
     free = shutil.disk_usage(tmp_path).free
     if free < NEED_FREE:
         msg = f"needs 5 GiB free in {tmp_path} (has {free / 1024 ** 3:.1f} GiB)"
-        pytest.fail(msg) if os.environ.get("AIDOC_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
+        pytest.fail(msg) if os.environ.get("DOC4AI_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
     src = tmp_path / "big.bin"
     block = bytearray(os.urandom(1 << 20))
     h = hashlib.sha256()

@@ -8,14 +8,14 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-pytestmark = pytest.mark.library_root_env           # these tests manage AIDOC_LIBRARY_ROOT themselves
+pytestmark = pytest.mark.library_root_env           # these tests manage DOC4AI_LIBRARY_ROOT themselves
 
 TOML = '# my settings\n[general]\n# results\nlang = "cht"  # keep me\nroot_dir = "{lib0}"\n'
 
 
 @pytest.fixture
 def api(client_factory, tmp_path, monkeypatch):
-    monkeypatch.delenv("AIDOC_LIBRARY_ROOT", raising=False)
+    monkeypatch.delenv("DOC4AI_LIBRARY_ROOT", raising=False)
     lib0 = tmp_path / "lib0"
     return client_factory(TOML.format(lib0=lib0.as_posix()))
 
@@ -35,12 +35,12 @@ def test_put_root_dir_rejects(api, tmp_root, value, needle):
 
 
 def test_put_root_dir_saves_one_line(api, tmp_root, tmp_path):
-    before = (tmp_root / "aidoc.toml").read_text(encoding="utf-8")
+    before = (tmp_root / "doc4ai.toml").read_text(encoding="utf-8")
     lib = tmp_path / "lib"
     r = api.put("/api/settings", json={"general": {"root_dir": str(lib)}})
-    after = (tmp_root / "aidoc.toml").read_text(encoding="utf-8")
+    after = (tmp_root / "doc4ai.toml").read_text(encoding="utf-8")
     assert r.status_code == 200 and (lib / "out").is_dir() and (lib / "source").is_dir()
-    assert not list(lib.rglob(".aidoc-probe-*"))
+    assert not list(lib.rglob(".doc4ai-probe-*"))
     added, removed = _added_removed(before, after)
     assert added == [f"root_dir = {json.dumps(str(lib))}"] and len(removed) == 1 and removed[0].startswith("root_dir")
     assert "# my settings" in after and "# keep me" in after
@@ -54,9 +54,9 @@ def test_unwritable_root_is_refused(api, tmp_path):
 
 
 def test_root_dir_needs_local_path_rights(client_factory, tmp_path, monkeypatch):
-    monkeypatch.delenv("AIDOC_LIBRARY_ROOT", raising=False)
+    monkeypatch.delenv("DOC4AI_LIBRARY_ROOT", raising=False)
     api = client_factory(TOML.format(lib0=(tmp_path / "lib0").as_posix()))
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(api.ctx), client=("10.0.0.5", 50000), base_url="http://127.0.0.1:8765") as remote:
         r = remote.put("/api/settings", json={"general": {"root_dir": str(tmp_path / "x")}})
         assert r.status_code == 403 and r.json()["error"] == "local_path_forbidden"
@@ -66,7 +66,7 @@ def test_root_dir_needs_local_path_rights(client_factory, tmp_path, monkeypatch)
 
 
 def test_root_dir_env_override_409(api, monkeypatch, tmp_path):
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_path / "env"))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_path / "env"))
     r = api.put("/api/settings", json={"general": {"root_dir": str(tmp_path / "x")}})
     assert r.status_code == 409 and r.json()["error"] == "root_env_override"
     s = api.get("/api/system").json()
@@ -78,7 +78,7 @@ def test_root_check_creates_nothing(api, tmp_path):
     assert r["ok"] is True and r["problem"] is None and r["exists"] is False
     assert r["output_dir"] == str(tmp_path / "new" / "lib" / "out")
     assert r["source_dir"] == str(tmp_path / "new" / "lib" / "source") and r["free_bytes"] > 0
-    assert not (tmp_path / "new").exists() and not list(tmp_path.glob(".aidoc-probe-*"))
+    assert not (tmp_path / "new").exists() and not list(tmp_path.glob(".doc4ai-probe-*"))
     bad = api.post("/api/settings/root-check", json={"root_dir": "relative\\x"}).json()
     assert bad["ok"] is False and bad["problem"] == "必須是本機的絕對路徑"
 

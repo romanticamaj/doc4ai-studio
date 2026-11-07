@@ -4,12 +4,12 @@ import sys
 
 import psutil
 
-from aidoc import paths
-from aidoc.config import load_config
-from aidoc.models import ConvertOptions
-from aidoc.recovery import recover_on_startup
-from aidoc.store import Store
-from aidoc.tasklock import TaskLock, lock_path
+from doc4ai import paths
+from doc4ai.config import load_config
+from doc4ai.models import ConvertOptions
+from doc4ai.recovery import recover_on_startup
+from doc4ai.store import Store
+from doc4ai.tasklock import TaskLock, lock_path
 
 _counter = [0]
 
@@ -104,7 +104,7 @@ def test_expired_work_copies_purged(tmp_root):
 def test_cli_runs_recovery_first(tmp_root, fixtures, monkeypatch, capsys):
     import shutil
 
-    from aidoc.cli import main
+    from doc4ai.cli import main
     from tests.fakes.scenario import fake_env, write_scenario
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     out = tmp_root / "out"; (out / ".trash" / "old").mkdir(parents=True)
@@ -121,9 +121,9 @@ def test_stale_parts_removed_on_startup(tmp_root):
     import os
     import time as _t
 
-    from aidoc.config import load_config
-    from aidoc.recovery import recover_on_startup
-    from aidoc.store import Store
+    from doc4ai.config import load_config
+    from doc4ai.recovery import recover_on_startup
+    from doc4ai.store import Store
     cfg = load_config()
     d = cfg.source_root() / "doc"
     d.mkdir(parents=True)

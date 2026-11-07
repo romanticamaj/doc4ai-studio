@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from aidoc.mcp import tools_convert as TC
-from aidoc.mcp.errors import ToolFailure
+from doc4ai.mcp import tools_convert as TC
+from doc4ai.mcp.errors import ToolFailure
 from tests.mcp.conftest import mcp_call
 
 

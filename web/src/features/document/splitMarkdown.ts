@@ -2,7 +2,7 @@
  * Splits a Markdown document into contiguous slices that each parse on their own, so a 5 MB document can be
  * rendered a block at a time. Cuts only at the start of a top-level block (a non-indented line after a blank line,
  * or a `<!-- page: N -->` line), never inside fenced code, `$$` math, an HTML `<table>` or a GFM table (the same
- * atomic units as src/aidoc/chunk.py). Page markers are the preferred cut points; pages smaller than `minPage` are
+ * atomic units as src/doc4ai/chunk.py). Page markers are the preferred cut points; pages smaller than `minPage` are
  * merged, and long stretches (with few or no markers) are cut by size near `target`.
  *
  * Known limits of rendering slices separately: footnotes and reference-style link definitions only resolve within

@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-import aidoc
-from aidoc import sources
-from aidoc.sources import ResolvedSource, document_source, resolve_source, sha_matches_cached
-from aidoc.store import Store
+import doc4ai
+from doc4ai import sources
+from doc4ai.sources import ResolvedSource, document_source, resolve_source, sha_matches_cached
+from doc4ai.store import Store
 
 
 def _sha(b: bytes) -> str:
@@ -112,7 +112,7 @@ def test_original_hash_is_cached(tmp_path, monkeypatch):
 
 
 def test_long_source_copy_path_is_returned_long_path_safe(tmp_path):
-    from aidoc import fsops
+    from doc4ai import fsops
     data = b"%PDF-1.4 deep"
     copy = tmp_path / "source" / ("d" * 150) / ("f" * 150 + ".pdf")
     os.makedirs(fsops.long_path(copy.parent))
@@ -127,7 +127,7 @@ def test_long_source_copy_path_is_returned_long_path_safe(tmp_path):
 
 def test_no_other_lookup_left():
     """Review Focus 1: the four divergent lookups are gone."""
-    src = Path(aidoc.__file__).parent.rglob("*.py")
+    src = Path(doc4ai.__file__).parent.rglob("*.py")
     text = "\n".join(p.read_text(encoding="utf-8") for p in src)
     assert "_reconvert_source" not in text and "_source_pdf" not in text
     assert text.count("def document_source") == 1

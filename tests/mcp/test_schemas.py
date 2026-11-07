@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from aidoc.mcp import schemas as S
-from aidoc.mcp.errors import ERROR_CODES, ToolFailure
+from doc4ai.mcp import schemas as S
+from doc4ai.mcp.errors import ERROR_CODES, ToolFailure
 
 
 def test_tool_failure_payload_and_code_check():

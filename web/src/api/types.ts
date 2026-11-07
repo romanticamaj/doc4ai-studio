@@ -244,7 +244,7 @@ export interface VlmSettings {
   base_url: string;
   model: string;
   api_key_env: string;
-  /** "***" when a key is stored in aidoc.toml; never the key itself */
+  /** "***" when a key is stored in doc4ai.toml; never the key itself */
   api_key: string;
   allow_no_key: boolean;
   max_concurrent: number;
@@ -481,7 +481,7 @@ export const EVENT_KINDS: EventKind[] = [
   "resync",
 ];
 
-export type AidocEvent<K extends EventKind = EventKind> = K extends EventKind
+export type Doc4aiEvent<K extends EventKind = EventKind> = K extends EventKind
   ? { kind: K; seq: number; payload: EventPayloads[K] }
   : never;
 

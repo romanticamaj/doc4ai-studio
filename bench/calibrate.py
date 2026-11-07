@@ -1,4 +1,4 @@
-"""Calibration gate: does `aidoc verify` track the ground truth? (spec 2026-10-05 verify §3.4 last row, §7 #9)
+"""Calibration gate: does `doc4ai verify` track the ground truth? (spec 2026-10-05 verify §3.4 last row, §7 #9)
 
     uv run python bench/calibrate.py --run bench/results/<run>/
 
@@ -29,7 +29,7 @@ EXPECTED = {"control": ("ok", 0), "dropped": ("warn", 0), "shifted": ("low", 1),
 def expected(judged_gt: dict) -> dict:
     """Dropped pages are page-level warn, but like any flagged page more than 20 % of the content pages make the
     document low (spec 2026-10-01 §5.2): the small corpus drops 1 of 3 pages."""
-    from aidoc.quality import FLAGGED_MAX_RATIO
+    from doc4ai.quality import FLAGGED_MAX_RATIO
     exp = dict(EXPECTED)
     content = judged_gt["pages"] - len(judged_gt.get("blank_pages") or [])
     if len(judged_gt["dropped_pages"]) > FLAGGED_MAX_RATIO * max(1, content):
@@ -81,8 +81,8 @@ def calibrate_rows(rows: list[dict], *, low_flags_all: bool = False, defects_onl
 
 def fill_unrecovered(rows: list[dict], run: Path, corpus_root: Path) -> None:
     """Rows written before `gt_defects_unrecovered` existed: recompute it from the output on disk."""
-    from aidoc.pagemap import split_pages
     from bench.metrics import RECOVERED_NED, page_scores
+    from doc4ai.pagemap import split_pages
     for r in rows:
         if "gt_defects_unrecovered" in r or not r.get("gt_defects"):
             continue
@@ -150,7 +150,7 @@ def gate(out: dict, min_rho: float = CALIBRATION_MIN_RHO, min_recall: float = CA
 
 def judge_defect_markdowns(corpus_dir: Path) -> dict:
     """verify on the four negatives of `<corpus_dir>/syn-dropped-pages` against their base PDF."""
-    from aidoc.verify import exit_code, verify_markdown
+    from doc4ai.verify import exit_code, verify_markdown
     d = Path(corpus_dir) / "syn-dropped-pages"
     gt = json.loads((d / "gt.json").read_text(encoding="utf-8"))
     pdf = (d / gt["pdf"]).resolve()

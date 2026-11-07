@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 
-from aidoc import lockfile as lf
+from doc4ai import lockfile as lf
 
 
 def test_acquire_and_release(tmp_path):
@@ -22,7 +22,7 @@ def test_stale_lock_overwritten(tmp_path):
     assert lf.read_lock(p)["port"] == 2
 
 
-def test_pid_reuse_by_non_aidoc_process_is_stale(tmp_path):
+def test_pid_reuse_by_non_doc4ai_process_is_stale(tmp_path):
     other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"])
     p = tmp_path / "aidoc.lock"
     p.write_text(json.dumps({"pid": other.pid, "started_at": 0, "host": "h", "port": 1, "token": None}))

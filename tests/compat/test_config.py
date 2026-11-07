@@ -2,8 +2,8 @@ from pathlib import Path
 
 
 def test_compat_defaults_and_load(tmp_path):
-    from aidoc.config import load_config
-    p = tmp_path / "aidoc.toml"
+    from doc4ai.config import load_config
+    p = tmp_path / "doc4ai.toml"
     p.write_text('[compat]\nenabled = false\nsync_timeout_s = 120\njson_content = "doc4ai"\n', encoding="utf-8")
     cfg = load_config(p)
     assert cfg.compat.enabled is False and cfg.compat.sync_timeout_s == 120 and cfg.compat.json_content == "doc4ai"
@@ -14,8 +14,8 @@ def test_compat_defaults_and_load(tmp_path):
 
 
 def test_committed_toml_has_compat():
-    from aidoc.config import load_config
-    cfg = load_config(Path(__file__).resolve().parents[2] / "aidoc.toml")
+    from doc4ai.config import load_config
+    cfg = load_config(Path(__file__).resolve().parents[2] / "doc4ai.toml")
     assert cfg.compat.enabled is True and cfg.compat.json_content == "null"
 
 
@@ -28,6 +28,6 @@ def test_health_is_public_and_not_enveloped(client):
 def test_health_with_server_token_still_public(token_ctx):
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(token_ctx), client=("10.0.0.5", 5000), base_url="http://127.0.0.1:8765") as c:
         assert c.get("/health").status_code == 200

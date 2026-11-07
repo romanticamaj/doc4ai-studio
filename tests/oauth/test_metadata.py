@@ -62,7 +62,7 @@ def test_flags_hide_endpoints_and_disabled_is_404(oauth_client, oauth_ctx):
 
 
 def test_unit_helpers(oauth_ctx):
-    from aidoc.oauth.metadata import allowed_host, prm_url
+    from doc4ai.oauth.metadata import allowed_host, prm_url
     assert allowed_host(oauth_ctx, "127.0.0.1:8765") == "127.0.0.1:8765"
     assert allowed_host(oauth_ctx, "127.0.0.1") is None                 # bound to 8765: a port-less Host is another port
     assert allowed_host(oauth_ctx, "Localhost:8765") == "localhost:8765"

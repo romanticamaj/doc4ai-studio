@@ -1,6 +1,6 @@
 import sys
 
-from aidoc import paths
+from doc4ai import paths
 
 
 def test_root_from_env(tmp_root):

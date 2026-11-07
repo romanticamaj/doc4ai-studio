@@ -7,7 +7,7 @@ import shutil
 import pymupdf
 import pytest
 
-from aidoc.pdfprefetch import open_ranges
+from doc4ai.pdfprefetch import open_ranges
 
 CHUNK = 1024                  # small, so the fixtures span many chunks
 

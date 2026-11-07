@@ -4,9 +4,9 @@ import time
 
 from fastapi.testclient import TestClient
 
-from aidoc import paths
-from aidoc.cli import main
-from aidoc.server.app import create_app
+from doc4ai import paths
+from doc4ai.cli import main
+from doc4ai.server.app import create_app
 
 
 def test_refuses_public_bind_without_token(tmp_root, capsys):
@@ -21,7 +21,7 @@ def test_serve_acquires_lock_and_recovers(tmp_root, monkeypatch, capsys):
     def fake_run(app, host, port):
         info = json.loads((paths.data_dir() / "aidoc.lock").read_text(encoding="utf-8"))
         calls.update(host=host, port=port, lock=info, routes=set(app.openapi()["paths"]))
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", fake_run)
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", fake_run)
     assert main(["serve", "--port", "8999"]) == 0
     assert calls["host"] == "127.0.0.1" and calls["port"] == 8999
     assert calls["lock"]["pid"] == os.getpid() and calls["lock"]["port"] == 8999
@@ -33,14 +33,14 @@ def test_serve_acquires_lock_and_recovers(tmp_root, monkeypatch, capsys):
 def test_serve_runs_recovery(tmp_root, monkeypatch, capsys):
     from pathlib import Path
 
-    from aidoc.models import ConvertOptions
-    from aidoc.store import Store
+    from doc4ai.models import ConvertOptions
+    from doc4ai.store import Store
     s = Store(tmp_root / "data" / "aidoc.db")
     job = s.create_job(ConvertOptions(output_dir=Path(tmp_root / "out")), "web")
     tid, _ = s.create_task(job, str(tmp_root / "a.pdf"), "a" * 64, 1, 1.0, "cht", str(tmp_root / "out" / "a"))
     s.update_task(tid, status="converting")
     s.close()
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", lambda app, host, port: None)
     assert main(["serve"]) == 0
     assert "requeued 1 interrupted task" in capsys.readouterr().err
     s = Store(tmp_root / "data" / "aidoc.db")
@@ -49,17 +49,17 @@ def test_serve_runs_recovery(tmp_root, monkeypatch, capsys):
 
 
 def test_second_server_refused(tmp_root, monkeypatch, capsys):
-    from aidoc import lockfile as lf
+    from doc4ai import lockfile as lf
     lf.acquire_lock(paths.data_dir() / "aidoc.lock",
                     {"pid": os.getpid(), "started_at": 0, "host": "127.0.0.1", "port": 1, "token": None})
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", lambda app, host, port: None)
     assert main(["serve"]) == 3
-    assert "another aidoc server is running on 127.0.0.1:1" in capsys.readouterr().err
+    assert "another doc4ai server is running on 127.0.0.1:1" in capsys.readouterr().err
 
 
 def test_token_server_keeps_token_out_of_lock(tmp_root, monkeypatch):
     seen = {}
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: seen.update(
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", lambda app, host, port: seen.update(
         lock=json.loads((paths.data_dir() / "aidoc.lock").read_text(encoding="utf-8")), token=app.state.ctx.token))
     assert main(["serve", "--host", "0.0.0.0", "--token", "abc"]) == 0
     assert "token" not in seen["lock"] and seen["lock"]["auth"] is True and seen["token"] == "abc"
@@ -68,8 +68,8 @@ def test_token_server_keeps_token_out_of_lock(tmp_root, monkeypatch):
 
 def test_serve_token_from_env(tmp_root, monkeypatch):
     seen = {}
-    monkeypatch.setenv("AIDOC_TOKEN", "fromenv")
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: seen.update(token=app.state.ctx.token))
+    monkeypatch.setenv("DOC4AI_TOKEN", "fromenv")
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", lambda app, host, port: seen.update(token=app.state.ctx.token))
     assert main(["serve", "--host", "0.0.0.0"]) == 0 and seen["token"] == "fromenv"
 
 
@@ -88,7 +88,7 @@ def test_static_fallback(client, ctx, tmp_root):
 
 
 def test_maintenance_run_once(ctx, tmp_root):
-    from aidoc.server.maintenance import Maintenance
+    from doc4ai.server.maintenance import Maintenance
     for _ in range(30):
         ctx.store.append_event("x", None, {})
     uid = ctx.uploads.create("a.pdf", 10, "0" * 64)["id"]
@@ -108,7 +108,7 @@ def test_maintenance_run_once(ctx, tmp_root):
 def test_maintenance_keeps_work_of_unfinished_tasks(client, ctx, tmp_root, fixtures):
     import hashlib
 
-    from aidoc.server.maintenance import Maintenance
+    from doc4ai.server.maintenance import Maintenance
     data = (fixtures / "text.pdf").read_bytes()
     uid = client.post("/api/uploads", json={"filename": "t.pdf", "size": len(data),
                                             "sha256": hashlib.sha256(data).hexdigest()}).json()["upload_id"]
@@ -140,7 +140,7 @@ def test_port_in_use_is_a_clear_error_not_exit_3(tmp_root, capsys):
 def test_ctrl_c_stops_the_server_cleanly(tmp_root, monkeypatch, capsys):
     def interrupted(app, host, port):
         raise KeyboardInterrupt                     # uvicorn re-raises the captured Ctrl+C / Ctrl+Break on exit
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", interrupted)
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", interrupted)
     assert main(["serve"]) == 0
     err = capsys.readouterr().err
     assert "server stopped" in err and "conversion was cancelled" not in err
@@ -151,7 +151,7 @@ def test_expired_work_copy_of_a_queued_retry_is_kept(client, ctx, tmp_root, fixt
     """Final review I5: retention must not delete the only copy of an upload whose task was retried."""
     import hashlib
 
-    from aidoc.sources import purge_expired_work_copies
+    from doc4ai.sources import purge_expired_work_copies
     data = (fixtures / "text.pdf").read_bytes()
     uid = client.post("/api/uploads", json={"filename": "t.pdf", "size": len(data),
                                             "sha256": hashlib.sha256(data).hexdigest()}).json()["upload_id"]
@@ -170,13 +170,13 @@ def test_expired_work_copy_of_a_queued_retry_is_kept(client, ctx, tmp_root, fixt
 
 def test_serve_refuses_while_an_in_process_cli_run_is_active(tmp_root, monkeypatch, capsys):
     """Final review I3: one queue owner — an in-process batch/convert and the server must not both convert."""
-    from aidoc import clilock
+    from doc4ai import clilock
     held = clilock.CliRunLock(paths.data_dir())
     assert held.acquire()
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", lambda app, host, port: None)
     try:
         assert main(["serve"]) == 3
-        assert "in-process aidoc run" in capsys.readouterr().err
+        assert "in-process doc4ai run" in capsys.readouterr().err
     finally:
         held.release()
     assert main(["serve"]) == 0
@@ -185,16 +185,16 @@ def test_serve_refuses_while_an_in_process_cli_run_is_active(tmp_root, monkeypat
 def test_in_process_convert_holds_the_cli_run_lock(tmp_root, fixtures, monkeypatch):
     import shutil
 
-    import aidoc.pipeline
-    from aidoc import clilock
+    import doc4ai.pipeline
+    from doc4ai import clilock
     from tests.fakes.scenario import fake_env, write_scenario
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
-    real, seen = aidoc.pipeline.run_task, []
+    real, seen = doc4ai.pipeline.run_task, []
 
     def spy(*a, **k):
         seen.append(clilock.active_cli_runs(paths.data_dir()))
         return real(*a, **k)
-    monkeypatch.setattr(aidoc.pipeline, "run_task", spy)
+    monkeypatch.setattr(doc4ai.pipeline, "run_task", spy)
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
     assert main(["convert", str(tmp_root / "t.pdf")]) == 0
     assert seen == [1] and clilock.active_cli_runs(paths.data_dir()) == 0
@@ -203,7 +203,7 @@ def test_in_process_convert_holds_the_cli_run_lock(tmp_root, fixtures, monkeypat
 def test_maintenance_prunes_mcp_calls(ctx):
     import time
 
-    from aidoc.server.maintenance import Maintenance
+    from doc4ai.server.maintenance import Maintenance
     old = time.time() - 40 * 86400
     for i in range(5):
         ctx.store.insert_mcp_call(ts=old + i, status="ok", method="tools/list")
@@ -218,7 +218,7 @@ def test_maintenance_prunes_mcp_calls(ctx):
 
 def test_serve_refuses_a_damaged_secret_key(tmp_root, monkeypatch, capsys):
     (paths.data_dir() / "secret.key").write_bytes(b"short")
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", lambda app, host, port: None)
     assert main(["serve"]) == 5
     err = capsys.readouterr().err
     assert "secret.key" in err and "5 bytes" in err and "re-issue" in err
@@ -228,7 +228,7 @@ def test_serve_refuses_a_damaged_secret_key(tmp_root, monkeypatch, capsys):
 
 def test_serve_refuses_a_secret_key_that_is_a_directory(tmp_root, monkeypatch, capsys):
     (paths.data_dir() / "secret.key").mkdir()
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", lambda app, host, port: None)
     assert main(["serve"]) == 5
     err = capsys.readouterr().err
     assert "secret.key" in err and "not a readable file" in err and "Traceback" not in err

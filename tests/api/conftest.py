@@ -1,4 +1,4 @@
-"""API test helpers: a client whose server runs on a given aidoc.toml (VLM plan Task 10)."""
+"""API test helpers: a client whose server runs on a given doc4ai.toml (VLM plan Task 10)."""
 from __future__ import annotations
 
 import time
@@ -33,14 +33,14 @@ class _Client:
 def client_factory(tmp_root, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aidoc.config import load_config
-    from aidoc.server.app import build_context, create_app
+    from doc4ai.config import load_config
+    from doc4ai.server.app import build_context, create_app
     from tests.fakes.scenario import fake_env, write_scenario
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     opened = []
 
     def make(toml: str = "") -> _Client:
-        (tmp_root / "aidoc.toml").write_text(toml, encoding="utf-8")
+        (tmp_root / "doc4ai.toml").write_text(toml, encoding="utf-8")
         ctx = build_context(load_config(), token=None, start_workers=False)
         tc = TestClient(create_app(ctx), client=("127.0.0.1", 50000), base_url="http://127.0.0.1:8765")
         tc.__enter__()

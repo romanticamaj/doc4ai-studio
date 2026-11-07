@@ -5,13 +5,13 @@ import time
 
 import pytest
 
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pipeline import run_task
-from aidoc.sources import SourceError, purge_expired_work_copies, stage_source
-from aidoc.store import Store
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pipeline import run_task
+from doc4ai.sources import SourceError, purge_expired_work_copies, stage_source
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -107,7 +107,7 @@ def test_read_only_source_is_never_made_writable(tmp_path, fixtures):
     """Final review I2: NTFS attributes are shared by hardlinks; cleaning a work copy must not touch the source."""
     import stat
 
-    from aidoc import fsops
+    from doc4ai import fsops
     src = tmp_path / "ro.pdf"; shutil.copy(fixtures / "text.pdf", src); os.chmod(src, stat.S_IREAD)
     try:
         stage_source(src, file_sha256(src), tmp_path / "work")
@@ -129,12 +129,12 @@ def test_read_only_source_is_never_made_writable(tmp_path, fixtures):
 
 def test_unreadable_source_at_run_time_is_input_error(tmp_root, fixtures, monkeypatch):
     """Final review (M7, re-graded): a source locked when the task runs is failed(input), not an internal error."""
-    import aidoc.sources
+    import doc4ai.sources
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json")); cfg = load_config()
     store = Store(tmp_root / "data" / "aidoc.db")
     src = tmp_root / "a.pdf"; shutil.copy(fixtures / "text.pdf", src); sha = file_sha256(src)
     with pytest.raises(SourceError) as e:
-        monkeypatch.setattr(aidoc.sources.shutil, "copy2", lambda *a, **k: (_ for _ in ()).throw(
+        monkeypatch.setattr(doc4ai.sources.shutil, "copy2", lambda *a, **k: (_ for _ in ()).throw(
             PermissionError(13, "used by another process")))
         stage_source(src, sha, tmp_path_w := tmp_root / "w")
     assert e.value.code == "source_unreadable" and not (tmp_path_w / ".src.pdf.tmp").exists()

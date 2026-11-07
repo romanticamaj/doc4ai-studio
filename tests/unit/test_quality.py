@@ -1,5 +1,5 @@
-from aidoc.models import ProbeResult
-from aidoc.quality import PAGE_CHECK_VERSION, assess, has_table
+from doc4ai.models import ProbeResult
+from doc4ai.quality import PAGE_CHECK_VERSION, assess, has_table
 
 
 def pdf(pages=2, **kw):
@@ -62,14 +62,14 @@ def test_has_table():
 
 
 def test_meaningful_symbols_are_not_garbage():
-    from aidoc.quality import garbage_ratio
+    from doc4ai.quality import garbage_ratio
     for s in ["評價 ★★★★☆ 很好", "流程 →→→→ 下一步", "重點 ●●●● 項目", "目錄…………………12", "Straße ÄÖÜß façade",
               "價格 ¥1,200 · 溫度 25°C ± 2", "━━━━ 分隔線 ━━━━", "①②③④ 步驟"]:
         assert garbage_ratio(s) == 0.0, s
 
 
 def test_broken_sequences_are_garbage():
-    from aidoc.quality import garbage_ratio
+    from doc4ai.quality import garbage_ratio
     assert garbage_ratio("ä¸­æ–‡ä¸­æ–‡ å ±å‘Š") > 0.05                  # UTF-8 read as cp1252 (mojibake)
     assert garbage_ratio("abc���") > 0.05
     assert garbage_ratio("abc") > 0.05                  # private use
@@ -77,7 +77,7 @@ def test_broken_sequences_are_garbage():
     assert garbage_ratio("abc͸͹΀") > 0.05                  # unassigned code points
 
 
-from aidoc.quality import flag_page, flag_pages, page_signals
+from doc4ai.quality import flag_page, flag_pages, page_signals
 
 R = "\N{REPLACEMENT CHARACTER}"
 GOOD_EN = "This is an ordinary English paragraph with plenty of normal words for the quality gate. " * 4
@@ -161,7 +161,7 @@ def test_last_resort_judges_pages_flagged_on_pages_still_broken():
 def test_segment_quick_check_spot_checks_every_page(monkeypatch, tmp_path):
     """A 10-page sample turned one legitimately merged cross-page paragraph into 1/9 < 0.90 on a real 40-page
     segment (orthopaedic book pages 281-320: 36/38 aligned over all pages). The quick check samples all pages."""
-    import aidoc.quality as qm
+    import doc4ai.quality as qm
     seen = []
     monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: seen.append(k["sample"]) or
                         {"sampled": 0, "decidable": 0, "aligned": 0, "ratio": None, "misplaced": [], "excluded_pages": 0})
@@ -174,7 +174,7 @@ def test_segment_quick_check_spot_checks_every_page(monkeypatch, tmp_path):
 def test_one_misplaced_page_is_not_a_misaligned_page_map(monkeypatch, tmp_path):
     """Head First Android segment 81-120 (25 of 40 pages excluded for broken fonts): 6/7 aligned, the one miss is an
     exercise's code repeated on its solution page. A shifted map misplaces nearly every decidable page."""
-    import aidoc.quality as qm
+    import doc4ai.quality as qm
     result = {}
     monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: dict(result))
     md = _doc([GOOD_EN] * 40)
@@ -189,7 +189,7 @@ def test_one_misplaced_page_is_not_a_misaligned_page_map(monkeypatch, tmp_path):
 def test_segment_quick_check_only_catches_gross_misalignment(monkeypatch, tmp_path):
     """Head First Android pages 281-320 with Docling: 8/10 (exercise / solution pages repeat each other's text while
     the engine renders one of them as images). The document check keeps 0.90; a segment fails fast only below 0.50."""
-    import aidoc.quality as qm
+    import doc4ai.quality as qm
     result = {}
     monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: dict(result))
     md = _doc([GOOD_EN] * 40)
@@ -230,7 +230,7 @@ def test_marker_integrity_catches_local_relabelling():
 def test_a_run_of_three_misplaced_pages_is_misaligned(monkeypatch, tmp_path):
     """A local shift misplaces consecutive pages; the legitimate misses on the real books were isolated (longest run
     over every page: 2 in the orthopaedic book, 1 in Head First Android)."""
-    import aidoc.quality as qm
+    import doc4ai.quality as qm
     result = {"sampled": 40, "decidable": 39, "aligned": 35, "ratio": 0.8974, "misplaced": [5, 6, 7, 8],
               "max_misplaced_run": 4, "excluded_pages": 0}
     monkeypatch.setattr(qm.pagemap, "spot_check", lambda md, pdf, **k: dict(result))
@@ -255,8 +255,8 @@ def test_pages_the_engine_failed_on_are_flagged():
     assert q2.level == "ok" and q2.pages == [entry]
 
 
-from aidoc.pagemap import squash
-from aidoc.quality import vlm_overlap
+from doc4ai.pagemap import squash
+from doc4ai.quality import vlm_overlap
 
 
 def test_vlm_overlap_jaccard():
@@ -278,7 +278,7 @@ def test_vlm_low_overlap_is_advisory_only():
 
 
 def test_advisory_only_entries_are_not_problem_pages_anywhere():
-    from aidoc.mcp.docs import flagged_count, page_warnings
+    from doc4ai.mcp.docs import flagged_count, page_warnings
     row = {"quality": {"pages": [{"page": 1, "reasons": [], "advisories": ["vlm_low_overlap"],
                                   "metrics": {"vlm_overlap": 0.05}},
                                  {"page": 2, "reasons": ["garbage"]}]}}
@@ -294,8 +294,8 @@ def _own_md(pdf):
 def test_assess_flags_a_silently_dropped_page_as_warn(fixtures):
     """A page whose PDF text layer has text but whose section is empty (spec 2026-10-05 verify §2.3 page_dropped,
     now part of the conversion's own check): page-level warn, never a document low; blank pages never count."""
-    from aidoc.pagemap import split_pages
-    from aidoc.probe import probe_file
+    from doc4ai.pagemap import split_pages
+    from doc4ai.probe import probe_file
     pdf = fixtures / "paged_furniture.pdf"
     md = _own_md(pdf)
     _, secs = split_pages(md)
@@ -313,14 +313,14 @@ def test_assess_flags_a_silently_dropped_page_as_warn(fixtures):
 
 
 def test_dropped_pages_helper(fixtures):
-    from aidoc.pagemap import pdf_text_layers
-    from aidoc.quality import dropped_pages
+    from doc4ai.pagemap import pdf_text_layers
+    from doc4ai.quality import dropped_pages
     pdf = fixtures / "paged_furniture.pdf"
     md = _own_md(pdf).replace("Body text of page 5", "")
     layers = pdf_text_layers(pdf)
     assert dropped_pages(md, layers, blank_pages=[4]) == []
     # round 2: a section of 30 unrelated characters is dropped too (it holds none of its page's text)
-    from aidoc.pagemap import split_pages
+    from doc4ai.pagemap import split_pages
     _, secs = split_pages(_own_md(pdf))
     empty6 = "".join(f"<!-- page: {i} -->\n\n{'' if i == 6 else secs[i]}\n\n" for i in sorted(secs))
     got = dropped_pages(empty6, layers, blank_pages=[4])

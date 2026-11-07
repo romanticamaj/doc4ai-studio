@@ -1,6 +1,6 @@
 import type { Settings, SettingsPatch } from "@/api/types";
 
-/** Keys set when `aidoc serve` starts; the API refuses changes to them (403 server_readonly / token_readonly). */
+/** Keys set when `doc4ai serve` starts; the API refuses changes to them (403 server_readonly / token_readonly). */
 const READ_ONLY = new Set<keyof Settings>(["server"]);
 
 /** The changed keys only, grouped by section (PUT /api/settings takes partial sections). */

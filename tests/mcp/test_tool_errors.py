@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from aidoc.mcp.budget import encode_cursor
+from doc4ai.mcp.budget import encode_cursor
 from tests.mcp.conftest import mcp_call, raw_post
 
 
@@ -62,7 +62,7 @@ def test_unknown_tool_lists_the_available_ones(mcp_server, mcp_env):
 
 
 def test_unexpected_exception_is_internal_error_without_details(mcp_server, mcp_env, monkeypatch, caplog):
-    from aidoc.mcp import docs as D
+    from doc4ai.mcp import docs as D
 
     def boom(*a, **k):
         raise RuntimeError("secret internals at C:/data/x")

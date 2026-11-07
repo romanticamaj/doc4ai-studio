@@ -1,5 +1,5 @@
 {
-  "_comment": "One table for both loopback checks: web isLoopbackUrl() and the server's aidoc.engines.runner._vlm_net.is_loopback_url() (tests/unit/test_vlm_runner.py reads this file).",
+  "_comment": "One table for both loopback checks: web isLoopbackUrl() and the server's doc4ai.engines.runner._vlm_net.is_loopback_url() (tests/unit/test_vlm_runner.py reads this file).",
   "cases": [
     ["http://127.0.0.1:1234/v1", true],
     ["http://127.5.6.7/v1", true],

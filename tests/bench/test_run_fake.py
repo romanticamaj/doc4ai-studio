@@ -35,9 +35,9 @@ def test_fake_run_produces_results_env_and_summary(tmp_path):
 
 def test_single_engine_configs_disable_repair():
     from bench.run import env_for_config
-    assert env_for_config("docling")["AIDOC_BENCH_NO_REPAIR"] == "1"
-    assert env_for_config("auto-norepair")["AIDOC_BENCH_NO_REPAIR"] == "1"
-    assert "AIDOC_BENCH_NO_REPAIR" not in env_for_config("auto")
+    assert env_for_config("docling")["DOC4AI_BENCH_NO_REPAIR"] == "1"
+    assert env_for_config("auto-norepair")["DOC4AI_BENCH_NO_REPAIR"] == "1"
+    assert "DOC4AI_BENCH_NO_REPAIR" not in env_for_config("auto")
 
 
 def test_vlm_config_refuses_a_remote_endpoint(tmp_path):
@@ -71,7 +71,7 @@ def test_rescore_recomputes_metrics_and_records_every_page_reason(tmp_path):
             "--fake", "--only", "syn-text-zh"]
     assert subprocess.run(base, capture_output=True, check=False).returncode == 0
     md = out / "out-docling" / "syn-text-zh" / "syn-text-zh.md"
-    from aidoc.pagemap import split_pages
+    from doc4ai.pagemap import split_pages
     _, secs = split_pages(md.read_text(encoding="utf-8"))
     md.write_text(md.read_text(encoding="utf-8").replace(secs[2], "\n\n"), encoding="utf-8")   # page 2 lost
     r = subprocess.run([sys.executable, str(BENCH / "run.py"), "--out", str(out), "--rescore"], capture_output=True,
@@ -86,8 +86,8 @@ def test_rescore_recomputes_metrics_and_records_every_page_reason(tmp_path):
 def test_flag_reasons_cover_every_page_level_reason():
     """Verifier round 2: FLAG_REASONS missed page_partial / page_misaligned / page_oversized, so the calibration gate
     did not count pages verify flags for them (a correction of the gate's input, not of its definition)."""
-    from aidoc.quality import PAGE_REASONS
     from bench.run import FLAG_REASONS
+    from doc4ai.quality import PAGE_REASONS
     assert set(PAGE_REASONS) <= FLAG_REASONS
     assert {"broken_text_layer", "garbage", "page_map_missing", "page_conversion_failed"} <= FLAG_REASONS
 
@@ -97,4 +97,4 @@ def test_bench_runs_have_their_own_doc4ai_folder(tmp_path):
     into the platform default C:/doc4ai. Each config now gets <out>/lib-<config>."""
     from bench.run import env_for_config
     env = env_for_config("auto", tmp_path)
-    assert env["AIDOC_LIBRARY_ROOT"] == str(tmp_path / "lib-auto")
+    assert env["DOC4AI_LIBRARY_ROOT"] == str(tmp_path / "lib-auto")

@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from aidoc.server.app import create_app
+from doc4ai.server.app import create_app
 
 
 def test_envelope_and_version(client):
@@ -27,8 +27,8 @@ def test_store_threadsafe_and_flags(tmp_root):
     import threading
     from pathlib import Path
 
-    from aidoc.models import ConvertOptions
-    from aidoc.store import Store
+    from doc4ai.models import ConvertOptions
+    from doc4ai.store import Store
     s = Store(tmp_root / "data" / "aidoc.db", threadsafe=True)
     job = s.create_job(ConvertOptions(output_dir=Path("o")), "web")
 
@@ -48,7 +48,7 @@ def test_store_threadsafe_and_flags(tmp_root):
 def test_schema_v1_db_is_migrated(tmp_root):
     import sqlite3
 
-    from aidoc.store import Store
+    from doc4ai.store import Store
     db = tmp_root / "data" / "old.db"
     con = sqlite3.connect(db)
     con.executescript("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);"
@@ -69,10 +69,10 @@ def test_schema_v1_db_is_migrated(tmp_root):
 
 
 def test_web_dist_override(ctx, tmp_path, monkeypatch):
-    """AIDOC_WEB_DIST serves another Web UI build (the e2e server's own), never touching <repo>/web/dist."""
+    """DOC4AI_WEB_DIST serves another Web UI build (the e2e server's own), never touching <repo>/web/dist."""
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "index.html").write_text("<!doctype html><title>e2e build</title>", encoding="utf-8")
-    monkeypatch.setenv("AIDOC_WEB_DIST", str(dist))
+    monkeypatch.setenv("DOC4AI_WEB_DIST", str(dist))
     with TestClient(create_app(ctx), base_url="http://127.0.0.1:8765") as c:
         assert "e2e build" in c.get("/library").text

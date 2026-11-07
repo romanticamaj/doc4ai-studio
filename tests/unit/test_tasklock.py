@@ -6,10 +6,10 @@ import time
 
 import pytest
 
-from aidoc.cli import main
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.store import Store, TaskBusyError
-from aidoc.tasklock import TaskLock, is_locked, lock_path
+from doc4ai.cli import main
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.store import Store, TaskBusyError
+from doc4ai.tasklock import TaskLock, is_locked, lock_path
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -24,7 +24,7 @@ def test_lock_is_exclusive_and_released(tmp_path):
 
 def test_lock_released_when_holder_process_dies(tmp_path):
     p = tmp_path / "t.lock"
-    code = (f"import time; from aidoc.tasklock import TaskLock; l = TaskLock({str(p)!r}); "
+    code = (f"import time; from doc4ai.tasklock import TaskLock; l = TaskLock({str(p)!r}); "
             "assert l.acquire(); print('ok', flush=True); time.sleep(60)")
     proc = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
     assert proc.stdout.readline().strip() == "ok"
@@ -54,7 +54,7 @@ def test_create_task_refuses_to_steal_a_live_task(tmp_root):
 def test_second_convert_of_a_running_file_fails_cleanly(tmp_root, fixtures, monkeypatch, capsys):
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     src = tmp_root / "a.pdf"; shutil.copy(fixtures / "text.pdf", src)
-    from aidoc.batch import register_source
+    from doc4ai.batch import register_source
     store = Store(tmp_root / "data" / "aidoc.db")
     opts = ConvertOptions(output_dir=(tmp_root / "out").resolve())
     tid, _ = register_source(store, store.create_job(opts, "cli"), src.resolve(), opts)
@@ -70,9 +70,9 @@ def test_second_convert_of_a_running_file_fails_cleanly(tmp_root, fixtures, monk
 
 
 def test_run_task_does_not_touch_a_task_locked_elsewhere(tmp_root, fixtures, monkeypatch):
-    from aidoc.config import load_config
-    from aidoc.engines.registry import get_engines
-    from aidoc.pipeline import run_task
+    from doc4ai.config import load_config
+    from doc4ai.engines.registry import get_engines
+    from doc4ai.pipeline import run_task
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     store = Store(tmp_root / "data" / "aidoc.db")
     j = store.create_job(ConvertOptions(output_dir=tmp_root / "out"), "cli")

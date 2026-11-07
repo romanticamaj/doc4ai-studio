@@ -74,9 +74,9 @@ def load(manual: Path = MANUAL) -> tuple[dict, list[dict]]:
 
 def predictions(docs: dict, manual: Path = MANUAL) -> dict[str, dict[int, set[str]]]:
     """The conversion's page checks on each labelled document: {doc: {page: {reasons}}}."""
-    from aidoc.pagemap import pdf_layers
-    from aidoc.probe import probe_file
-    from aidoc.quality import page_checks
+    from doc4ai.pagemap import pdf_layers
+    from doc4ai.probe import probe_file
+    from doc4ai.quality import page_checks
     out: dict[str, dict[int, set[str]]] = {}
     for key, d in docs.items():
         pdf = manual / d["pdf"]

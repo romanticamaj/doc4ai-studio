@@ -1,6 +1,6 @@
 import json
 
-from aidoc.mcp.budget import encode_cursor
+from doc4ai.mcp.budget import encode_cursor
 from tests.mcp.conftest import mcp_call, page_md
 
 
@@ -129,7 +129,7 @@ def test_short_cjk_fallback_reaches_every_document(mcp_server, mcp_env, make_doc
 
 
 def test_search_says_when_it_hit_the_scan_cap(mcp_server, mcp_env, make_doc, monkeypatch):
-    from aidoc import pageindex
+    from doc4ai import pageindex
     monkeypatch.setattr(pageindex, "SEARCH_SCAN_CAP", 50)
     make_doc("big", pages=120, md="".join(page_md(n, body=f"驗證 {n}") for n in range(1, 121)))
     raw, _ = mcp_env.issue()

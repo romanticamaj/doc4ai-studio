@@ -1,22 +1,22 @@
 import json
 import shutil
 
-from aidoc.cli import main
+from doc4ai.cli import main
 from tests.fakes.scenario import fake_env, write_scenario
 
 
 def _batch_with_mutation(tmp_root, fixtures, monkeypatch, mutate):
-    import aidoc.batch
+    import doc4ai.batch
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     d = tmp_root / "in"; d.mkdir()
     shutil.copy(fixtures / "text.pdf", d / "a.pdf"); shutil.copy(fixtures / "sample.docx", d / "b.docx")
-    real = aidoc.batch.run_task
+    real = doc4ai.batch.run_task
 
     def run(store, tid, *a, **k):                    # the source changes after the job was created
         if store.get_task(tid)["source_path"].endswith("a.pdf"):
             mutate(d / "a.pdf")
         return real(store, tid, *a, **k)
-    monkeypatch.setattr(aidoc.batch, "run_task", run)
+    monkeypatch.setattr(doc4ai.batch, "run_task", run)
     out = tmp_root / "out"
     assert main(["batch", str(d), "-o", str(out)]) == 2
     lines = (out / "_manifest.jsonl").read_text(encoding="utf-8").splitlines()

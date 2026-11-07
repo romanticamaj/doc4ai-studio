@@ -1,4 +1,4 @@
-"""P2 deferred M12: Ctrl+C / Ctrl+Break in an in-process `aidoc batch` ends cleanly: runner killed, task cancelled
+"""P2 deferred M12: Ctrl+C / Ctrl+Break in an in-process `doc4ai batch` ends cleanly: runner killed, task cancelled
 (resumable), exit code 130, a short message and no traceback."""
 import os
 import shutil
@@ -9,7 +9,7 @@ import sys
 import psutil
 import pytest
 
-from aidoc import procs
+from doc4ai import procs
 from tests.fakes.scenario import write_scenario
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="CTRL_BREAK_EVENT is Windows-only")
@@ -21,10 +21,10 @@ def test_ctrl_break_in_batch_exits_130_without_traceback(tmp_root, fixtures, wai
     shutil.copy(fixtures / "big.pdf", d / "big.pdf")
     shutil.copy(fixtures / "text.pdf", d / "text.pdf")
     sc = write_scenario(tmp_root / "sc.json", rules=[{"match": {"segment_idx": 1}, "behavior": "slow_ok"}], slow_s=30)
-    env = {**os.environ, "AIDOC_ROOT": str(tmp_root), "AIDOC_DATA": str(tmp_root / "data"), "AIDOC_FAKE_ENGINES": "1",
-           "AIDOC_FAKE_SCENARIO": str(sc), "PYTHONUTF8": "1"}
-    env.pop("AIDOC_CONFIG", None)
-    p = subprocess.Popen([sys.executable, "-m", "aidoc.cli", "batch", str(d), "-o", str(tmp_root / "out")],
+    env = {**os.environ, "DOC4AI_ROOT": str(tmp_root), "DOC4AI_DATA": str(tmp_root / "data"), "DOC4AI_FAKE_ENGINES": "1",
+           "DOC4AI_FAKE_SCENARIO": str(sc), "PYTHONUTF8": "1"}
+    env.pop("DOC4AI_CONFIG", None)
+    p = subprocess.Popen([sys.executable, "-m", "doc4ai.cli", "batch", str(d), "-o", str(tmp_root / "out")],
                          env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
     try:
@@ -43,7 +43,7 @@ def test_ctrl_break_in_batch_exits_130_without_traceback(tmp_root, fixtures, wai
     err = err.decode("utf-8", "replace")
     assert p.returncode == 130, err
     assert "Traceback" not in err and "interrupted" in err
-    assert not psutil.pid_exists(runner) or not procs.is_aidoc_runner(runner)
+    assert not psutil.pid_exists(runner) or not procs.is_doc4ai_runner(runner)
     t = big()
     assert t["status"] == "cancelled" and t["pid"] is None
     assert [s["status"] for s in store.list_segments(t["id"])] == ["done", "queued"]

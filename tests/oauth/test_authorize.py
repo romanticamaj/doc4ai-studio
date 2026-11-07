@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from aidoc.oauth.consent import TEXT
+from doc4ai.oauth.consent import TEXT
 from tests.oauth.conftest import (
     CLAUDE_CODE_CIMD,
     ISSUER,
@@ -151,7 +151,7 @@ def test_consent_nonce_single_use(oauth_client, dcr_client):
 
 def test_consent_request_expires(oauth_client, oauth_ctx, dcr_client, monkeypatch):
     html = oauth_client.get("/oauth/authorize", params=auth_params(dcr_client)).text
-    import aidoc.oauth.endpoints as E
+    import doc4ai.oauth.endpoints as E
     real = E.time.time
     monkeypatch.setattr(E.time, "time", lambda: real() + oauth_ctx.config.oauth.consent_ttl_s + 1)
     r = consent_post(oauth_client, html)
@@ -169,7 +169,7 @@ class FakeClock:
     """time.time for the endpoint module, advanced by the consent throttle's sleep instead of waiting for real."""
 
     def __init__(self, monkeypatch, client):
-        import aidoc.oauth.endpoints as E
+        import doc4ai.oauth.endpoints as E
         self.now = time.time()
         self.slept: list[float] = []
         monkeypatch.setattr(E.time, "time", lambda: self.now)
@@ -293,7 +293,7 @@ def test_used_up_page_is_no_token_oracle(token_oauth_client, token_oauth_ctx, mo
 
 def test_throttle_arithmetic_is_clamped_and_fails_closed():
     """Review #4: huge counters never overflow or skip the check; the pause stays at its cap."""
-    from aidoc.oauth.consent import ConsentThrottle
+    from doc4ai.oauth.consent import ConsentThrottle
     t = ConsentThrottle()
     t._ip["1.2.3.4"] = {"fails": 10 ** 9, "last": 1000.0}
     assert t.delay_for("1.2.3.4", 1001.0) == t.MAX_DELAY_S

@@ -10,7 +10,7 @@ def test_system_lists_vlm_with_backend_none(client):
 
 
 def test_system_vlm_openai_fields_and_budget(client_factory, tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_VLM_API_KEY", "k")
+    monkeypatch.setenv("DOC4AI_VLM_API_KEY", "k")
     c = client_factory(toml='[vlm]\nbackend = "openai"\nbase_url = "http://127.0.0.1:1234/v1"\nmodel = "m"\nremote_enabled = true\nremote_daily_page_budget = 50\n')
     c.app.state.ctx.store.add_vlm_usage(time.strftime("%Y-%m-%d"), "openai", "127.0.0.1:1234", 7, 7, 100, 50)
     v = c.get("/api/system").json()["engines"]["vlm"]
@@ -21,7 +21,7 @@ def test_system_vlm_openai_fields_and_budget(client_factory, tmp_path, monkeypat
 
 
 def test_vlm_check_against_fake_endpoint(client_factory, monkeypatch, tmp_path):
-    monkeypatch.setenv("AIDOC_VLM_API_KEY", "sk-test")
+    monkeypatch.setenv("DOC4AI_VLM_API_KEY", "sk-test")
     with FakeVlmServer({"default": "ok", "pages": {"1": "AIDOC VLM CHECK 繁體中文 2026"}, "require_key": "sk-test"}) as base:
         c = client_factory(toml=f'[vlm]\nbackend = "openai"\nbase_url = "{base}"\nmodel = "fake-vlm"\nremote_enabled = true\n')
         r = c.post("/api/system/vlm/check"); assert r.status_code == 202
@@ -37,7 +37,7 @@ def test_vlm_check_against_fake_endpoint(client_factory, monkeypatch, tmp_path):
 
 
 def test_vlm_check_never_leaks_the_key(client_factory, monkeypatch):
-    monkeypatch.setenv("AIDOC_VLM_API_KEY", "sk-test-hygiene")
+    monkeypatch.setenv("DOC4AI_VLM_API_KEY", "sk-test-hygiene")
     with FakeVlmServer({"default": "ok", "pages": {"1": "AIDOC VLM CHECK 繁體中文 2026"},
                         "require_key": "sk-test-hygiene"}) as base:
         c = client_factory(toml=f'[vlm]\nbackend = "openai"\nbase_url = "{base}"\nmodel = "fake-vlm"\nremote_enabled = true\n')

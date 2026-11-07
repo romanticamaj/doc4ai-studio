@@ -69,7 +69,7 @@ def test_resource_errors_are_protocol_errors(mcp_server, mcp_env, make_doc, uri)
 
 
 def test_chunk_ids_are_uri_safe_and_resolve_per_chunk_size(mcp_server, mcp_env, make_doc):
-    """`aidoc chunk` ids look like `stem#0003`; a `#` cannot sit in a URI, so MCP ids are `c0003` / `c0003m200`."""
+    """`doc4ai chunk` ids look like `stem#0003`; a `#` cannot sit in a URI, so MCP ids are `c0003` / `c0003m200`."""
     from tests.mcp.conftest import mcp_call
     md = "".join(page_md(n, heading=f"S{n}", body=" ".join(f"para {n}-{k} " * 20 for k in range(4))) for n in range(1, 4))
     doc = make_doc("中文 書名", pages=3, md=md)

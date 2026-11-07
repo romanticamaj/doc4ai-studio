@@ -86,7 +86,7 @@ test("root_from_env: read-only with the environment note", () => {
   const input = screen.getByRole("textbox");
   expect(input).toHaveAttribute("readonly");
   expect(input).toHaveValue("E:\\lib");
-  expect(screen.getByText("由環境變數 AIDOC_LIBRARY_ROOT 指定")).toBeInTheDocument();
+  expect(screen.getByText("由環境變數 DOC4AI_LIBRARY_ROOT 指定")).toBeInTheDocument();
   expect(screen.getByTestId("root-out")).toHaveTextContent("E:\\lib\\out");
 });
 

@@ -3,7 +3,7 @@ import shutil
 
 from fastapi.testclient import TestClient
 
-from aidoc.server.app import create_app
+from doc4ai.server.app import create_app
 
 
 def upload(client, path, name=None):
@@ -85,7 +85,7 @@ def test_local_path_allowed_for_remote_with_token(token_ctx, tmp_root, fixtures)
 def test_disk_guard(client, tmp_root, fixtures, monkeypatch):
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
     import collections
-    monkeypatch.setattr("aidoc.server.api.jobs.shutil.disk_usage",
+    monkeypatch.setattr("doc4ai.server.api.jobs.shutil.disk_usage",
                         lambda p: collections.namedtuple("u", "total used free")(1, 1, 10))
     r = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]})
     assert r.status_code == 507 and r.json()["error"] == "insufficient_disk" and r.json()["free"] == 10
@@ -101,13 +101,13 @@ def test_disk_preflight_counts_the_copy_on_the_same_volume(client, ctx, tmp_root
     size = (tmp_root / "t.pdf").stat().st_size
     factor = ctx.config.limits.disk_space_factor
     free = {"v": size * factor}
-    monkeypatch.setattr("aidoc.server.api.jobs.shutil.disk_usage",
+    monkeypatch.setattr("doc4ai.server.api.jobs.shutil.disk_usage",
                         lambda p: collections.namedtuple("u", "total used free")(1, 1, free["v"]))
     r = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]})
     assert r.status_code == 507 and r.json()["needed"] == size * (factor + 1)
     free["v"] = size * (factor + 1)
     assert client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]}).status_code == 201
-    monkeypatch.setattr("aidoc.server.api.jobs.fsops.same_volume", lambda a, b: False)   # copies on another disk
+    monkeypatch.setattr("doc4ai.server.api.jobs.fsops.same_volume", lambda a, b: False)   # copies on another disk
     free["v"] = size * factor
     assert client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}], "force": True}).status_code == 201
 
@@ -118,7 +118,7 @@ def test_unwritable_doc4ai_folder_names_the_path(client, ctx, tmp_root, fixtures
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
     blocker = tmp_root / "blocked"
     blocker.write_text("a file, not a folder", encoding="utf-8")
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(blocker / "lib"))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(blocker / "lib"))
     r = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "t.pdf")}]})
     assert r.status_code == 500 and r.json()["error"] == "output_dir_unwritable"
     assert r.json()["path"] == str(blocker / "lib" / "out")

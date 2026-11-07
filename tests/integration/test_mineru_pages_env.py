@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from aidoc import paths
+from doc4ai import paths
 from tests.manual import require_engine
 
 pytestmark = pytest.mark.slow
@@ -40,10 +40,10 @@ def test_continued_blocks_no_longer_drain_whole_pages(doc, tmp_path):
     """T-002 root cause, on the real-sample regression set (spec 2026-10-22 §8.2: regression use only). MinerU's
     DEFAULT render plan put pages 2-3 and 7-8 of the 1973 court letter under pages 1 and 6, and the AASHTO
     report's page 5 table under page 4; every page with text now has its own section."""
-    from aidoc.engines.mineru import MineruEngine
-    from aidoc.models import ConvertOptions
-    from aidoc.pagemap import split_pages, squash
-    from aidoc.probe import probe_file
+    from doc4ai.engines.mineru import MineruEngine
+    from doc4ai.models import ConvertOptions
+    from doc4ai.pagemap import split_pages, squash
+    from doc4ai.probe import probe_file
     from tests.manual import _required
     require_engine("mineru")
     pdf = paths.project_root() / "tests" / "fixtures" / "manual" / "realeval" / doc / "original.pdf"

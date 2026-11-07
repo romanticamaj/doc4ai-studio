@@ -3,9 +3,9 @@ import os
 import shutil
 import time
 
-from aidoc.quality import PAGE_CHECK_VERSION
-from aidoc.reassess import doc_flags, reassess_all
-from aidoc.store import Store
+from doc4ai.quality import PAGE_CHECK_VERSION
+from doc4ai.reassess import doc_flags, reassess_all
+from doc4ai.store import Store
 
 
 def _legacy_doc(store, tmp_root, fixtures, markers):
@@ -62,7 +62,7 @@ def test_unassessed_flag_and_store_flag_filter(tmp_root, fixtures):
 
 def test_reassess_never_overwrites_a_newer_conversion(tmp_root, fixtures, monkeypatch):
     """A conversion that finishes while the (slow) assessment runs keeps its own quality (review finding)."""
-    import aidoc.reassess as ra
+    import doc4ai.reassess as ra
     store = Store(tmp_root / "data" / "aidoc.db")
     did = _legacy_doc(store, tmp_root, fixtures, markers={1, 41})
     fresh = {"score": 1.0, "level": "ok", "reasons": [], "metrics": {}, "page_check": 1,
@@ -152,7 +152,7 @@ def test_page_check_version_is_6():
 
 def test_reassess_uses_source_copy_when_original_gone(tmp_root, fixtures, monkeypatch):
     """spec 2026-10-29 §6.3: no work copy and no original, but a source copy -> the page checks run on the copy."""
-    from aidoc import sources
+    from doc4ai import sources
     store = Store(tmp_root / "data" / "aidoc.db")
     q = {"score": 1.0, "level": "ok", "reasons": [], "metrics": {}, "page_check": 1, "pages": []}
     did = _paged_doc(store, tmp_root, fixtures, quality=q, work=False)

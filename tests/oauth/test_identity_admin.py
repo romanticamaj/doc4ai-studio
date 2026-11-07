@@ -2,7 +2,7 @@
 import base64
 import time
 
-from aidoc.oauth.grants import GrantService
+from doc4ai.oauth.grants import GrantService
 from tests.mcp.conftest import mcp_call, mcp_list_tools
 from tests.oauth.conftest import mint_tokens
 
@@ -47,7 +47,7 @@ def test_mcp_jobs_attributed_to_grant(live_oauth, oauth_ctx):
 
 
 def test_revoked_grant_status_in_client_events(live_oauth, oauth_ctx):
-    from aidoc.mcp.calllog import CallRecorder
+    from doc4ai.mcp.calllog import CallRecorder
     m = mint_tokens(oauth_ctx, resource=_res(live_oauth))
     mcp_list_tools(live_oauth, m.access_token)
     GrantService(oauth_ctx).revoke_grant(m.grant_id, "admin", time.time())
@@ -59,7 +59,7 @@ def test_revoked_grant_status_in_client_events(live_oauth, oauth_ctx):
 # ---- part 2 (Task 10): admin API
 
 def _pat(ctx, name="my pat"):
-    from aidoc.mcp import tokens as PT
+    from doc4ai.mcp import tokens as PT
     raw = PT.generate_token()
     tid = ctx.store.create_api_token(name=name, prefix=PT.display_prefix(raw), token_hash=PT.token_hash(ctx.extras["mcp"].secret, raw),
                                      scopes=["doc4ai:read"], expires_at=None)
@@ -91,7 +91,7 @@ def test_tokens_list_merges_pats_and_grants(oauth_client, oauth_ctx, dcr_client)
 def test_cimd_grant_prefix_is_host(oauth_client, oauth_ctx, fake_cimd):
     from tests.oauth.conftest import CLAUDE_CODE_CIMD
     fake_cimd.put(CLAUDE_CODE_CIMD["client_id"], CLAUDE_CODE_CIMD)
-    from aidoc.oauth.clients import ClientRegistry
+    from doc4ai.oauth.clients import ClientRegistry
     ClientRegistry(oauth_ctx).resolve(CLAUDE_CODE_CIMD["client_id"], time.time())
     m = mint_tokens(oauth_ctx, client_id=CLAUDE_CODE_CIMD["client_id"], redirect="http://localhost:51234/callback")
     g = next(t for t in oauth_client.get("/api/mcp/tokens").json()["tokens"] if t["id"] == m.grant_id)
@@ -117,7 +117,7 @@ def test_admin_revoke_grant(oauth_client, oauth_ctx, dcr_client):
 def test_clients_and_calls_carry_token_kind(live_oauth, oauth_ctx):
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     m = mint_tokens(oauth_ctx, resource=live_oauth + "/mcp")
     mcp_list_tools(live_oauth, m.access_token)
     with TestClient(create_app(oauth_ctx), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1)) as c:

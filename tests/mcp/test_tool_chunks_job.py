@@ -36,8 +36,8 @@ def test_get_chunks_respects_response_budget(mcp_server, mcp_env, make_doc):
 
 
 def test_get_job_shape_and_not_found(mcp_server, mcp_env, make_doc, fixtures):
-    from aidoc.batch import register_source
-    from aidoc.models import ConvertOptions
+    from doc4ai.batch import register_source
+    from doc4ai.models import ConvertOptions
     ctx = mcp_env.ctx
     opts = ConvertOptions(output_dir=ctx.config.output_root())
     job = ctx.store.create_job(opts, "web")

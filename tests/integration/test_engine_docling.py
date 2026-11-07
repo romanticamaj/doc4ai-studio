@@ -2,9 +2,9 @@ import re
 
 import pytest
 
-from aidoc.engines.docling import DoclingEngine
-from aidoc.models import ConvertOptions
-from aidoc.probe import probe_file
+from doc4ai.engines.docling import DoclingEngine
+from doc4ai.models import ConvertOptions
+from doc4ai.probe import probe_file
 
 pytestmark = pytest.mark.slow
 

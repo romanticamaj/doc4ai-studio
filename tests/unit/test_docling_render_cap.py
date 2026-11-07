@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pymupdf
 
-from aidoc.engines import docling as D
-from aidoc.models import ConvertOptions, ProbeResult
+from doc4ai.engines import docling as D
+from doc4ai.models import ConvertOptions, ProbeResult
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures"
 

@@ -7,7 +7,7 @@ import time
 
 import httpx
 
-from aidoc.oauth.grants import GrantService
+from doc4ai.oauth.grants import GrantService
 from tests.mcp.conftest import raw_post
 from tests.oauth.conftest import (
     CB_DEFAULT,
@@ -151,7 +151,7 @@ def test_revoke_kills_access_and_refresh(live_oauth, oauth_ctx):
     /mcp request with its access token is 401."""
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     res = live_oauth + "/mcp"
     svc = GrantService(oauth_ctx)
 
@@ -207,7 +207,7 @@ def test_consent_headers(oauth_client, dcr_client):
 
 
 def test_oauth_secrets_never_logged(oauth_client, oauth_ctx, caplog):
-    from aidoc.server.logfilter import install_access_log_redaction
+    from doc4ai.server.logfilter import install_access_log_redaction
     install_access_log_redaction()
     with caplog.at_level(logging.DEBUG):
         s = _full_flow(oauth_client, oauth_ctx)

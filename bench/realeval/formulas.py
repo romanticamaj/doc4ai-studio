@@ -12,9 +12,9 @@ from pathlib import Path
 
 from rapidfuzz.distance import Levenshtein
 
-from aidoc.pagemap import squash
 from bench.metrics import formulas_in, norm_latex
 from bench.realeval.rules import FORMULA_MATCH
+from doc4ai.pagemap import squash
 
 # §5.5 "去 \left／\right": the commands go, their delimiters stay (a null delimiter "." goes with them).
 # (?![a-zA-Z]) leaves \leftarrow, \rightarrow, \leftrightarrow to norm_latex, which treats both sides alike.

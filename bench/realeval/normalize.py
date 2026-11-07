@@ -2,7 +2,7 @@
 `norm_pred` = `bench.metrics.plain` (markup and math removed) followed by exactly the steps of `norm_gt`. The only
 GT-only step is errata, applied to the scoring copy of the GT by `apply_errata` before `norm_gt` (§4.4, §6.1).
 
-Order: math unwrapped (pred; amendment 2026-10-22) → plain (pred) → errata (GT) → Bopomofo tone marks removed → apostrophes unified → `aidoc.pagemap.squash`
+Order: math unwrapped (pred; amendment 2026-10-22) → plain (pred) → errata (GT) → Bopomofo tone marks removed → apostrophes unified → `doc4ai.pagemap.squash`
 (NFKC, soft hyphen / line-break hyphen, lower-case, alphanumerics of any script). No simplified/traditional or glyph
 variant folding, no per-document filtering."""
 from __future__ import annotations
@@ -14,9 +14,9 @@ from pathlib import Path
 
 from rapidfuzz.distance import Levenshtein
 
-from aidoc.pagemap import squash
 from bench.metrics import _MATH as MATH_SPAN  # the span pattern plain() and formulas_in() use
 from bench.metrics import plain
+from doc4ai.pagemap import squash
 
 VARIANTS = Path(__file__).resolve().parent / "variants.json"
 TONE_MARKS = "ˇˊˋ˙"                       # U+02C7, U+02CA, U+02CB, U+02D9

@@ -6,7 +6,7 @@ import shutil
 import threading
 from pathlib import Path
 
-from aidoc import source_copy
+from doc4ai import source_copy
 from tests.api.test_documents import converted
 
 

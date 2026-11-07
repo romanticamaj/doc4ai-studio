@@ -2,21 +2,21 @@ import shutil
 import threading
 import time
 
-from aidoc import procs
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pipeline import run_task
-from aidoc.retry import RetryPolicy
-from aidoc.store import Store
+from doc4ai import procs
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pipeline import run_task
+from doc4ai.retry import RetryPolicy
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 
 def test_killed_engine_is_transient_and_retried(tmp_root, fixtures, monkeypatch):
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json", rules=[{"match": {"attempt": 1}, "behavior": "slow_ok"}],
                                          slow_s=20))
-    monkeypatch.setattr("aidoc.pipeline.RETRY_POLICY", RetryPolicy(backoff=(0.1, 0.1)))
+    monkeypatch.setattr("doc4ai.pipeline.RETRY_POLICY", RetryPolicy(backoff=(0.1, 0.1)))
     cfg = load_config(); store = Store(tmp_root / "data" / "aidoc.db")
     src = tmp_root / "a.pdf"; shutil.copy(fixtures / "text.pdf", src)
     job = store.create_job(ConvertOptions(output_dir=tmp_root / "out"), "cli")

@@ -1,9 +1,9 @@
 """VLM engine on real samples (VLM spec §11.5, plan Task 13).
 
 The local backend is not delivered (spike S1 rule 4), so these run the
-`openai` backend against a real OpenAI-compatible endpoint named by AIDOC_VLM_REAL_BASE_URL / AIDOC_VLM_REAL_MODEL
-(e.g. Ollama on loopback: http://127.0.0.1:11434/v1, gemma4:12b; AIDOC_VLM_API_KEY when it needs a key). Without
-them the tests skip — and FAIL in acceptance mode (AIDOC_REQUIRE_MANUAL=1). Pages only go where that URL points."""
+`openai` backend against a real OpenAI-compatible endpoint named by DOC4AI_VLM_REAL_BASE_URL / DOC4AI_VLM_REAL_MODEL
+(e.g. Ollama on loopback: http://127.0.0.1:11434/v1, gemma4:12b; DOC4AI_VLM_API_KEY when it needs a key). Without
+them the tests skip — and FAIL in acceptance mode (DOC4AI_REQUIRE_MANUAL=1). Pages only go where that URL points."""
 from __future__ import annotations
 
 import collections
@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pagemap import squash
-from aidoc.pipeline import run_task
-from aidoc.store import Store
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pagemap import squash
+from doc4ai.pipeline import run_task
+from doc4ai.store import Store
 from tests.manual import manual_sample, require_engine
 
 pytestmark = pytest.mark.slow
@@ -32,22 +32,22 @@ RECALL_MIN = 0.90                      # spec §11.5: remote endpoint threshold 
 
 
 def endpoint() -> tuple[str, str]:
-    base, model = os.environ.get("AIDOC_VLM_REAL_BASE_URL"), os.environ.get("AIDOC_VLM_REAL_MODEL")
+    base, model = os.environ.get("DOC4AI_VLM_REAL_BASE_URL"), os.environ.get("DOC4AI_VLM_REAL_MODEL")
     if base and model:
         return base, model
-    msg = "no real VLM endpoint: set AIDOC_VLM_REAL_BASE_URL and AIDOC_VLM_REAL_MODEL"
-    pytest.fail(msg) if os.environ.get("AIDOC_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
+    msg = "no real VLM endpoint: set DOC4AI_VLM_REAL_BASE_URL and DOC4AI_VLM_REAL_MODEL"
+    pytest.fail(msg) if os.environ.get("DOC4AI_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
 
 
 @pytest.fixture
 def vlm_env(tmp_root, monkeypatch):
     base, model = endpoint()
-    cfg = tmp_root / "aidoc.toml"
-    keyed = bool(os.environ.get("AIDOC_VLM_API_KEY"))
+    cfg = tmp_root / "doc4ai.toml"
+    keyed = bool(os.environ.get("DOC4AI_VLM_API_KEY"))
     cfg.write_text("[vlm]\n" + "".join(f"{k} = {json.dumps(v)}\n" for k, v in {
         "backend": "openai", "base_url": base, "model": model, "remote_enabled": True, "allow_no_key": not keyed,
         "request_timeout_s": 300, "max_concurrent": 1}.items()), encoding="utf-8")
-    monkeypatch.setenv("AIDOC_CONFIG", str(cfg))
+    monkeypatch.setenv("DOC4AI_CONFIG", str(cfg))
     store = Store(tmp_root / "data" / "aidoc.db")
     logs: list[str] = []
 
@@ -96,9 +96,9 @@ def test_vlm_formula_and_table(vlm_env, fixtures):
 
 
 def test_cover_repaired_by_vlm_when_a_and_b_are_disabled(vlm_env, monkeypatch):
-    """T-001 cover: Docling main engine, repairs A/B switched off (AIDOC_REPAIR_ONLY=vlm) -> the VLM repairs it."""
+    """T-001 cover: Docling main engine, repairs A/B switched off (DOC4AI_REPAIR_ONLY=vlm) -> the VLM repairs it."""
     require_engine("docling")
-    monkeypatch.setenv("AIDOC_REPAIR_ONLY", "vlm")
+    monkeypatch.setenv("DOC4AI_REPAIR_ONLY", "vlm")
     st, side, md = vlm_env(manual_sample("hfad_cover_p1.pdf"), engine="docling")
     assert st == TaskStatus.done
     rep = [p for p in side["quality"]["pages"] if p.get("repaired_by")]

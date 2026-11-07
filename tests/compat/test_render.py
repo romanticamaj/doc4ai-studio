@@ -1,4 +1,4 @@
-from aidoc.compat.options import CompatOptions
+from doc4ai.compat.options import CompatOptions
 from tests.mcp.conftest import TINY_PNG, page_md
 
 BASE = {"to_formats": ["md"], "unsupported_formats": [], "placeholder": "", "keep_page_markers": False,
@@ -15,7 +15,7 @@ def doc3():
 
 
 def asm(md, pages, o, **kw):
-    from aidoc.compat.render import assemble_markdown
+    from doc4ai.compat.render import assemble_markdown
     return assemble_markdown(md, pages, o, doc_id=kw.get("doc_id", "d"), asset_base=kw.get("asset_base"),
                              assets_dir=kw.get("assets_dir"), cfg=kw.get("cfg"))
 
@@ -95,7 +95,7 @@ def test_html_img_tags_are_handled_too():
 
 
 def test_text_content_and_models():
-    from aidoc.compat.render import ConvertDocumentResponse, ExportDocument, text_from_markdown
+    from doc4ai.compat.render import ConvertDocumentResponse, ExportDocument, text_from_markdown
     txt = text_from_markdown("# H\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n**bold** <!-- page: 1 -->")
     assert "#" not in txt and "|" not in txt and "bold" in txt and "page:" not in txt
     r = ConvertDocumentResponse(document=ExportDocument(filename="x.pdf", md_content="m"), status="success", processing_time=1.0)
@@ -104,7 +104,7 @@ def test_text_content_and_models():
 
 
 def test_text_content_keeps_the_placeholder_layout(make_doc, ctx):
-    from aidoc.compat.render import build_response
+    from doc4ai.compat.render import build_response
     doc = make_doc("txtdoc", pages=3)
     r = build_response(ctx, _req(), doc, None, opts(placeholder="\f", to_formats=["md", "text"]), cached=False,
                        attached=False, started=0.0)
@@ -112,7 +112,7 @@ def test_text_content_keeps_the_placeholder_layout(make_doc, ctx):
 
 
 def test_doc4ai_block_and_low_quality_status(make_doc, ctx):
-    from aidoc.compat.render import build_response
+    from doc4ai.compat.render import build_response
     doc = make_doc("lowdoc", pages=2, status="low", quality={"score": 0.3, "level": "low", "reasons": ["chars_per_page"], "pages": []})
     r = build_response(ctx, _req(), doc, None, opts(), cached=False, attached=False, started=0.0)
     assert r.status == "partial_success" and r.errors[0].module_name == "doc4ai.quality"
@@ -123,7 +123,7 @@ def test_doc4ai_block_and_low_quality_status(make_doc, ctx):
 
 
 def test_doc4ai_block_fields(make_doc, ctx):
-    from aidoc.compat.render import build_response
+    from doc4ai.compat.render import build_response
     q = {"score": 0.93, "level": "warn", "reasons": [], "page_map": {"coverage": 1.0, "method": "mineru_render_plan"},
          "pages": [{"page": 2, "reasons": ["broken_text_layer"], "repaired_by": "mineru"}]}
     doc = make_doc("blockdoc", pages=3, status="warn", quality=q)
@@ -141,7 +141,7 @@ def test_output_missing_is_a_failure_response(make_doc, ctx):
     import shutil
     from pathlib import Path
 
-    from aidoc.compat.render import build_response
+    from doc4ai.compat.render import build_response
     doc = make_doc("gonedoc", pages=1)
     shutil.rmtree(Path(doc["output_dir"]))
     r = build_response(ctx, _req(), doc, None, opts(), cached=True, attached=False, started=0.0)

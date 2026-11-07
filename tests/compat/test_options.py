@@ -1,29 +1,29 @@
 import pytest
 
-from aidoc.config import AidocConfig
+from doc4ai.config import Doc4aiConfig
 
 
 @pytest.fixture
 def cfg():
-    return AidocConfig()
+    return Doc4aiConfig()
 
 
 def test_defaults(cfg):
-    from aidoc.compat.options import parse_options
+    from doc4ai.compat.options import parse_options
     o = parse_options({}, cfg, multipart=False)
     assert o.to_formats == ["md"] and o.placeholder == "" and o.image_mode == "placeholder"
     assert o.lang == "cht" and o.engine is None and o.force is False and o.ignored_options == []
 
 
 def test_openwebui_form_fields(cfg):
-    from aidoc.compat.options import parse_options
+    from doc4ai.compat.options import parse_options
     o = parse_options({"image_export_mode": "placeholder", "md_page_break_placeholder": "\f", "doc4ai_lang": "en",
                        "pdf_backend": "dlparse_v4", "table_mode": "accurate"}, cfg, multipart=True)
     assert o.placeholder == "\f" and o.lang == "en" and o.ignored_options == ["pdf_backend", "table_mode"]
 
 
 def test_to_formats_list_forms_and_unsupported(cfg):
-    from aidoc.compat.options import parse_options
+    from doc4ai.compat.options import parse_options
     assert parse_options({"to_formats": ["json", "md", "text"]}, cfg, multipart=False).unsupported_formats == ["json"]
     assert parse_options({"to_formats": "md,text"}, cfg, multipart=True).to_formats == ["md", "text"]
     assert parse_options({"to_formats": ["md", "html"]}, cfg, multipart=True).unsupported_formats == ["html"]  # repeated field
@@ -34,7 +34,7 @@ def test_to_formats_list_forms_and_unsupported(cfg):
 
 
 def test_ocr_lang_and_force_ocr(cfg, tmp_root):
-    from aidoc.compat.options import parse_options
+    from doc4ai.compat.options import parse_options
     assert parse_options({"ocr_lang": ["zh-Hant", "en"]}, cfg, multipart=False).lang == "cht"
     assert parse_options({"ocr_lang": ["en"]}, cfg, multipart=False).lang == "en"
     assert parse_options({"ocr_lang": "en"}, cfg, multipart=True).lang == "en"
@@ -45,8 +45,8 @@ def test_ocr_lang_and_force_ocr(cfg, tmp_root):
 
 
 def test_force_ocr_with_mineru_ready(cfg, tmp_root):
-    from aidoc import paths
-    from aidoc.compat.options import parse_options
+    from doc4ai import paths
+    from doc4ai.compat.options import parse_options
     marker = paths.ready_marker("mineru")
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("ok", encoding="utf-8")
@@ -55,7 +55,7 @@ def test_force_ocr_with_mineru_ready(cfg, tmp_root):
 
 
 def test_extensions_and_bools(cfg):
-    from aidoc.compat.options import parse_options
+    from doc4ai.compat.options import parse_options
     o = parse_options({"doc4ai_engine": "docling", "doc4ai_force": "1", "doc4ai_keep_page_markers": "yes",
                        "image_export_mode": "embedded", "document_timeout": "120"}, cfg, multipart=True)
     assert o.engine == "docling" and o.force and o.keep_page_markers and o.image_mode == "embedded" and o.timeout_s == 120
@@ -68,7 +68,7 @@ def test_extensions_and_bools(cfg):
 
 
 def test_do_ocr_false_and_unknown_keys_are_reported(cfg):
-    from aidoc.compat.options import parse_options
+    from doc4ai.compat.options import parse_options
     o = parse_options({"do_ocr": "false", "zzz_custom": "1", "do_chunking": True}, cfg, multipart=True)
     assert o.ignored_options == ["do_chunking", "do_ocr", "zzz_custom"]
     assert any("do_ocr" in w for w in o.warnings) and any("do_chunking" in w for w in o.warnings)
@@ -76,7 +76,7 @@ def test_do_ocr_false_and_unknown_keys_are_reported(cfg):
 
 
 def test_roundtrip_json(cfg):
-    from aidoc.compat.options import CompatOptions, parse_options
+    from doc4ai.compat.options import CompatOptions, parse_options
     o = parse_options({"md_page_break_placeholder": "\f", "to_formats": ["md", "text"], "page_range": [1, 3]}, cfg, multipart=False)
     assert "page_range" in o.ignored_options and any("page_range" in w for w in o.warnings)
     assert CompatOptions.from_json(o.to_json()) == o

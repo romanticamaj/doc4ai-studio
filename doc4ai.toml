@@ -1,0 +1,95 @@
+[general]
+# root_dir = ""                # Doc4AI folder (absolute path): out\ and source\ go under it; empty = C:\doc4ai (Windows), ~/doc4ai
+output_dir = "out"            # legacy: no longer used for new conversions (they go to <Doc4AI folder>\out)
+lang = "cht"
+work_retention_days = 7
+enable_audio = false
+[engines]
+mineru_tier = "basic"         # "basic" | "standard"
+docling_ocr = "rapidocr"      # "easyocr" | "rapidocr" (spike B 2026-09: rapidocr)
+docling_page_batch_size = 16
+[limits]
+upload_max_bytes = 2147483648
+timeout_per_page_s = 60
+timeout_min_s = 120
+timeout_per_mb_s = 30
+timeout_max_no_pages_s = 1800
+startup_timeout_s = 900
+disk_space_factor = 3
+archive_max_uncompressed_mb = 512  # Office / EPUB / ODF / zip: refused before any engine runs when the archive
+archive_max_entries = 10000        # inflates past these limits (decompression bombs) -> input failure
+archive_max_entry_mb = 256         #   archive_too_large
+archive_max_ratio = 200            # uncompressed / compressed size
+engine_memory_mb = 0               # engine runner memory cap (process tree); 0 = 75 % of RAM
+markitdown_memory_mb = 0           # MarkItDown's cap; 0 = 25 % of RAM, at most 8192
+[server]
+host = "127.0.0.1"
+port = 8765
+token = ""
+
+[mcp]
+enabled = true
+allowed_hosts = []                 # extra Host names (e.g. the MagicDNS name); the bound interface is added automatically
+local_path_roots = []              # convert_path whitelist; empty = the tool is hidden
+default_token_ttl_days = 90
+max_token_ttl_days = 365
+allow_no_expiry = false
+rate_limit_per_min = 60
+max_concurrent_jobs_per_token = 3
+max_upload_mb = 20
+response_token_budget = 8000
+call_log_retention_days = 30
+call_log_max_rows = 200000
+
+[preview]
+enabled = true                     # Office files (docx/pptx/xlsx/odt/rtf/...) shown as PDF in the Document view
+soffice_path = ""                  # LibreOffice soffice(.exe); empty = PATH, then the usual install locations
+timeout_s = 180
+max_mb = 200
+
+[compat]
+enabled = true                     # docling-serve compatible API at /v1 (Open WebUI, RAGFlow, curl); PAT auth
+sync_timeout_s = 600               # longest wait of /v1/convert/*; then 504 with a task_id for /v1/status/poll
+max_file_mb = 200                  # /v1/convert/file upload limit (streamed to disk)
+max_source_mb = 50                 # /v1/convert/source JSON body limit (base64 included)
+embed_images_max_mb = 20           # image_export_mode=embedded: total inline image bytes per response
+max_concurrent_jobs_per_token = 8  # sync requests over it wait for a slot; async requests get 429
+poll_max_wait_s = 60               # cap of /v1/status/poll ?wait=
+task_retention_days = 30           # async task records; /v1/result answers 404 after this
+json_content = "null"              # "null" | "doc4ai"; json_content is always null for now (spike S1)
+
+[vlm]
+backend = "none"                   # "none" | "local" | "openai"; VLM OCR = last fallback and last repair engine
+use_as_fallback = true
+use_for_repair = true
+dpi = 150                          # remote backend render dpi; the local backend uses local_dpi
+max_image_px = 2000                # remote: long side limit of a page image
+request_timeout_s = 120
+max_output_tokens = 4096
+remote_enabled = false             # consent: page images are sent to base_url (required for backend "openai")
+base_url = ""                      # e.g. http://127.0.0.1:1234/v1 (LM Studio), http://127.0.0.1:11434/v1 (Ollama)
+model = ""
+api_key_env = "DOC4AI_VLM_API_KEY"  # the key is read from this environment variable
+api_key = ""                       # prefer the environment variable; masked over the API
+allow_no_key = false               # true for endpoints that need no key
+max_concurrent = 2
+remote_max_pages_per_doc = 200
+remote_daily_page_budget = 500     # 0 = unlimited
+local_preset = "paddleocr-vl-1.6"  # "paddleocr-vl-1.6" | "qwen2.5-vl-3b" | "custom"
+local_dpi = 200
+local_max_image_px = 1400
+local_ctx_size = 8192
+local_gguf = ""                    # local_preset = "custom": absolute paths
+local_mmproj = ""
+local_prompt_style = ""            # "" = by preset; "paddle_tasks" | "generic"
+
+# [oauth]                          # local MCP OAuth: clients add http://127.0.0.1:<port>/mcp with no token and
+# enabled = true                   #   authorize in the browser (授權連線); false = PAT only, Phase 1 401 shape
+# allow_cimd = true                # client_id is an https URL (Claude Code)
+# allow_dcr = true                 # POST /oauth/register (Cursor, the Python SDK, MCP Inspector)
+# access_ttl_min = 60              # 5..1440
+# refresh_ttl_days = 30            # 1..365, sliding
+# refresh_max_days = 90            # refresh_ttl_days..730, absolute from the grant
+# code_ttl_s = 300                 # 30..600
+# consent_ttl_s = 600              # 60..1800
+# dcr_per_hour_per_ip = 20         # 1..1000

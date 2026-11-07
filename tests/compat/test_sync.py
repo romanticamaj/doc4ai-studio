@@ -238,7 +238,7 @@ def test_rate_limit_applies_to_convert(workers):
 def test_server_token_is_not_a_pat_on_v1(token_ctx):
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(token_ctx), client=("10.0.0.9", 5000), base_url="http://127.0.0.1:8765") as c:
         r = c.post("/v1/convert/file", headers={"Authorization": "Bearer s3cret"}, files={"files": ("a.pdf", PDF)})
         assert r.status_code == 401 and "detail" in r.json() and "workspace" not in r.json()

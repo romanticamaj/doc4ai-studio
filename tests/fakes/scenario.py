@@ -12,5 +12,5 @@ def write_scenario(path: Path, **kw) -> Path:
 
 
 def fake_env(monkeypatch, scenario_path: Path) -> None:
-    monkeypatch.setenv("AIDOC_FAKE_ENGINES", "1")
-    monkeypatch.setenv("AIDOC_FAKE_SCENARIO", str(scenario_path))
+    monkeypatch.setenv("DOC4AI_FAKE_ENGINES", "1")
+    monkeypatch.setenv("DOC4AI_FAKE_SCENARIO", str(scenario_path))

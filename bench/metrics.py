@@ -12,8 +12,8 @@ from html.parser import HTMLParser
 
 from rapidfuzz.distance import Levenshtein
 
-from aidoc.pagemap import squash
-from aidoc.quality import strip_markup
+from doc4ai.pagemap import squash
+from doc4ai.quality import strip_markup
 
 DROPPED_SECTION_MAX = 20
 RECOVERED_NED = 0.90

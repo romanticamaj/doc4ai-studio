@@ -7,14 +7,14 @@ import shutil
 
 import pytest
 
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pipeline import run_task
-from aidoc.probe import probe_file
-from aidoc.quality import PAGE_CHECK_VERSION, PAGE_REASONS, assess
-from aidoc.store import Store
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pipeline import run_task
+from doc4ai.probe import probe_file
+from doc4ai.quality import PAGE_CHECK_VERSION, PAGE_REASONS, assess
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 from tests.fixtures.make_fixtures import EN, ZH, make_scanned_pdf
 
@@ -62,7 +62,7 @@ def test_assess_flags_a_misattribution_on_a_scan(scan):
 
 
 def test_verify_reports_the_scan_fault(scan):
-    from aidoc.verify import verify_markdown
+    from doc4ai.verify import verify_markdown
     secs = _texts()
     secs[2] = ""
     rep = verify_markdown(_md(secs), scan)

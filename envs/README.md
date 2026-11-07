@@ -1,7 +1,7 @@
 # Engine environments
 
 Each engine lives in its own uv project (`envs/<engine>/pyproject.toml` + `uv.lock`) with its own
-`.venv`, so torch / model stacks never touch the main `aidoc` env. `uv run aidoc setup <engine>`
+`.venv`, so torch / model stacks never touch the main `doc4ai` env. `uv run doc4ai setup <engine>`
 runs `uv sync --project envs/<engine>`, downloads models into `data/models/`, runs the engine's
 self-check and writes `envs/<engine>/.ready`.
 
@@ -24,7 +24,7 @@ it through `[tool.uv.sources]` for win32/linux. The self-check requires `torch.c
 
 Change the index URL to `https://download.pytorch.org/whl/cu130`, raise the torch bound to `>=2.12`
 (first release with cu130 wheels for all platforms), make sure the NVIDIA driver is R580 or newer, then
-`uv lock --project envs/<e>` and `uv run aidoc setup <e>`.
+`uv lock --project envs/<e>` and `uv run doc4ai setup <e>`.
 
 ## MarkItDown extras
 

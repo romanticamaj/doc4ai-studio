@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pymupdf
 
-from aidoc.pagemap import (
+from doc4ai.pagemap import (
     MARKER,
     apply_inferred,
     infer_pages,

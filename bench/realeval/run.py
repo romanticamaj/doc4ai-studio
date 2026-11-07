@@ -1,4 +1,4 @@
-"""Real-sample evaluation runner (spec 2026-10-22). Not part of the `aidoc` package; changes nothing under src/.
+"""Real-sample evaluation runner (spec 2026-10-22). Not part of the `doc4ai` package; changes nothing under src/.
 
     uv run python bench/realeval/run.py --part scans|formulas|vlm|all --out bench/results/<date>-realeval
         [--root tests/fixtures/manual/realeval] [--resume] [--decide-only] [--offline-declared]
@@ -6,8 +6,8 @@
         [--fake --stand-in <dir> --vlm-base-url http://127.0.0.1:<port>/v1]   # dry run: stand-ins + fake engines
         [--rerun-pair <config>/<doc> --reason "..."]               # spec §8.3: one harness-caused rerun, recorded
 
-Every conversion is `bench.run.convert` (one `aidoc convert --force --json` per (config, document), own data dir,
-own output root, `aidoc-<config>.toml` with `[vlm] backend = "none"`, single engines with AIDOC_BENCH_NO_REPAIR=1)
+Every conversion is `bench.run.convert` (one `doc4ai convert --force --json` per (config, document), own data dir,
+own output root, `doc4ai-<config>.toml` with `[vlm] backend = "none"`, single engines with DOC4AI_BENCH_NO_REPAIR=1)
 with `--lang` from the manifest. After every part, validity.json, decisions.json and summary.md are recomputed from
 the files on disk — the same function `--decide-only` runs for the verifier (spec §13 #6)."""
 from __future__ import annotations
@@ -79,18 +79,18 @@ def _git(*args) -> subprocess.CompletedProcess:
 
 
 def _opts(lang: str):
-    from aidoc.config import load_config
-    from aidoc.models import ConvertOptions
+    from doc4ai.config import load_config
+    from doc4ai.models import ConvertOptions
     cfg = load_config()
     return ConvertOptions(output_dir=Path("."), lang=lang, mineru_tier=cfg.engines.mineru_tier,
                           docling_ocr=cfg.engines.docling_ocr)
 
 
 def route_reason(pdf: Path, lang: str) -> str:
-    """The reason the current router gives this PDF (`aidoc.router._rule` on the same probe; the CLI payload does
+    """The reason the current router gives this PDF (`doc4ai.router._rule` on the same probe; the CLI payload does
     not carry it). Recorded beside `tried`, which shows what auto actually ran."""
-    from aidoc.probe import probe_file
-    from aidoc.router import _rule
+    from doc4ai.probe import probe_file
+    from doc4ai.router import _rule
     return _rule(probe_file(pdf), _opts(lang))[1]
 
 
@@ -100,7 +100,7 @@ def base_environment(a) -> dict:
 
 
 def _stage(src: Path, dst: Path) -> Path:
-    """`<out>/inputs/<doc>.pdf`: aidoc names output folders after the file stem, and every A/C original is
+    """`<out>/inputs/<doc>.pdf`: doc4ai names output folders after the file stem, and every A/C original is
     `original.pdf`. Hardlink (same bytes, same sha256), else copy."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
@@ -340,8 +340,8 @@ def part_scans(docs, gt, staged, out, fake, done, log) -> None:
 
 
 def part_formulas(docs, staged, out, fake, done, log) -> None:
-    from aidoc.pagemap import squash
-    from aidoc.probe import probe_file
+    from doc4ai.pagemap import squash
+    from doc4ai.probe import probe_file
     for s in docs:
         if s.group != "B":
             continue

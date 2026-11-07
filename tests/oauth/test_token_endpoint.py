@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from aidoc.oauth import tokens as OT
+from doc4ai.oauth import tokens as OT
 from tests.oauth.conftest import RES, pkce
 
 CB = "http://127.0.0.1:3118/callback"
@@ -11,7 +11,7 @@ DAY = 86400
 
 
 def svc(ctx):
-    from aidoc.oauth.grants import GrantService
+    from doc4ai.oauth.grants import GrantService
     return GrantService(ctx)
 
 
@@ -124,7 +124,7 @@ def test_code_expires_and_bad_bodies(oauth_client, oauth_ctx, dcr_client):
 
 
 def test_pat_is_not_an_oauth_credential(oauth_client, oauth_ctx, dcr_client):
-    from aidoc.mcp import tokens as T
+    from doc4ai.mcp import tokens as T
     r = token(oauth_client, grant_type="refresh_token", refresh_token=T.generate_token(), client_id=dcr_client["client_id"])
     assert r.status_code == 400 and r.json() == {"error": "invalid_grant", "error_description": "refresh token is invalid, expired or revoked"}
     at = OT.generate(OT.AT_PREFIX)

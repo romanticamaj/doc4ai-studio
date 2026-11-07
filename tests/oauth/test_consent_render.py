@@ -3,7 +3,7 @@ import re
 
 import pytest
 
-from aidoc.oauth import consent as C
+from doc4ai.oauth import consent as C
 
 SECRET = b"k" * 32
 PARAMS = {"client_id": "https://claude.ai/oauth/claude-code-client-metadata", "redirect_uri": "http://localhost:3118/callback",
@@ -123,7 +123,7 @@ def test_client_tile_shows_the_escaped_first_letter(name, tile):
 
 def test_limits_text_matches_the_tools_that_exist():
     """The page promises the app cannot delete documents: adding such a tool must fail here until the text changes."""
-    from aidoc.mcp.middleware import TOOL_SCOPES
+    from doc4ai.mcp.middleware import TOOL_SCOPES
     assert "刪除文件" in C.TEXT["limits"]
     assert not [t for t in TOOL_SCOPES if "delete" in t or "remove" in t or "setting" in t or "token" in t]
 

@@ -1,12 +1,12 @@
 import pytest
 
-from aidoc.mcp import budget as B
+from doc4ai.mcp import budget as B
 
 
 def test_estimate_tokens_methods(monkeypatch):
     n, method = B.estimate_tokens("hello world " * 10)
     assert method in ("tiktoken", "bytes") and n > 0
-    from aidoc import chunk
+    from doc4ai import chunk
 
     def boom(text):
         raise chunk.TokenizerUnavailable("offline")

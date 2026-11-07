@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from aidoc.mcp.middleware import TOOL_SCOPES, visible_tools
-from aidoc.mcp.principal import SCOPES, Principal
-from aidoc.mcp.server import PROTOCOL_VERSIONS, endpoint_urls, local_hosts, transport_security_for
+from doc4ai.mcp.middleware import TOOL_SCOPES, visible_tools
+from doc4ai.mcp.principal import SCOPES, Principal
+from doc4ai.mcp.server import PROTOCOL_VERSIONS, endpoint_urls, local_hosts, transport_security_for
 from tests.mcp.conftest import mcp_call, mcp_client, mcp_list_tools, raw_post
 
 READ_TOOLS = {"search_library", "list_documents", "get_document_info", "read_document", "get_chunks", "get_job",
@@ -161,7 +161,7 @@ def test_visible_tools_rules(ctx):
 
 def test_tailnet_bind_advertises_magicdns_name(ctx, monkeypatch):
     """Bound to a tailnet IP, the MagicDNS name is an allowed Host and an advertised endpoint without any config."""
-    from aidoc.mcp import server as srv
+    from doc4ai.mcp import server as srv
     monkeypatch.setattr(srv, "_tailnet_cache", {("100.64.0.45",): ["box.tail0.ts.net", "box"]})
     ts = transport_security_for(ctx.config, "100.64.0.45", 3333)
     assert {"box.tail0.ts.net:3333", "box.tail0.ts.net:*", "box:*", "100.64.0.45:3333"} <= set(ts.allowed_hosts)

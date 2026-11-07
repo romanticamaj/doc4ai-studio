@@ -1,11 +1,11 @@
 import time
 
-from aidoc.batch import register_source
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions
-from aidoc.pipeline import run_task
-from aidoc.store import Store
+from doc4ai.batch import register_source
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions
+from doc4ai.pipeline import run_task
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -24,7 +24,7 @@ def test_conversion_writes_page_index(tmp_root, fixtures, monkeypatch):
 
 
 def test_server_start_backfills_missing_index(tmp_root, monkeypatch):
-    from aidoc.server.app import build_context
+    from doc4ai.server.app import build_context
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     store = Store(tmp_root / "data" / "aidoc.db")
     out = tmp_root / "out" / "old"

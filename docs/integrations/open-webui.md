@@ -26,7 +26,7 @@ DOCLING_PARAMS={"doc4ai_lang": "cht"}               # 選用，見下表
 API key。這些設定會存在 Open WebUI 的資料庫裡，之後以 UI 為準。
 
 Docker 裡的 Open WebUI 連本機的 Doc4AI：URL 用 `http://host.docker.internal:<port>`（Docker Desktop），並以
-`aidoc serve --host 0.0.0.0` 啟動 Doc4AI。
+`doc4ai serve --host 0.0.0.0` 啟動 Doc4AI。
 
 `DOCLING_PARAMS` 的每個鍵都會原樣成為 form 欄位，所以 Doc4AI 的擴充選項可以從這裡給：
 
@@ -51,7 +51,7 @@ Open WebUI 送 `md_page_break_placeholder=\f`，回來的 `md_content` 以 `\f` 
 
 - Open WebUI 對 Docling 的請求**沒有 timeout**；Doc4AI 最多等 `compat.sync_timeout_s`（預設 600 秒）後回
   `504` 並附 `task_id`，工作在 Doc4AI 繼續跑完。Open WebUI 會把這個檔標成失敗。
-- 大檔（數百頁的掃描 PDF）請先在 Doc4AI 轉好（Web 介面上傳或 `aidoc convert`），之後在 Open WebUI 上傳**同一個
+- 大檔（數百頁的掃描 PDF）請先在 Doc4AI 轉好（Web 介面上傳或 `doc4ai convert`），之後在 Open WebUI 上傳**同一個
   檔案**會**快取命中**秒回——快取看的是內容 sha256，不看檔名（Open WebUI 存檔時會在檔名前加 UUID，Doc4AI
   會去掉它）。
 - 同一把 token 同時進行中的轉換上限 `compat.max_concurrent_jobs_per_token`（預設 8）；同步請求超過時會**排隊等**

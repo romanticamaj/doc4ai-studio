@@ -1,7 +1,7 @@
 import importlib.util
 import sys
 
-from aidoc import paths
+from doc4ai import paths
 
 sys.path.insert(0, str(paths.runner_dir()))
 spec = importlib.util.spec_from_file_location("markitdown_runner", paths.runner_script("markitdown"))

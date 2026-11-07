@@ -1,7 +1,7 @@
 import json
 import time
 
-from aidoc import paths
+from doc4ai import paths
 
 
 def test_system_shape(client, ctx, tmp_root):
@@ -21,7 +21,7 @@ def test_system_shape(client, ctx, tmp_root):
 
 
 def test_gpu_query_never_raises(monkeypatch):
-    from aidoc import gpu
+    from doc4ai import gpu
 
     def boom():
         raise RuntimeError("no nvml")
@@ -44,7 +44,7 @@ def test_setup_endpoint_streams_logs(client, ctx, monkeypatch):
         log("syncing")
         log("done")
         return True
-    monkeypatch.setattr("aidoc.server.setup_runner.setup_engines.setup", fake_setup)
+    monkeypatch.setattr("doc4ai.server.setup_runner.setup_engines.setup", fake_setup)
     r = client.post("/api/system/setup/docling")
     assert r.status_code == 202 and r.json()["engine"] == "docling" and r.json()["setup_id"]
     kinds = _wait_kinds(ctx, "setup.done")
@@ -61,7 +61,7 @@ def test_setup_conflict_and_failure(client, ctx, monkeypatch):
     def slow_setup(engine, cfg, log, run=None):
         gate.wait(5)
         raise RuntimeError("uv exploded")
-    monkeypatch.setattr("aidoc.server.setup_runner.setup_engines.setup", slow_setup)
+    monkeypatch.setattr("doc4ai.server.setup_runner.setup_engines.setup", slow_setup)
     assert client.post("/api/system/setup/all").status_code == 202
     r = client.post("/api/system/setup/mineru")
     assert r.status_code == 409 and r.json()["error"] == "setup_running"
@@ -78,7 +78,7 @@ def test_settings_get_put(client, ctx, tmp_root):
                                           "engines": {"mineru_tier": "standard"}})
     assert r.status_code == 200 and r.json()["settings"]["general"]["lang"] == "en"
     assert ctx.config.engines.mineru_tier == "standard" and ctx.config.general.work_retention_days == 3
-    assert 'lang = "en"' in (tmp_root / "aidoc.toml").read_text(encoding="utf-8")
+    assert 'lang = "en"' in (tmp_root / "doc4ai.toml").read_text(encoding="utf-8")
     assert client.get("/api/settings").json()["settings"]["general"]["lang"] == "en"
     assert client.put("/api/settings", json={"general": {"bogus": 1}}).status_code == 422
     assert client.put("/api/settings", json={"bogus": {"x": 1}}).status_code == 422
@@ -93,7 +93,7 @@ def test_settings_get_put(client, ctx, tmp_root):
 def test_settings_token_masked(token_ctx):
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(token_ctx)) as c:
         s = c.get("/api/settings", headers={"Authorization": "Bearer s3cret"}).json()["settings"]
         assert s["server"]["token"] == "***"

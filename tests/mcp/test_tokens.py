@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from aidoc.mcp import tokens as T
+from doc4ai.mcp import tokens as T
 
 
 def test_generate_token_shape_and_checksum():

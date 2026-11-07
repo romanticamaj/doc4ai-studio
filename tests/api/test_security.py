@@ -1,7 +1,7 @@
 """Final review I1: DNS rebinding / cross-site requests against a no-token loopback server."""
 from fastapi.testclient import TestClient
 
-from aidoc.server.app import create_app
+from doc4ai.server.app import create_app
 
 
 def test_foreign_host_rejected_without_token(client):

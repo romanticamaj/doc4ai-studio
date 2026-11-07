@@ -1,4 +1,4 @@
-"""Office preview via LibreOffice (aidoc.preview): soffice detection, command construction, cache key, manager."""
+"""Office preview via LibreOffice (doc4ai.preview): soffice detection, command construction, cache key, manager."""
 from __future__ import annotations
 
 import hashlib
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from aidoc import preview as P
+from doc4ai import preview as P
 
 FAKE = Path(__file__).resolve().parents[1] / "fakes" / "fake_soffice.py"
 

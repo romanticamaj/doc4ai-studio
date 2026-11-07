@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { applyEvent } from "@/events/applyEvent";
 import { qk } from "@/api/mcp";
-import type { AidocEvent, McpClient } from "@/api/types";
+import type { Doc4aiEvent, McpClient } from "@/api/types";
 import { splitClients } from "@/features/mcp/clientState";
 import { TokensTab } from "@/features/mcp/TokensTab";
 import { ClientsTab } from "@/features/mcp/ClientsTab";
@@ -40,7 +40,7 @@ test("clients of a revoked token leave 活躍 at once, live and on refetch", () 
   expect(splitClients([client({ token_status: "revoked" })], now).active).toHaveLength(0);
   const qc = new QueryClient();
   qc.setQueryData(qk.mcp.clients({}), { clients: [client()] });
-  applyEvent(qc, { kind: "mcp.token", seq: 1, payload: { id: "t1", name: "laptop", prefix: "doc4ai_pat_AAAA", action: "revoked" } } as AidocEvent);
+  applyEvent(qc, { kind: "mcp.token", seq: 1, payload: { id: "t1", name: "laptop", prefix: "doc4ai_pat_AAAA", action: "revoked" } } as Doc4aiEvent);
   const c = qc.getQueryData<{ clients: McpClient[] }>(qk.mcp.clients({}))!.clients[0];
   expect(c.token_status).toBe("revoked");
   expect(splitClients([c], now).active).toHaveLength(0);

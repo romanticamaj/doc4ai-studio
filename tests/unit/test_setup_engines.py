@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from aidoc import paths
-from aidoc import setup_engines as se
-from aidoc.config import load_config
+from doc4ai import paths
+from doc4ai import setup_engines as se
+from doc4ai.config import load_config
 
 
 def test_plan_commands_mineru(tmp_root):
@@ -76,15 +76,15 @@ def test_markitdown_needs_no_gpu(tmp_root, monkeypatch):
 
 
 def test_setup_vlm_with_backend_none_refuses(tmp_root):
-    from aidoc.config import AidocConfig
+    from doc4ai.config import Doc4aiConfig
     logs = []
-    assert not se.setup("vlm", AidocConfig(), logs.append, run=lambda *a, **k: None) and any("backend" in s for s in logs)
+    assert not se.setup("vlm", Doc4aiConfig(), logs.append, run=lambda *a, **k: None) and any("backend" in s for s in logs)
 
 
 def test_setup_vlm_local_is_not_supported_yet(tmp_root):
     """Spike S1 rule 4 -> Task 8c: the local backend is not delivered; setup says so and points at the spike."""
-    from aidoc.config import AidocConfig
-    cfg = AidocConfig()
+    from doc4ai.config import Doc4aiConfig
+    cfg = Doc4aiConfig()
     cfg.vlm.backend = "local"
     logs = []
     assert not se.setup("vlm", cfg, logs.append, run=lambda *a, **k: None)
@@ -93,18 +93,18 @@ def test_setup_vlm_local_is_not_supported_yet(tmp_root):
 
 
 def test_setup_all_skips_an_unconfigured_vlm(tmp_root):
-    from aidoc.config import AidocConfig
+    from doc4ai.config import Doc4aiConfig
     seen = []
-    se.setup("all", AidocConfig(), lambda s: None, run=lambda cmd, **kw: seen.append(cmd) or
+    se.setup("all", Doc4aiConfig(), lambda s: None, run=lambda cmd, **kw: seen.append(cmd) or
              type("R", (), {"returncode": 1, "stdout": "", "stderr": ""})())
     assert not any("vlm" in " ".join(map(str, c)) for c in seen)
 
 
 def test_setup_vlm_openai_is_the_connection_check(tmp_root, monkeypatch):
-    from aidoc.config import AidocConfig
+    from doc4ai.config import Doc4aiConfig
     from tests.fakes.vlm_server import FakeVlmServer
-    monkeypatch.setenv("AIDOC_VLM_API_KEY", "sk-test")
-    cfg = AidocConfig()
+    monkeypatch.setenv("DOC4AI_VLM_API_KEY", "sk-test")
+    cfg = Doc4aiConfig()
     cfg.vlm.backend, cfg.vlm.model, cfg.vlm.remote_enabled = "openai", "fake-vlm", True
     logs = []
     with FakeVlmServer({"default": "ok", "pages": {"1": "AIDOC VLM CHECK 繁體中文 2026"}, "require_key": "sk-test"}) as base:

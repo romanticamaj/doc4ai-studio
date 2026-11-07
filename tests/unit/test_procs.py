@@ -4,7 +4,7 @@ import time
 
 import psutil
 
-from aidoc import procs
+from doc4ai import procs
 
 
 def test_kill_tree_kills_children():
@@ -21,5 +21,5 @@ def test_kill_tree_kills_children():
     assert not psutil.pid_exists(child_pid)
 
 
-def test_is_aidoc_runner_false_for_random_process():
-    assert procs.is_aidoc_runner(psutil.Process().pid) is False
+def test_is_doc4ai_runner_false_for_random_process():
+    assert procs.is_doc4ai_runner(psutil.Process().pid) is False

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 // spec 2026-10-29 §13: Doc4AI folder → convert → verified copy → fallback after the work copy is gone → a visible
 // copy failure → retry → backfill. Runs against the throwaway e2e server only (playwright.config.ts).
 const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../tests/fixtures");
-const E2E = process.env.AIDOC_E2E_DIR as string;
+const E2E = process.env.DOC4AI_E2E_DIR as string;
 const LIB = path.join(E2E, "lib");
 const PDF_NAME = "第一章 測試（草稿）.pdf";
 const PDF_STEM = "第一章 測試（草稿）";

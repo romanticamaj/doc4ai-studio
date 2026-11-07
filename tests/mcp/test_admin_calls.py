@@ -1,6 +1,6 @@
 import time
 
-from aidoc.server.api.mcp import percentile
+from doc4ai.server.api.mcp import percentile
 
 
 def _token(client, name="t"):
@@ -77,9 +77,9 @@ def test_auth_failure_of_a_known_revoked_token_shows_its_name(client, ctx):
     """Item 14: the log should say WHICH token (by name) was used after it was revoked or expired."""
     import time as _t
 
-    from aidoc.mcp import tokens as T
-    from aidoc.mcp.principal import PatVerifier
-    from aidoc.mcp.tokens import load_or_create_secret
+    from doc4ai.mcp import tokens as T
+    from doc4ai.mcp.principal import PatVerifier
+    from doc4ai.mcp.tokens import load_or_create_secret
     created = client.post("/api/mcp/tokens", json={"name": "old laptop", "scopes": ["doc4ai:read"]}).json()
     client.post(f"/api/mcp/tokens/{created['record']['id']}/revoke", json={})
     res = PatVerifier(ctx.store, load_or_create_secret(ctx.config.data_dir)).verify(created["token"], now=_t.time())

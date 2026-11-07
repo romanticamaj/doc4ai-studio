@@ -1,5 +1,5 @@
 """run.py orchestration of the real-sample evaluation (spec 2026-10-22 §3, §7.0, §8). Synthetic stand-ins, fake
-engines (AIDOC_FAKE_ENGINES) and the fake VLM endpoint only — the real folder is never opened."""
+engines (DOC4AI_FAKE_ENGINES) and the fake VLM endpoint only — the real folder is never opened."""
 from __future__ import annotations
 
 import hashlib
@@ -114,7 +114,7 @@ def test_dry_run_env_records_identities(dry_run):
 
 def test_dry_run_configs_keep_the_vlm_backend_off(dry_run):
     for c in R.CONFIGS:
-        text = (dry_run["out"] / f"aidoc-{c}.toml").read_text(encoding="utf-8")
+        text = (dry_run["out"] / f"doc4ai-{c}.toml").read_text(encoding="utf-8")
         assert 'backend = "none"' in text
 
 
@@ -212,8 +212,8 @@ class _NoSampler:
 
 
 def test_route_reason_is_the_routers_rule():
-    from aidoc.probe import probe_file
-    from aidoc.router import _rule
+    from doc4ai.probe import probe_file
+    from doc4ai.router import _rule
     assert R.route_reason(FIX / "scanned_cht.pdf", "cht") == "pdf_scanned"
     probe = probe_file(FIX / "formula.pdf")
     assert R.route_reason(FIX / "formula.pdf", "en") == _rule(probe, R._opts("en"))[1]

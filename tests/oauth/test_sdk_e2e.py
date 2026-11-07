@@ -123,7 +123,7 @@ def test_sdk_oauth_flow_dcr(live_oauth, oauth_ctx):
     assert "本機註冊的用戶端" in browser.pages[0] and "doc4ai-sdk-test" in browser.pages[0]
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(oauth_ctx), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1)) as c:
         rows = [t for t in c.get("/api/mcp/tokens").json()["tokens"] if t["kind"] == "oauth"]
     assert [r["name"] for r in rows] == ["doc4ai-sdk-test"] and rows[0]["status"] == "active"
@@ -147,7 +147,7 @@ def test_sdk_oauth_flow_cimd(live_oauth, oauth_ctx, fake_cimd):
 
 
 def test_sdk_refresh_and_revoke(live_oauth, oauth_ctx):
-    from aidoc.oauth.grants import GrantService
+    from doc4ai.oauth.grants import GrantService
     oauth_ctx.config.oauth.access_ttl_min = 5
     browser, storage = Browser(live_oauth, refuse_after=1), MemoryStorage()
     provider = _provider(live_oauth, browser, storage)
@@ -180,7 +180,7 @@ def test_sdk_pkce_without_metadata(live_oauth, oauth_ctx, monkeypatch):
     Finding (plan deviations, Task 13): mcp 2.2.0 never reads that field; it always sends S256. This pins what the real
     client does, and that the flow is still PKCE-protected because this server only accepts S256 (whatever the
     metadata says): if the SDK ever starts refusing, this test fails and the finding is revisited."""
-    from aidoc.oauth import metadata
+    from doc4ai.oauth import metadata
     real = metadata.as_metadata
 
     def no_pkce(cfg, iss):

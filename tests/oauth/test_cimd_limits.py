@@ -9,8 +9,8 @@ import time
 import httpx
 import pytest
 
-from aidoc.oauth import clients
-from aidoc.oauth.clients import ClientError, ClientRegistry
+from doc4ai.oauth import clients
+from doc4ai.oauth.clients import ClientError, ClientRegistry
 
 
 @pytest.fixture

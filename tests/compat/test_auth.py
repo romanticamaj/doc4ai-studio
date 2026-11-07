@@ -78,9 +78,9 @@ def test_pat_never_authorizes_api(token_ctx):
     """A PAT on /api/* is still 401 even though /v1 now accepts it (MCP spec 2.1 isolation)."""
     from fastapi.testclient import TestClient
 
-    from aidoc.mcp import tokens as T
-    from aidoc.mcp.tokens import load_or_create_secret
-    from aidoc.server.app import create_app
+    from doc4ai.mcp import tokens as T
+    from doc4ai.mcp.tokens import load_or_create_secret
+    from doc4ai.server.app import create_app
     secret = load_or_create_secret(token_ctx.config.data_dir)
     raw = T.generate_token()
     token_ctx.store.create_api_token(name="t", prefix=T.display_prefix(raw), token_hash=T.token_hash(secret, raw),

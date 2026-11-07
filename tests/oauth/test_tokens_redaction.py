@@ -4,10 +4,10 @@ import re
 
 import pytest
 
-from aidoc.mcp import tokens as PT
-from aidoc.mcp.redact import redact_text, redact_value
-from aidoc.oauth import tokens as T
-from aidoc.server.logfilter import redact as log_redact
+from doc4ai.mcp import tokens as PT
+from doc4ai.mcp.redact import redact_text, redact_value
+from doc4ai.oauth import tokens as T
+from doc4ai.server.logfilter import redact as log_redact
 
 B62 = re.compile(r"^[0-9A-Za-z]+$")
 

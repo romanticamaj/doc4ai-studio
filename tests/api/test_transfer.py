@@ -10,8 +10,8 @@ from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from aidoc.server.app import create_app
-from aidoc.server.transfer import CompressionMiddleware
+from doc4ai.server.app import create_app
+from doc4ai.server.transfer import CompressionMiddleware
 from tests.api.test_documents import converted
 
 GZ = {"Accept-Encoding": "gzip"}

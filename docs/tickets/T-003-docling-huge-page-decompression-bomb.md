@@ -26,7 +26,7 @@ Image size (249221124 pixels) exceeds limit of 178956970 pixels, could be decomp
 
 ## 修正
 
-- `src/aidoc/engines/docling.py`：
+- `src/doc4ai/engines/docling.py`：
   - 新增 `cap_page_size(src, workdir)`：任何頁面在 scale 3 下超過 `RENDER_PX_CAP`（Pillow 錯誤門檻的 90 %）時，就在工作目錄寫一份副本。
   - 副本只把那些頁以 `show_pdf_page` 等比縮小（向量內容與長寬比保留，等於降低有效 DPI），其他頁原樣複製。
   - `DoclingEngine.build_request()` 對每個 PDF 請求（包含逐頁修復）都經過這一步，`req["render_cap"]` 記下縮放了哪些頁與倍率。

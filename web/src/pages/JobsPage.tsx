@@ -44,7 +44,7 @@ export default function JobsPage() {
         <EmptyState
           icon={Layers}
           title="還沒有工作"
-          description="上傳檔案或輸入本機路徑後，轉換工作會出現在這裡。用 aidoc batch 送出的批次也會列出。"
+          description="上傳檔案或輸入本機路徑後，轉換工作會出現在這裡。用 doc4ai batch 送出的批次也會列出。"
           action={
             <Button asChild>
               <Link to="/convert">轉換文件</Link>

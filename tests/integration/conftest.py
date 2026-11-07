@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from aidoc import paths as _paths
+from doc4ai import paths as _paths
 
 REPO_ROOT = _paths.project_root()
 
@@ -13,15 +13,15 @@ def tmp_root(tmp_path, monkeypatch):
     root = tmp_path / "root"
     (root / "data").mkdir(parents=True)
     (root / "out").mkdir()
-    monkeypatch.setenv("AIDOC_ROOT", str(root))
-    monkeypatch.setenv("AIDOC_DATA", str(root / "data"))
-    monkeypatch.setenv("AIDOC_ENVS", str(REPO_ROOT / "envs"))
-    monkeypatch.setenv("AIDOC_MODELS", str(REPO_ROOT / "data" / "models"))
-    monkeypatch.delenv("AIDOC_CONFIG", raising=False)
-    monkeypatch.delenv("AIDOC_FAKE_ENGINES", raising=False)
-    # use the repo's aidoc.toml (spike decisions live there)
-    monkeypatch.setenv("AIDOC_CONFIG", str(REPO_ROOT / "aidoc.toml"))
+    monkeypatch.setenv("DOC4AI_ROOT", str(root))
+    monkeypatch.setenv("DOC4AI_DATA", str(root / "data"))
+    monkeypatch.setenv("DOC4AI_ENVS", str(REPO_ROOT / "envs"))
+    monkeypatch.setenv("DOC4AI_MODELS", str(REPO_ROOT / "data" / "models"))
+    monkeypatch.delenv("DOC4AI_CONFIG", raising=False)
+    monkeypatch.delenv("DOC4AI_FAKE_ENGINES", raising=False)
+    # use the repo's doc4ai.toml (spike decisions live there)
+    monkeypatch.setenv("DOC4AI_CONFIG", str(REPO_ROOT / "doc4ai.toml"))
     # ... but never its Doc4AI folder: a live root_dir (e.g. D:\doc4ai) must not receive test copies
     # (spec 2026-10-29 §12.4); the env override beats general.root_dir
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(root))
     return root

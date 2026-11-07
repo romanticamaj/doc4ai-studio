@@ -161,8 +161,8 @@ def test_worker_thread_runs_jobs(client, ctx, tmp_root, fixtures):
 
 
 def test_cancel_during_backoff(client, ctx, tmp_root, fixtures, monkeypatch):
-    from aidoc.retry import RetryPolicy
-    monkeypatch.setattr("aidoc.pipeline.RETRY_POLICY", RetryPolicy(backoff=(30.0, 30.0)))
+    from doc4ai.retry import RetryPolicy
+    monkeypatch.setattr("doc4ai.pipeline.RETRY_POLICY", RetryPolicy(backoff=(30.0, 30.0)))
     write_scenario(tmp_root / "sc.json", rules=[{"match": {"engine": "docling"}, "behavior": "crash"}])
     job = client.post("/api/jobs", json={"inputs": [{"path": make_src(tmp_root, fixtures)}]}).json()["job"]
     t = threading.Thread(target=ctx.queue.process_next, daemon=True)
@@ -183,7 +183,7 @@ def test_cancel_during_backoff(client, ctx, tmp_root, fixtures, monkeypatch):
 
 def test_queue_skips_a_task_another_process_is_running(client, ctx, tmp_root, fixtures):
     """A queued task whose liveness lock is held elsewhere (an in-process CLI) is skipped, not spun on."""
-    from aidoc.tasklock import TaskLock, lock_path
+    from doc4ai.tasklock import TaskLock, lock_path
     job = client.post("/api/jobs", json={"inputs": [{"path": make_src(tmp_root, fixtures)},
                                                     {"path": make_src(tmp_root, fixtures, "sample.docx")}]}).json()["job"]
     first, second = [t["id"] for t in ctx.store.list_tasks(job["id"])]

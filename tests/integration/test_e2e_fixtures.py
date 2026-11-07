@@ -3,7 +3,7 @@ import shutil
 
 import pytest
 
-from aidoc.cli import main
+from doc4ai.cli import main
 
 pytestmark = pytest.mark.slow
 
@@ -39,11 +39,11 @@ def test_scanned_en_routes_to_docling_with_lang_en(tmp_root, fixtures, monkeypat
     (With the default RapidOCR, lang=en routes like cht: tests/integration/test_lang_en_real.py.)"""
     from pathlib import Path
     REPO_ROOT = Path(__file__).resolve().parents[2]
-    cfg = (REPO_ROOT / "aidoc.toml").read_text(encoding="utf-8")
+    cfg = (REPO_ROOT / "doc4ai.toml").read_text(encoding="utf-8")
     assert 'docling_ocr = "rapidocr"' in cfg
-    (tmp_root / "aidoc.toml").write_text(cfg.replace('docling_ocr = "rapidocr"', 'docling_ocr = "easyocr"'),
+    (tmp_root / "doc4ai.toml").write_text(cfg.replace('docling_ocr = "rapidocr"', 'docling_ocr = "easyocr"'),
                                          encoding="utf-8")
-    monkeypatch.setenv("AIDOC_CONFIG", str(tmp_root / "aidoc.toml"))
+    monkeypatch.setenv("DOC4AI_CONFIG", str(tmp_root / "doc4ai.toml"))
     src = tmp_root / "scanned_en.pdf"
     shutil.copy(fixtures / "scanned_en.pdf", src)
     assert main(["convert", str(src), "-o", str(tmp_root / "out"), "--lang", "en", "--json"]) == 0

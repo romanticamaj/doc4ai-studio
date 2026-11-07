@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from aidoc import fsops, source_copy
-from aidoc.source_copy import (
+from doc4ai import fsops, source_copy
+from doc4ai.source_copy import (
     CopyError,
     copy_name,
     copy_verified,
@@ -25,7 +25,7 @@ from aidoc.source_copy import (
     sidecar_info,
     write_sidecar_copy,
 )
-from aidoc.store import Store
+from doc4ai.store import Store
 
 
 def _sha(b: bytes) -> str:
@@ -45,8 +45,8 @@ def _doc(store, n: int, sha: str, out: str) -> str:
 
 
 def test_constants():
-    from aidoc.config import ROOT_DIR_MAX
-    from aidoc.store import SCHEMA_VERSION
+    from doc4ai.config import ROOT_DIR_MAX
+    from doc4ai.store import SCHEMA_VERSION
     assert source_copy.SOURCE_COPY_RESERVE_BYTES == 256 * 1024 * 1024
     assert source_copy.COPY_CHUNK == 8 * 1024 * 1024
     assert source_copy.PART_MAX_AGE_S == 3600

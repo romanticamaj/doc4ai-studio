@@ -6,9 +6,9 @@ import logging
 import anyio
 import pytest
 
-from aidoc.mcp import tokens as T
-from aidoc.mcp.calllog import CallRecorder, summarize_args
-from aidoc.mcp.redact import redact_text, redact_value
+from doc4ai.mcp import tokens as T
+from doc4ai.mcp.calllog import CallRecorder, summarize_args
+from doc4ai.mcp.redact import redact_text, redact_value
 from tests.mcp.conftest import mcp_call, mcp_client
 
 
@@ -45,7 +45,7 @@ def test_record_redacts_resource_uri_in_row_and_event(ctx):
 def test_secrets_in_live_calls_never_reach_log_api_or_events(mcp_server, mcp_env, client, caplog):
     from mcp.shared.exceptions import MCPError
 
-    from aidoc.server.logfilter import install_secret_redaction
+    from doc4ai.server.logfilter import install_secret_redaction
     install_secret_redaction()
     caplog.set_level(logging.INFO)
     raw, _ = mcp_env.issue()
@@ -68,7 +68,7 @@ def test_secrets_in_live_calls_never_reach_log_api_or_events(mcp_server, mcp_env
 
 
 def test_access_log_redacts_percent_encoded_keys_and_pats_anywhere():
-    from aidoc.server.logfilter import redact
+    from doc4ai.server.logfilter import redact
     tok = T.generate_token()
     assert "abc" not in redact('GET /api/events?%74oken=abc HTTP/1.1')
     assert "abc" not in redact('GET /api/events?x=1&ACCESS%5Ftoken=abc HTTP/1.1')

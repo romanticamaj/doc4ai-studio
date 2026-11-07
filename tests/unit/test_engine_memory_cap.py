@@ -3,11 +3,11 @@ attempt fails as `engine` / `memory_limit`, so the pipeline falls back to the ne
 import json
 import time
 
-from aidoc.config import Limits
+from doc4ai.config import Limits
 
 
 def test_memory_limit_defaults():
-    from aidoc.engines.base import memory_limit_mb
+    from doc4ai.engines.base import memory_limit_mb
     lim = Limits()
     assert lim.engine_memory_mb == 0 and lim.markitdown_memory_mb == 0
     gpu, md = memory_limit_mb("mineru", lim), memory_limit_mb("markitdown", lim)
@@ -17,10 +17,10 @@ def test_memory_limit_defaults():
 
 
 def test_runner_over_the_cap_is_killed_and_the_next_engine_runs(ctx, tmp_path):
-    from aidoc.engines.registry import get_engines
-    from aidoc.models import ConvertOptions
-    from aidoc.names import file_sha256
-    from aidoc.pipeline import run_task
+    from doc4ai.engines.registry import get_engines
+    from doc4ai.models import ConvertOptions
+    from doc4ai.names import file_sha256
+    from doc4ai.pipeline import run_task
     from tests.fakes.scenario import write_scenario
     write_scenario(ctx.config.root / "sc.json", default="ok",
                    rules=[{"match": {"engine": "markitdown"}, "behavior": "memory_hog"}])

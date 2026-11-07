@@ -175,7 +175,7 @@ function Notices({ s }: { s: McpStatus }) {
         </Link>
       ),
     });
-  for (const w of s.config_warnings ?? []) items.push({ tone: "danger", body: <>aidoc.toml：{w}</> });
+  for (const w of s.config_warnings ?? []) items.push({ tone: "danger", body: <>doc4ai.toml：{w}</> });
 
   return (
     <Panel>

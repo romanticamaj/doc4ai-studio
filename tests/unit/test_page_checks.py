@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pymupdf
 
-from aidoc.pagemap import content_layers, pdf_layers, split_pages
-from aidoc.probe import probe_file
-from aidoc.quality import assess, coverage, page_checks
+from doc4ai.pagemap import content_layers, pdf_layers, split_pages
+from doc4ai.probe import probe_file
+from doc4ai.quality import assess, coverage, page_checks
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures"
 PF = FIX / "paged_furniture.pdf"
@@ -53,7 +53,7 @@ def test_figure_page_with_only_header_labels_and_caption_is_not_dropped():
                   "Fig 7.6 Interpretation of neck movements.", "Recent fracture", "Rheumatoid arthritis",
                   "Costoscapuloclavicular lesion", "Ankylosing spondylitis"])
     content = content_layers(pages, prose_only=True)
-    from aidoc.pagemap import squash
+    from doc4ai.pagemap import squash
     raw = [squash(" ".join(pg)) for pg in pages]
     assert len(raw[4]) >= 120 and len(content[4]) < 120
     md = "".join(f"<!-- page: {i} -->\n\n{' '.join(pages[i - 1][2:])}\n\n" for i in range(1, 5))

@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.engines.runner import _vlm_prompt as P
-from aidoc.engines.runner import vlm_runner as R
+from doc4ai.engines.runner import _vlm_prompt as P
+from doc4ai.engines.runner import vlm_runner as R
 from tests.fakes.vlm_server import FakeVlmServer
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures"
@@ -45,7 +45,7 @@ def test_clean_markdown(text, expect):
 
 
 def _opts(base, **kw):
-    return {"backend": "openai", "base_url": base, "model": "fake-vlm", "api_key_env": "AIDOC_TEST_VLM_KEY",
+    return {"backend": "openai", "base_url": base, "model": "fake-vlm", "api_key_env": "DOC4AI_TEST_VLM_KEY",
             "dpi": 100, "max_image_px": 800, "request_timeout_s": 5, "max_concurrent": 2, "max_output_tokens": 256,
             "detail": "high", "prompt_version": 1, "prompt_style": "generic", "lang": "cht", **kw}
 
@@ -56,7 +56,7 @@ def _req(tmp_path, base, src=FIX / "text.pdf", **kw):
 
 
 def test_handle_marks_every_page_and_reports_usage(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "sk-test")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "sk-test")
     sc = {"default": "ok", "require_key": "sk-test", "pages": {"2": "第二頁 second page"}, "call_log": str(tmp_path / "calls.jsonl")}
     with FakeVlmServer(sc) as base:
         res = R.handle(_req(tmp_path, base))
@@ -72,7 +72,7 @@ def test_handle_marks_every_page_and_reports_usage(tmp_path, monkeypatch):
 
 
 def test_refusal_truncation_and_blank(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     sc = {"default": "ok", "rules": [{"match": {"page": 1}, "behavior": "refuse"},
                                      {"match": {"page": 2}, "behavior": "length"},
                                      {"match": {"page": 3}, "behavior": "blank"}]}
@@ -85,7 +85,7 @@ def test_refusal_truncation_and_blank(tmp_path, monkeypatch):
 
 
 def test_retry_schedule_and_retry_after(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     slept = []
     monkeypatch.setattr(R, "_sleep", lambda s: slept.append(s))
     sc = {"default": "ok", "rules": [{"match": {"page": 1, "request_no": 1}, "behavior": "rate_limit"},
@@ -96,15 +96,15 @@ def test_retry_schedule_and_retry_after(tmp_path, monkeypatch):
 
 
 def test_auth_error_is_engine_error_not_retry(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "wrong")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "wrong")
     with FakeVlmServer({"default": "ok", "require_key": "right"}) as base, pytest.raises(R._proto.RunnerError) as e:
         R.handle(_req(tmp_path, base))
     assert e.value.kind == "engine" and "401" in str(e.value)
 
 
 def test_missing_key_is_engine_error(tmp_path, monkeypatch):
-    monkeypatch.delenv("AIDOC_TEST_VLM_KEY", raising=False)
-    monkeypatch.delenv("AIDOC_VLM_API_KEY_INLINE", raising=False)
+    monkeypatch.delenv("DOC4AI_TEST_VLM_KEY", raising=False)
+    monkeypatch.delenv("DOC4AI_VLM_API_KEY_INLINE", raising=False)
     with FakeVlmServer({"default": "ok"}) as base:
         with pytest.raises(R._proto.RunnerError, match="API key"):
             R.handle(_req(tmp_path, base))
@@ -112,7 +112,7 @@ def test_missing_key_is_engine_error(tmp_path, monkeypatch):
 
 
 def test_bad_request_rerenders_at_lower_dpi(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     sc = {"default": "ok", "rules": [{"match": {"page": 1, "request_no": 1}, "behavior": "bad_request"}], "call_log": str(tmp_path / "c.jsonl")}
     with FakeVlmServer(sc) as base:
         res = R.handle(_req(tmp_path, base, dpi=150))
@@ -134,7 +134,7 @@ def test_latex_delimiters_and_missing_images():
 
 
 def test_images_and_failed_pages_in_result(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     sc = {"default": "ok", "pages": {"1": "text\n\n<!-- image -->\nFigure 1. caption"},
           "rules": [{"match": {"page": 2}, "behavior": "bad_request"}]}
     with FakeVlmServer(sc) as base:
@@ -144,7 +144,7 @@ def test_images_and_failed_pages_in_result(tmp_path, monkeypatch):
 
 
 def test_no_usage_endpoint_reports_null_tokens(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     with FakeVlmServer({"default": "no_usage"}) as base:
         res = R.handle(_req(tmp_path, base))
     assert res["vlm"]["usage"] == {"requests": 3, "prompt_tokens": None, "completion_tokens": None}
@@ -165,7 +165,7 @@ def test_content_filter_and_more_refusal_phrasings_are_refusals():
 
 
 def test_one_unreachable_page_is_a_page_failure_not_a_lost_run(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     monkeypatch.setattr(R, "_sleep", lambda s: None)
     sc = {"default": "ok", "rules": [{"match": {"page": 2}, "behavior": "server_error"}]}
     with FakeVlmServer(sc) as base:
@@ -177,7 +177,7 @@ def test_one_unreachable_page_is_a_page_failure_not_a_lost_run(tmp_path, monkeyp
 
 
 def test_loopback_is_an_address_not_a_prefix():
-    from aidoc.engines.vlm import is_loopback_url
+    from doc4ai.engines.vlm import is_loopback_url
     assert is_loopback_url("http://127.0.0.1:1/v1") and is_loopback_url("http://[::1]:1/v1") and is_loopback_url("http://localhost/v1")
     assert not is_loopback_url("http://127.evil.com/v1") and not R._is_loopback("127.evil.com:80")
 
@@ -186,8 +186,8 @@ LOOPBACK_TABLE = Path(__file__).resolve().parents[2] / "web" / "src" / "features
 
 
 def test_loopback_rules_are_one_table_for_server_and_web():
-    from aidoc.engines.runner import _vlm_net
-    from aidoc.engines.vlm import is_loopback_url
+    from doc4ai.engines.runner import _vlm_net
+    from doc4ai.engines.vlm import is_loopback_url
     for url, expected in json.loads(LOOPBACK_TABLE.read_text(encoding="utf-8"))["cases"]:
         assert _vlm_net.is_loopback_url(url) is (bool(expected) if expected is not None else False), url
         assert is_loopback_url(url) is (bool(expected) if expected is not None else False), url
@@ -231,7 +231,7 @@ def test_refusals_name_the_task(text):
 
 
 def test_errors_never_carry_the_key_or_document_text(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "sk-live-SECRET123456")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "sk-live-SECRET123456")
     with FakeVlmServer({"default": "unauthorized_echo"}) as base, pytest.raises(R._proto.RunnerError) as e:
         R.handle(_req(tmp_path, base))
     err = capsys.readouterr().err
@@ -244,21 +244,21 @@ def test_errors_never_carry_the_key_or_document_text(tmp_path, monkeypatch, caps
 
 
 def test_every_request_is_reported_as_it_leaves(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     monkeypatch.setattr(R, "_sleep", lambda s: None)
     sc = {"default": "ok", "rules": [{"match": {"page": 2, "request_no": 1}, "behavior": "server_error"}],
           "call_log": str(tmp_path / "c.jsonl")}
     with FakeVlmServer(sc) as base:
         R.handle(_req(tmp_path, base, max_concurrent=1))
     events = [json.loads(line.split(" ", 1)[1]) for line in capsys.readouterr().err.splitlines()
-              if line.startswith("AIDOC_VLM_USAGE ")]
+              if line.startswith("DOC4AI_VLM_USAGE ")]
     calls = (tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()
     assert sum(ev.get("requests", 0) for ev in events) == len(calls) == 4
     assert sum(ev.get("pages", 0) for ev in events) == 3 and all(ev["endpoint_host"].startswith("127.0.0.1:") for ev in events)
 
 
 def test_answered_pages_are_not_sent_again_on_a_retry(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     sc = {"default": "ok", "call_log": str(tmp_path / "c.jsonl")}
     with FakeVlmServer(sc) as base:
         first = R.handle(_req(tmp_path, base))
@@ -270,7 +270,7 @@ def test_answered_pages_are_not_sent_again_on_a_retry(tmp_path, monkeypatch):
 
 
 def test_request_counter_is_exact_under_concurrency(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIDOC_TEST_VLM_KEY", "k")
+    monkeypatch.setenv("DOC4AI_TEST_VLM_KEY", "k")
     sc = {"default": "ok", "call_log": str(tmp_path / "c.jsonl")}
     with FakeVlmServer(sc) as base:
         res = R.handle(_req(tmp_path, base, src=FIX / "big.pdf", max_concurrent=8, max_image_px=600))

@@ -2,7 +2,7 @@
  * Opening a PDF over a high-latency link (Tailscale DERP, ~1 s RTT). pdf.js reads a PDF with range requests and
  * every structural step waits for the previous one (trailer, each xref section of the /Prev chain, catalog, page
  * tree, page, its image): a 1,192-page book saved incrementally took ~45 serial requests (~100 s) to show page 1.
- * The server lists those byte ranges (GET …/source/open, aidoc.pdfprefetch) and sends them back to back in one
+ * The server lists those byte ranges (GET …/source/open, doc4ai.pdfprefetch) and sends them back to back in one
  * gzip-compressed response; pdf.js is then given a range transport that answers from that bundle and falls back
  * to ordinary Range requests for everything else (later pages).
  */

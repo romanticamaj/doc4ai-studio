@@ -24,12 +24,12 @@ def test_chunks_endpoint(client, ctx, tmp_root, fixtures):
 
 def test_chunks_output_missing_and_tokenizer_unavailable(client, ctx, tmp_root, fixtures, monkeypatch):
     did = _doc(client, ctx, tmp_root, fixtures)
-    import aidoc.chunk
-    from aidoc.chunk import TokenizerUnavailable
+    import doc4ai.chunk
+    from doc4ai.chunk import TokenizerUnavailable
 
     def boom(text):
-        raise TokenizerUnavailable("not cached; run aidoc setup")
-    monkeypatch.setattr(aidoc.chunk, "count_tokens", boom)
+        raise TokenizerUnavailable("not cached; run doc4ai setup")
+    monkeypatch.setattr(doc4ai.chunk, "count_tokens", boom)
     r = client.post("/api/chunks", json={"document_id": did})
     assert r.status_code == 503 and r.json()["error"] == "tokenizer_unavailable"
     shutil.rmtree(Path(ctx.store.get_document(did)["output_dir"]))

@@ -1,11 +1,11 @@
 """Per-reason precision / recall of the page checks on hand-judged real pages (verifier rounds 2-3, spec 2026-10-05
-verify §2.3). Run: AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration/test_page_labels_real.py -s
+verify §2.3). Run: DOC4AI_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration/test_page_labels_real.py -s
 
 The gate is the held-out split only (`heldout_v2`, labelled blind by the independent verifier after the thresholds
 were frozen): Wilson 95 % lower bound of precision >= 0.8 for every reason with flags, and of recall >= 0.8 for every
 reason with >= 10 positives. A reason with fewer than 15 held-out positives is a strict xfail ("blind P/R not
 measurable"): reported as an expected failure, never as a pass. The design split (`dev`) and all labels are printed as information. Missing samples,
-and an unlabelled held-out split, skip normally and FAIL under AIDOC_REQUIRE_MANUAL=1."""
+and an unlabelled held-out split, skip normally and FAIL under DOC4AI_REQUIRE_MANUAL=1."""
 import os
 
 import pytest
@@ -16,13 +16,13 @@ pytestmark = pytest.mark.slow
 
 
 def _missing(msg: str):
-    pytest.fail(msg) if os.environ.get("AIDOC_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
+    pytest.fail(msg) if os.environ.get("DOC4AI_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
 
 
 @pytest.fixture(scope="module")
 def scored():
     try:
-        docs, labels = PL.load(PL.Path(os.environ.get("AIDOC_MANUAL_DIR") or PL.MANUAL))
+        docs, labels = PL.load(PL.Path(os.environ.get("DOC4AI_MANUAL_DIR") or PL.MANUAL))
     except PL.MissingSample as e:
         _missing(f"labelled sample missing: {e} — run: uv run python tests/fixtures/make_manual.py")
     pred = PL.predictions(docs)

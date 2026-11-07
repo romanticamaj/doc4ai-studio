@@ -6,7 +6,7 @@ import time
 import httpx
 from fastapi.testclient import TestClient
 
-from aidoc.mcp.principal import SCOPES
+from doc4ai.mcp.principal import SCOPES
 from tests.mcp.conftest import mcp_call, mcp_list_tools, raw_post
 
 LIST = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
@@ -14,9 +14,9 @@ LIST = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
 
 def test_pat_rejected_on_api(token_ctx, mcp_env):
     """A PAT is never a server token: /api answers 401 to it even when it is valid on /mcp."""
-    from aidoc.mcp import tokens as T
-    from aidoc.mcp.tokens import load_or_create_secret
-    from aidoc.server.app import create_app
+    from doc4ai.mcp import tokens as T
+    from doc4ai.mcp.tokens import load_or_create_secret
+    from doc4ai.server.app import create_app
     secret = load_or_create_secret(token_ctx.config.data_dir)
     raw = T.generate_token()
     token_ctx.store.create_api_token(name="t", prefix=T.display_prefix(raw), token_hash=T.token_hash(secret, raw),

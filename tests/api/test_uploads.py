@@ -2,7 +2,7 @@ import hashlib
 import os
 import time
 
-from aidoc.server.uploads import CHUNK_SIZE
+from doc4ai.server.uploads import CHUNK_SIZE
 
 
 def start(client, data, name="big.bin"):
@@ -67,7 +67,7 @@ def test_limits(client, ctx):
 
 def test_upload_disk_guard(client, monkeypatch):
     import collections
-    monkeypatch.setattr("aidoc.server.uploads.shutil.disk_usage",
+    monkeypatch.setattr("doc4ai.server.uploads.shutil.disk_usage",
                         lambda p: collections.namedtuple("u", "total used free")(1, 1, 10))
     r = client.post("/api/uploads", json={"filename": "a.pdf", "size": 100, "sha256": "0" * 64})
     assert r.status_code == 507 and r.json()["error"] == "insufficient_disk" and r.json()["needed"] == 300

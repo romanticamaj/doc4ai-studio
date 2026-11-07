@@ -1,7 +1,7 @@
 import json
 import shutil
 
-from aidoc.cli import main
+from doc4ai.cli import main
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -28,7 +28,7 @@ def test_convert_missing_file(tmp_root, capsys):
 
 
 def test_convert_internal_error_exits_1_without_traceback(tmp_root, fixtures, monkeypatch, capsys):
-    import aidoc.pipeline as pl
+    import doc4ai.pipeline as pl
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     monkeypatch.setattr(pl, "normalize", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("kaboom")))
     src = tmp_root / "text.pdf"
@@ -39,13 +39,13 @@ def test_convert_internal_error_exits_1_without_traceback(tmp_root, fixtures, mo
 
 def test_convert_unreadable_source_is_clean_input_failure(tmp_root, fixtures, monkeypatch, capsys):
     """P1 verifier 1: a locked/unreadable file must be failed(input), not a traceback."""
-    import aidoc.names
+    import doc4ai.names
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     src = tmp_root / "locked.docx"; shutil.copy(fixtures / "sample.docx", src)
 
     def locked(p):
         raise PermissionError(13, "The process cannot access the file because it is being used by another process")
-    monkeypatch.setattr(aidoc.names, "file_sha256", locked)
+    monkeypatch.setattr(doc4ai.names, "file_sha256", locked)
     assert main(["convert", str(src), "-o", str(tmp_root / "out"), "--json"]) == 1
     out = json.loads(capsys.readouterr().out)
     assert out["status"] == "failed" and out["error_kind"] == "input"
@@ -55,8 +55,8 @@ def test_convert_unreadable_source_is_clean_input_failure(tmp_root, fixtures, mo
 def test_serve_help_warns_that_token_is_visible_in_process_listings(capsys):
     import pytest
 
-    from aidoc.cli import main
+    from doc4ai.cli import main
     with pytest.raises(SystemExit):
         main(["serve", "--help"])
     out = " ".join(capsys.readouterr().out.split())
-    assert "process listings" in out and "AIDOC_TOKEN" in out
+    assert "process listings" in out and "DOC4AI_TOKEN" in out

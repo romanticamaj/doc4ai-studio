@@ -1,4 +1,4 @@
-"""Calibration of the scan-page checks (aidoc.scanchecks, ticket T-002). Not part of the package.
+"""Calibration of the scan-page checks (doc4ai.scanchecks, ticket T-002). Not part of the package.
 
     uv run python bench/scan_calib.py [--out bench/results/scan-calib.json] [--labels]
 
@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from aidoc import scanchecks as S
+from doc4ai import scanchecks as S
 
 CORPUS = ROOT / "bench" / "corpus"
 
@@ -104,7 +104,7 @@ def labels() -> dict:
     docs, rows = load()
     verdict = {(r["doc"], r["page"]): r["verdict"] for r in rows}
     out = {"docs": 0, "scan_pages_judged": 0, "flags": [], "labelled_scan_pages": 0}
-    from aidoc.probe import probe_file
+    from doc4ai.probe import probe_file
     for key, d in docs.items():
         pdf = MANUAL / d["pdf"]
         md = (MANUAL / d["md"]).read_text(encoding="utf-8")

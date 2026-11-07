@@ -46,8 +46,8 @@ def test_bad_multipart_boundary_is_422(compat_env, boundary):
 
 def test_reading_stops_at_the_closing_boundary(compat_env):
     """Verifier item 5: an endless epilogue after the closing boundary is not read."""
-    from aidoc.compat.auth import CompatCall
-    from aidoc.compat.jobs import stream_upload
+    from doc4ai.compat.auth import CompatCall
+    from doc4ai.compat.jobs import stream_upload
     boundary = "edge5"
     consumed = {"n": 0}
 

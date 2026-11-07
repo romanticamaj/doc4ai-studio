@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from aidoc.oauth.clients import ClientError, ClientRegistry, classify_redirect, redirect_allowed
+from doc4ai.oauth.clients import ClientError, ClientRegistry, classify_redirect, redirect_allowed
 from tests.oauth.conftest import CLAUDE_CODE_CIMD
 
 GOOD = CLAUDE_CODE_CIMD
@@ -173,7 +173,7 @@ def test_dcr_register_and_limits(oauth_client, oauth_ctx):
     assert oauth_client.post("/oauth/register", content=b"not json", headers={"Content-Type": "application/json"}).status_code == 400
     # 1 + 8 bad + 1 non-JSON = 10 attempts this hour; the flood ceiling is 20 × DCR_ATTEMPT_FACTOR per source.
     # Past 20 unused registrations the oldest unused one gives way (verifier F2), so registering keeps working ...
-    from aidoc.oauth.clients import DCR_ATTEMPT_FACTOR
+    from doc4ai.oauth.clients import DCR_ATTEMPT_FACTOR
     ceiling = oauth_ctx.config.oauth.dcr_per_hour_per_ip * DCR_ATTEMPT_FACTOR
     for _ in range(ceiling - 10):
         assert oauth_client.post("/oauth/register", json=body).status_code == 201
@@ -189,7 +189,7 @@ def test_dcr_window_resets(oauth_ctx):
     reg = ClientRegistry(oauth_ctx)
     oauth_ctx.config.oauth.dcr_per_hour_per_ip = 2
     body = {"redirect_uris": ["http://localhost/cb"]}
-    from aidoc.oauth.clients import DCR_ATTEMPT_FACTOR
+    from doc4ai.oauth.clients import DCR_ATTEMPT_FACTOR
     for i in range(2 * DCR_ATTEMPT_FACTOR):                                # the flood ceiling: 2 × DCR_ATTEMPT_FACTOR
         reg.register_dcr(body, "1.1.1.1", T0 + i / 100)
     with pytest.raises(ClientError, match="rate"):

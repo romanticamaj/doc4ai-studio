@@ -1,4 +1,4 @@
-from aidoc.mcp.ratelimit import RateLimiter
+from doc4ai.mcp.ratelimit import RateLimiter
 
 
 def test_burst_then_refill():

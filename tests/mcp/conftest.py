@@ -9,8 +9,8 @@ import anyio
 import httpx
 import pytest
 
-from aidoc.mcp import tokens as T
-from aidoc.mcp.tokens import load_or_create_secret
+from doc4ai.mcp import tokens as T
+from doc4ai.mcp.tokens import load_or_create_secret
 
 TINY_PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6364f8cfc000"
                          "00030001008e4b1a5e0000000049454e44ae426082")
@@ -25,7 +25,7 @@ def page_md(n: int, heading: str | None = None, body: str | None = None) -> str:
 @pytest.fixture
 def mcp_env(ctx):
     """ctx (no server token, workers off) + a token issuer + the FastAPI app with /mcp mounted."""
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     secret = load_or_create_secret(ctx.config.data_dir)
 
     def issue(scopes=("doc4ai:read",), name="test token", expires_in=3600, rate=None):
@@ -46,7 +46,7 @@ def mcp_server(mcp_env, live_server):
 
 @pytest.fixture
 def make_doc(ctx):
-    from aidoc.pageindex import index_document
+    from doc4ai.pageindex import index_document
 
     def _make(name="book", pages=3, md=None, status="ok", quality=None, engine="mineru", source_name=None,
               with_asset=True, sha=None):

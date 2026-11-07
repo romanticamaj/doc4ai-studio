@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from aidoc.markers import compile_marker, to_aidoc
+from doc4ai.markers import compile_marker, to_aidoc
 
 PER_CALL_S = 0.5
 SPACES = "x" + " " * 3000 + "!\n"

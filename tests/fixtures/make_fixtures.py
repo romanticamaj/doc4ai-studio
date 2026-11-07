@@ -9,7 +9,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 
 HERE = Path(__file__).parent
-SAMPLES = HERE.parent.parent / "src" / "aidoc" / "engines" / "runner" / "samples"
+SAMPLES = HERE.parent.parent / "src" / "doc4ai" / "engines" / "runner" / "samples"
 CJK_FONTFILE = None
 for cand in [r"C:\Windows\Fonts\msjh.ttc", r"C:\Windows\Fonts\msjhbd.ttc",
              "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"]:

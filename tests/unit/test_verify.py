@@ -4,8 +4,8 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from aidoc.pagemap import MARKER, split_pages
-from aidoc.verify import verify_markdown
+from doc4ai.pagemap import MARKER, split_pages
+from doc4ai.verify import verify_markdown
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -24,8 +24,8 @@ def test_clean_document_is_ok_and_json_matches_sidecar_keys():
     assert j["pdf"]["pages"] == 8 and j["pdf"]["blank_pages"] == [4] and j["pdf"]["text_layer_pages"] == 7
     assert j["page_map"]["alignment"]["decidable"] >= 5
     assert {"probe", "layers", "assess", "total"} <= set(j["timing_s"])
-    from aidoc.quality import PAGE_CHECK_VERSION
-    from aidoc.reassess import doc_flags  # Library can consume summary + page_map unchanged
+    from doc4ai.quality import PAGE_CHECK_VERSION
+    from doc4ai.reassess import doc_flags  # Library can consume summary + page_map unchanged
     assert doc_flags({"quality": {**j["summary"], "page_map": j["page_map"], "page_check": PAGE_CHECK_VERSION},
                       "source_path": "x.pdf"}) == []
     json.dumps(j)
@@ -154,7 +154,7 @@ def test_pure_no_files_written(tmp_path, monkeypatch):
 def test_unverifiable_says_why_when_the_pdf_has_text():
     """A digital PDF whose Markdown shares no text with it (e.g. an empty or wrong file) is unverifiable for another
     reason than a scan: the summary must not call it a scanned PDF."""
-    from aidoc.verify import summary_text
+    from doc4ai.verify import summary_text
     r = verify_markdown("completely unrelated words " * 20, FIX / "paged_furniture.pdf")
     assert r.verifiable is False
     en = summary_text(r, "en")
@@ -181,12 +181,12 @@ def test_verify_checks_every_page_and_reports_page_level_reasons():
 def test_every_page_is_the_default_in_the_function_and_the_cli():
     import inspect
 
-    from aidoc.cli import build_parser
+    from doc4ai.cli import build_parser
     assert inspect.signature(verify_markdown).parameters["sample"].default == 0
     assert build_parser().parse_args(["verify", "x.md"]).sample == 0
 
 
-# ---- spec 2026-10-29 §6.3: `aidoc verify <output dir>` finds the PDF through the one resolver
+# ---- spec 2026-10-29 §6.3: `doc4ai verify <output dir>` finds the PDF through the one resolver
 
 def _out_dir(root, stem, sha, extra=None):
     import json as _json
@@ -201,9 +201,9 @@ def _out_dir(root, stem, sha, extra=None):
 def test_library_pdf_reads_source_copy_from_v7_db(tmp_root, fixtures):
     import shutil
 
-    from aidoc.names import file_sha256
-    from aidoc.store import Store
-    from aidoc.verify import resolve_inputs
+    from doc4ai.names import file_sha256
+    from doc4ai.store import Store
+    from doc4ai.verify import resolve_inputs
     sha = file_sha256(fixtures / "text.pdf")
     out = _out_dir(tmp_root, "t", sha)
     copy = tmp_root / "source" / "t" / "t.pdf"
@@ -223,8 +223,8 @@ def test_library_pdf_still_works_on_v6_db(tmp_root, fixtures):
     import shutil
     import sqlite3
 
-    from aidoc.names import file_sha256
-    from aidoc.verify import _library_pdf
+    from doc4ai.names import file_sha256
+    from doc4ai.verify import _library_pdf
     sha = file_sha256(fixtures / "text.pdf")
     out = _out_dir(tmp_root, "t", sha)
     wc = tmp_root / "data" / "work" / "t1"
@@ -249,9 +249,9 @@ def test_library_pdf_still_works_on_v6_db(tmp_root, fixtures):
 def test_sidecar_only_finds_copy_relative_to_output(tmp_path, fixtures, monkeypatch):
     import shutil
 
-    from aidoc.names import file_sha256
-    from aidoc.verify import resolve_inputs
-    monkeypatch.setenv("AIDOC_DATA", str(tmp_path / "no-data"))            # no Library database at all
+    from doc4ai.names import file_sha256
+    from doc4ai.verify import resolve_inputs
+    monkeypatch.setenv("DOC4AI_DATA", str(tmp_path / "no-data"))            # no Library database at all
     sha = file_sha256(fixtures / "text.pdf")
     lib = tmp_path / "moved" / "doc4ai"                                     # the whole folder moved elsewhere
     out = _out_dir(lib, "t", sha, {"source_copy": {"path": "source/t/t.pdf", "sha256": sha, "size": 1}})

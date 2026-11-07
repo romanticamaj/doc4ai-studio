@@ -1,29 +1,29 @@
 """Real-sample gate (spec 2026-10-01 §10.2). Tests get real samples and engine envs only through these helpers:
-missing ones skip normally and FAIL when AIDOC_REQUIRE_MANUAL=1 (acceptance mode)."""
+missing ones skip normally and FAIL when DOC4AI_REQUIRE_MANUAL=1 (acceptance mode)."""
 import json
 import os
 from pathlib import Path
 
 import pytest
 
-from aidoc import paths
+from doc4ai import paths
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MANIFEST = FIXTURES / "manual_samples.json"
 
 
 def _required() -> bool:
-    return os.environ.get("AIDOC_REQUIRE_MANUAL") == "1"
+    return os.environ.get("DOC4AI_REQUIRE_MANUAL") == "1"
 
 
 def _manual_dir() -> Path:
-    return Path(os.environ.get("AIDOC_MANUAL_DIR") or FIXTURES / "manual")
+    return Path(os.environ.get("DOC4AI_MANUAL_DIR") or FIXTURES / "manual")
 
 
 def require_engine(name: str) -> None:
     if paths.ready_marker(name).is_file() and paths.venv_python(name).is_file():
         return
-    msg = f"engine env not ready: {name} (run: aidoc setup {name})"
+    msg = f"engine env not ready: {name} (run: doc4ai setup {name})"
     pytest.fail(msg) if _required() else pytest.skip(msg)
 
 
@@ -40,7 +40,7 @@ def manual_sample(name: str) -> Path:
 
 def recorded_fixture(rel: str) -> Path:
     """A third-party output recorded by tests/integration/test_record_third_party.py (committed). Missing ones skip
-    normally and FAIL when AIDOC_REQUIRE_MANUAL=1."""
+    normally and FAIL when DOC4AI_REQUIRE_MANUAL=1."""
     p = FIXTURES / rel
     if p.is_file():
         return p

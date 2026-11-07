@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from aidoc import paths
-from aidoc.verify import verify_markdown
+from doc4ai import paths
+from doc4ai.verify import verify_markdown
 from tests.manual import require_engine
 
 pytestmark = pytest.mark.slow
@@ -40,17 +40,17 @@ def _record(engine: str, script: str, out: Path, tmp_path: Path) -> str:
     s = tmp_path / f"rec_{engine}.py"
     s.write_text(script, encoding="utf-8")
     fresh = tmp_path / f"{engine}.md"
-    env = {**os.environ, "AIDOC_MODELS_DIR": str(paths.models_dir()), "PYTHONIOENCODING": "utf-8"}
+    env = {**os.environ, "DOC4AI_MODELS_DIR": str(paths.models_dir()), "PYTHONIOENCODING": "utf-8"}
     r = subprocess.run([str(paths.venv_python(engine)), str(s), str(paths.runner_dir()), str(PDF), str(fresh)],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=900,
                        check=False)
     assert r.returncode == 0, r.stderr[-2000:]
     text = fresh.read_text(encoding="utf-8")
-    if not out.exists() or os.environ.get("AIDOC_RECORD") == "1":
+    if not out.exists() or os.environ.get("DOC4AI_RECORD") == "1":
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text, encoding="utf-8", newline="\n")
     else:
-        assert text == out.read_text(encoding="utf-8"), f"{engine} native output changed; re-record with AIDOC_RECORD=1"
+        assert text == out.read_text(encoding="utf-8"), f"{engine} native output changed; re-record with DOC4AI_RECORD=1"
     return text
 
 

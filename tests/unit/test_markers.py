@@ -1,6 +1,6 @@
 import pytest
 
-from aidoc.markers import DIALECTS, detect, to_aidoc
+from doc4ai.markers import DIALECTS, detect, to_aidoc
 
 
 def test_detect_dialects():
@@ -23,7 +23,7 @@ def test_numbered_dialect_is_renamed():
     assert "<!-- page: 2 -->\nb" in md
 
 
-def test_aidoc_markers_are_kept_verbatim():
+def test_doc4ai_markers_are_kept_verbatim():
     src = "<!-- page: 1 -->\na\n<!-- page: 2 -->\nb"
     md, info = to_aidoc(src, "aidoc", expected_pages=2)
     assert md == src and info["applied"] and info["markers_found"] == 2
@@ -106,7 +106,7 @@ def test_custom_marker_templates(tmpl):
 
 
 def test_custom_marker_is_literal_text_around_the_number():
-    from aidoc.markers import compile_marker
+    from doc4ai.markers import compile_marker
     pat = compile_marker("Page {page} of 9.")
     assert [m.group(1) for m in pat.finditer("Page 3 of 9. Page 4 of 99 Page 5 of 9.")] == ["3", "5"]
     assert compile_marker(r"<!--\s*pg\s*(\d+)\s*-->").findall("<!-- pg 7 --><!--pg8-->") == ["7", "8"]

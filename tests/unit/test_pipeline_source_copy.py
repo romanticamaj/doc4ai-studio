@@ -11,15 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from aidoc import source_copy
-from aidoc.batch import register_source
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.output import read_sidecar
-from aidoc.pipeline import run_task, stage_paths
-from aidoc.store import Store
+from doc4ai import source_copy
+from doc4ai.batch import register_source
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.output import read_sidecar
+from doc4ai.pipeline import run_task, stage_paths
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -44,7 +44,7 @@ class Lib:
         return p
 
     def convert(self, src: Path, **opt) -> tuple[TaskStatus, dict]:
-        cfg = load_config()                                 # the root at the time of the run (AIDOC_LIBRARY_ROOT)
+        cfg = load_config()                                 # the root at the time of the run (DOC4AI_LIBRARY_ROOT)
         opts = ConvertOptions(output_dir=cfg.output_root(), **opt)
         job = self.store.create_job(opts, "cli")
         tid, _ = register_source(self.store, job, src, opts)
@@ -58,7 +58,7 @@ class Lib:
         job = self.store.create_job(opts, "web")
         import hashlib
         sha = hashlib.sha256(data).hexdigest()
-        from aidoc.output import planned_output_dir
+        from doc4ai.output import planned_output_dir
         out = planned_output_dir(self.store, opts.output_dir, Path(display), sha)
         tid, _ = self.store.create_task(job, display, sha, len(data), time.time(), opts.lang, str(out))
         work = stage_paths(tid)[0]
@@ -141,7 +141,7 @@ def test_copy_failure_keeps_conversion(lib, monkeypatch):
 
 
 def test_output_write_failure_rolls_back_new_copy(lib, monkeypatch):
-    from aidoc import output
+    from doc4ai import output
 
     def boom(self, final_dir):
         raise OSError(28, "No space left on device")
@@ -153,7 +153,7 @@ def test_output_write_failure_rolls_back_new_copy(lib, monkeypatch):
 
 
 def test_output_write_failure_keeps_an_existing_copy(lib, monkeypatch):
-    from aidoc import output
+    from doc4ai import output
     _st, t = lib.convert(lib.place("k.pdf"))
     copy = Path(lib.doc(t)["source_copy_path"])
     monkeypatch.setattr(output.OutputWriter, "finalize", lambda self, d: (_ for _ in ()).throw(OSError(5, "io")))
@@ -193,7 +193,7 @@ def test_cache_hit_backfills_missing_copy(lib):
 def test_copy_goes_to_current_root(lib, monkeypatch, tmp_path):
     _st, t1 = lib.convert(lib.place("one.pdf"))
     other = tmp_path / "lib2"
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(other))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(other))
     _st, t2 = lib.convert(lib.place("two.pdf", fixture="sample.docx"))
     c1, c2 = Path(lib.doc(t1)["source_copy_path"]), Path(lib.doc(t2)["source_copy_path"])
     assert c1.is_relative_to(lib.root / "source") and c2.is_relative_to(other / "source")
@@ -201,9 +201,9 @@ def test_copy_goes_to_current_root(lib, monkeypatch, tmp_path):
 
 
 def test_retention_never_touches_copies(lib):
-    from aidoc.recovery import recover_on_startup
-    from aidoc.server.maintenance import Maintenance
-    from aidoc.sources import purge_expired_work_copies
+    from doc4ai.recovery import recover_on_startup
+    from doc4ai.server.maintenance import Maintenance
+    from doc4ai.sources import purge_expired_work_copies
     tasks = [lib.convert(lib.place(n, fixture=f))[1]
              for n, f in (("r1.pdf", "text.pdf"), ("r2.docx", "sample.docx"), ("r3.pdf", "big.pdf"))]
     docs = [lib.doc(t) for t in tasks]
@@ -211,7 +211,7 @@ def test_retention_never_touches_copies(lib):
         lib.store.update_document(d["id"], work_copy_expires_at=time.time() - 10)
     assert purge_expired_work_copies(lib.store, time.time()) == 3
 
-    from aidoc.server.app import build_context
+    from doc4ai.server.app import build_context
     ctx = build_context(load_config(), token=None, start_workers=False)
     try:
         ctx.config.general.work_retention_days = 0                     # every work dir is past retention
@@ -225,7 +225,7 @@ def test_retention_never_touches_copies(lib):
 
 def test_expired_work_copy_is_kept_while_the_document_has_no_copy(lib, monkeypatch):
     """Verifier V4: retention purged the work copy of a document whose source copy had failed: its last source."""
-    from aidoc.sources import purge_expired_work_copies
+    from doc4ai.sources import purge_expired_work_copies
     real = source_copy.shutil.disk_usage
     monkeypatch.setattr(source_copy.shutil, "disk_usage", lambda p: type(real(p))(real(p).total, real(p).used, 10))
     src = lib.place("only.pdf")
@@ -237,7 +237,7 @@ def test_expired_work_copy_is_kept_while_the_document_has_no_copy(lib, monkeypat
     lib.store.update_document(d["id"], work_copy_expires_at=time.time() - 10)
     assert purge_expired_work_copies(lib.store, time.time()) == 0
     assert Path(d["work_copy_path"]).is_dir()                       # kept: the only file with this content
-    from aidoc.source_copy import ensure_copy
+    from doc4ai.source_copy import ensure_copy
     assert ensure_copy(lib.store, lib.cfg, lib.store.get_document(d["id"]))["outcome"] == "copied"
     assert purge_expired_work_copies(lib.store, time.time()) == 1      # once copied, retention applies again
 
@@ -245,15 +245,15 @@ def test_expired_work_copy_is_kept_while_the_document_has_no_copy(lib, monkeypat
 def test_rollback_never_deletes_a_copy_another_document_adopted(lib, monkeypatch, tmp_root):
     """Verifier V5: conversion A places X; before A records X, backfill of B (same content, same name) finds X
     already present and records it. A's record collides: X is B's now and must stay; A adopts the verified copy."""
-    from aidoc.config import load_config
-    from aidoc.source_copy import ensure_copy, file_matches
+    from doc4ai.config import load_config
+    from doc4ai.source_copy import ensure_copy, file_matches
     pdf = (lib.fixtures / "text.pdf").read_bytes() + b"%V5\n"
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root / "old"))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_root / "old"))
     _, tb = lib.convert(lib.place("rep.pdf", content=pdf))
     b = lib.doc(tb)
     os.unlink(b["source_copy_path"])
     lib.store.set_source_copy(b["id"], path=None, status=None, error=None)
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_root))
     cfg = load_config()
     a_src = tmp_root / "in2" / "rep.pdf"
     a_src.parent.mkdir()

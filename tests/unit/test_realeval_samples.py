@@ -100,7 +100,7 @@ def test_stand_in_mode_refuses_the_real_folder():
 
 
 def test_render_image_only_strips_text_layer(tmp_path):
-    from aidoc.probe import probe_file
+    from doc4ai.probe import probe_file
     dst = tmp_path / "derived" / "image_only.pdf"
     info = samples.render_image_only(FIX / "text.pdf", dst, dpi=72)
     with pymupdf.open(FIX / "text.pdf") as a, pymupdf.open(dst) as b:

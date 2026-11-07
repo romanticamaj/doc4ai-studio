@@ -1,8 +1,8 @@
 import pytest
 
-from aidoc.engines.mineru import MineruEngine
-from aidoc.models import ConvertOptions
-from aidoc.probe import probe_file
+from doc4ai.engines.mineru import MineruEngine
+from doc4ai.models import ConvertOptions
+from doc4ai.probe import probe_file
 
 pytestmark = pytest.mark.slow
 

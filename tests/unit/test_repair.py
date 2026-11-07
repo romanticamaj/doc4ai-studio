@@ -1,4 +1,4 @@
-from aidoc.repair import repair_order
+from doc4ai.repair import repair_order
 
 
 def test_repair_order_prefers_same_style_engine():
@@ -9,7 +9,7 @@ def test_repair_order_prefers_same_style_engine():
     assert [e for e, _, _ in repair_order("docling", {"docling": False, "mineru": True})] == ["mineru"]
 
 
-from aidoc.repair import accept_repaired_section
+from doc4ai.repair import accept_repaired_section
 
 
 class _E:  # minimal stand-in with a label
@@ -40,9 +40,9 @@ def test_vlm_repairs_reject_refused_truncated_and_blank():
 
 
 def test_repair_only_test_hook_keeps_the_named_engines(monkeypatch):
-    monkeypatch.setenv("AIDOC_REPAIR_ONLY", "vlm")
+    monkeypatch.setenv("DOC4AI_REPAIR_ONLY", "vlm")
     assert [o[0] for o in repair_order("docling", AV, engines=ENG)] == ["vlm"]
-    monkeypatch.setenv("AIDOC_REPAIR_ONLY", "mineru, vlm")
+    monkeypatch.setenv("DOC4AI_REPAIR_ONLY", "mineru, vlm")
     assert [o[0] for o in repair_order("docling", AV, engines=ENG)] == ["mineru", "vlm"]
 
 
@@ -50,9 +50,9 @@ def test_vlm_repair_gets_the_remote_timeout(tmp_path, fixtures):
     """verifier finding 2: repair uses engine.timeout_factor like the main conversion."""
     from types import SimpleNamespace
 
-    from aidoc.config import AidocConfig
-    from aidoc.models import ConvertOptions, ProbeResult
-    from aidoc.repair import repair_pages
+    from doc4ai.config import Doc4aiConfig
+    from doc4ai.models import ConvertOptions, ProbeResult
+    from doc4ai.repair import repair_pages
     seen = {}
 
     class _Sess:
@@ -73,7 +73,7 @@ def test_vlm_repair_gets_the_remote_timeout(tmp_path, fixtures):
         def timeout_factor(self, pages, timeout): return 4321.0
 
     ctx = SimpleNamespace(work_dir=tmp_path, work_src=fixtures / "text.pdf", opts=ConvertOptions(output_dir=tmp_path),
-                          probe=ProbeResult(kind="pdf", ext=".pdf", size=1, pages=3), config=AidocConfig(), cancel=None,
+                          probe=ProbeResult(kind="pdf", ext=".pdf", size=1, pages=3), config=Doc4aiConfig(), cancel=None,
                           cancelled=lambda: False, log=lambda s: None)
     norm = SimpleNamespace(markdown="<!-- page: 1 -->\nx", assets=[])
     repair_pages(ctx, {"vlm": _Vlm("vlm:local:x")}, norm, [1], "docling")
@@ -99,9 +99,9 @@ def test_check_document_repairs_dropped_and_partial_pages_against_their_layer(mo
     from pathlib import Path
     from types import SimpleNamespace
 
-    from aidoc import pipeline
-    from aidoc.models import NormalizedResult, ProbeResult
-    from aidoc.pagemap import squash
+    from doc4ai import pipeline
+    from doc4ai.models import NormalizedResult, ProbeResult
+    from doc4ai.pagemap import squash
     seen = {}
 
     def fake_repair(ctx, engines, norm, pages, main, layers=None):
@@ -131,9 +131,9 @@ def test_a_dropped_page_is_repaired_against_its_body_layer_a_partial_one_not_at_
     from pathlib import Path
     from types import SimpleNamespace
 
-    from aidoc import pipeline
-    from aidoc.models import NormalizedResult, ProbeResult
-    from aidoc.pagemap import squash
+    from doc4ai import pipeline
+    from doc4ai.models import NormalizedResult, ProbeResult
+    from doc4ai.pagemap import squash
     seen = {}
 
     def fake_repair(ctx, engines, norm, pages, main, layers=None):

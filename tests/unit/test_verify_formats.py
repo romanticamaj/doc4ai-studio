@@ -1,7 +1,7 @@
 """verify on real third-party native outputs of paged_furniture.pdf (spec 2026-10-05 verify §6)."""
 from pathlib import Path
 
-from aidoc.verify import verify_markdown
+from doc4ai.verify import verify_markdown
 from tests.manual import recorded_fixture
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures"

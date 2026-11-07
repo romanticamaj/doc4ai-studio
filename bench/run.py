@@ -1,11 +1,11 @@
-"""Benchmark runner (spec 2026-10-05 verify §3.5). Not part of the `aidoc` package.
+"""Benchmark runner (spec 2026-10-05 verify §3.5). Not part of the `doc4ai` package.
 
     uv run python bench/run.py --corpus A,B[,C] --configs auto,auto-norepair,docling,mineru,markitdown[,vlm]
                                --out bench/results/<date>-<host>/ [--resume] [--fake] [--repeat N]
 
-Every (config, sample) is one `aidoc convert --force --json` subprocess with its own data dir
+Every (config, sample) is one `doc4ai convert --force --json` subprocess with its own data dir
 (`<out>/data-<config>`) and output root (`<out>/out-<config>`), so the user's Library is never touched; models come
-from the user's models dir. Single-engine configs and `auto-norepair` run with AIDOC_BENCH_NO_REPAIR=1. Each result is
+from the user's models dir. Single-engine configs and `auto-norepair` run with DOC4AI_BENCH_NO_REPAIR=1. Each result is
 appended to `results.jsonl` as soon as it is scored (`--resume` skips pairs already there); `summary.md` is written at
 the end by report.py.
 """
@@ -27,9 +27,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
-from aidoc.quality import PAGE_REASONS
 from bench import metrics as M
 from bench.gpu_sampler import Sampler
+from doc4ai.quality import PAGE_REASONS
 
 CONFIG_ORDER = ["auto", "auto-norepair", "docling", "mineru", "markitdown", "vlm"]
 SINGLE = {"docling", "mineru", "markitdown", "vlm"}
@@ -39,7 +39,7 @@ BOOK_CONFIGS = {"auto", "mineru"}              # spec §3.5: the 1,200-page book
 TIER_C_CONFIGS = {"auto"}
 WARMUP_SAMPLE = ROOT / "bench" / "corpus" / "small" / "syn-text-en" / "syn-text-en.pdf"
 TIER_A_ROOT = ROOT / "bench" / "corpus"      # --tier-a-root: a fresh-seed Tier A corpus (gate decision 2026-10-20)
-TEXT_LAYER_MIN = 20                          # = aidoc.verify.TEXT_LAYER_MIN: a page verify can judge
+TEXT_LAYER_MIN = 20                          # = doc4ai.verify.TEXT_LAYER_MIN: a page verify can judge
 # every page-level reason verify can give (verifier round 2: the set was not updated when page_partial,
 # page_misaligned and page_oversized joined the page checks, so the gate missed them; corrected, not re-defined)
 FLAG_REASONS = {"broken_text_layer", "garbage", "page_map_missing", "page_conversion_failed", *PAGE_REASONS}
@@ -75,14 +75,14 @@ def env_for_config(config: str, out: Path | None = None) -> dict[str, str]:
     """Environment overrides of one config (merged over os.environ by the caller)."""
     env: dict[str, str] = {}
     if config in SINGLE or config == "auto-norepair" or config in RAW:
-        env["AIDOC_BENCH_NO_REPAIR"] = "1"
+        env["DOC4AI_BENCH_NO_REPAIR"] = "1"
     if out is not None:
-        from aidoc import paths
-        env["AIDOC_DATA"] = str(Path(out) / f"data-{config}")
-        env["AIDOC_MODELS"] = str(paths.models_dir())
-        env["AIDOC_CONFIG"] = str(Path(out) / f"aidoc-{config}.toml")
+        from doc4ai import paths
+        env["DOC4AI_DATA"] = str(Path(out) / f"data-{config}")
+        env["DOC4AI_MODELS"] = str(paths.models_dir())
+        env["DOC4AI_CONFIG"] = str(Path(out) / f"doc4ai-{config}.toml")
         # the run's own Doc4AI folder: benchmark source copies never land in the user's library (C:\doc4ai)
-        env["AIDOC_LIBRARY_ROOT"] = str(Path(out) / f"lib-{config}")
+        env["DOC4AI_LIBRARY_ROOT"] = str(Path(out) / f"lib-{config}")
     return env
 
 
@@ -158,8 +158,8 @@ def _git(*args) -> str | None:
 
 
 def environment(args, configs: list[str], corpora: list[str]) -> dict:
-    from aidoc import paths
-    from aidoc.config import load_config
+    from doc4ai import paths
+    from doc4ai.config import load_config
     cfg = load_config()
     engines = {}
     for e in ("docling", "mineru", "markitdown", "vlm"):
@@ -196,14 +196,14 @@ def environment(args, configs: list[str], corpora: list[str]) -> dict:
             "os": platform.platform(), "python": platform.python_version(), "gpu": gpu, "engines": engines,
             "aidoc_commit": _git("rev-parse", "--short=12", "HEAD"), "aidoc_dirty": bool(dirty),
             "main_uv_lock_sha256": _sha_file(ROOT / "uv.lock"),
-            "aidoc_toml": {"mineru_tier": cfg.engines.mineru_tier, "docling_ocr": cfg.engines.docling_ocr},
+            "doc4ai_toml": {"mineru_tier": cfg.engines.mineru_tier, "docling_ocr": cfg.engines.docling_ocr},
             "configs": configs, "corpus": corpora, "tier_a_root": str(TIER_A_ROOT), "fake": bool(args.fake), "repeat": args.repeat, "vlm": vlm,
-            "no_repair_configs": [c for c in configs if "AIDOC_BENCH_NO_REPAIR" in env_for_config(c)]}
+            "no_repair_configs": [c for c in configs if "DOC4AI_BENCH_NO_REPAIR" in env_for_config(c)]}
 
 
 def write_config_files(out: Path, configs: list[str], args) -> None:
-    """One aidoc.toml per config: the user's file with the VLM section set for the `vlm` config only."""
-    from aidoc.config import config_path
+    """One doc4ai.toml per config: the user's file with the VLM section set for the `vlm` config only."""
+    from doc4ai.config import config_path
     src = config_path()
     base = src.read_text(encoding="utf-8") if src.is_file() else ""
     import tomlkit
@@ -225,7 +225,7 @@ def write_config_files(out: Path, configs: list[str], args) -> None:
             vlm["backend"] = "none"
         if "server" in doc:
             doc["server"]["token"] = ""
-        (out / f"aidoc-{c}.toml").write_text(tomlkit.dumps(doc), encoding="utf-8")
+        (out / f"doc4ai-{c}.toml").write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 def _check_vlm_endpoint(url: str | None) -> None:
@@ -279,14 +279,14 @@ def _timeout(s: Sample) -> int:
 
 def convert(s: Sample, config: str, out: Path, *, fake: bool, log=print, extra_args: tuple[str, ...] = ()) -> dict:
     """Run one conversion; returns {status, md, sidecar, seconds, peak/baseline vram, engine_used, tried, error}.
-    `extra_args` go to the end of the `aidoc convert` command (bench/realeval passes `--lang`)."""
-    from aidoc import paths
+    `extra_args` go to the end of the `doc4ai convert` command (bench/realeval passes `--lang`)."""
+    from doc4ai import paths
     env = {**os.environ, **env_for_config(config, out)}
-    env.pop("AIDOC_TOKEN", None)
+    env.pop("DOC4AI_TOKEN", None)
     env["PYTHONIOENCODING"] = "utf-8"
     if fake:
-        env["AIDOC_FAKE_ENGINES"] = "1"
-        env["AIDOC_FAKE_SCENARIO"] = str(out / "fake_scenario.json")
+        env["DOC4AI_FAKE_ENGINES"] = "1"
+        env["DOC4AI_FAKE_SCENARIO"] = str(out / "fake_scenario.json")
     root = out / f"out-{config}"
     root.mkdir(parents=True, exist_ok=True)
     if config in RAW:
@@ -296,11 +296,11 @@ def convert(s: Sample, config: str, out: Path, *, fake: bool, log=print, extra_a
         md_path = root / s.name / f"{s.name}.md"
         md_path.parent.mkdir(parents=True, exist_ok=True)
         cmd = [str(paths.venv_python(engine)), str(sp), str(paths.runner_dir()), str(s.pdf), str(md_path)]
-        env["AIDOC_MODELS_DIR"] = str(paths.models_dir())
+        env["DOC4AI_MODELS_DIR"] = str(paths.models_dir())
         env["MINERU_HOME"] = str(paths.models_dir() / "mineru")
         env["PYTHONUTF8"] = "1"
     else:
-        cmd = [sys.executable, "-m", "aidoc.cli", "convert", str(s.pdf), "-o", str(root), "--force", "--json"]
+        cmd = [sys.executable, "-m", "doc4ai.cli", "convert", str(s.pdf), "-o", str(root), "--force", "--json"]
         if config in SINGLE:
             cmd += ["--engine", config]
         cmd += list(extra_args)
@@ -345,9 +345,9 @@ def convert(s: Sample, config: str, out: Path, *, fake: bool, log=print, extra_a
 # ---------------------------------------------------------------- scoring
 
 def score(s: Sample, config: str, conv: dict) -> dict:
-    """Metrics of one conversion against the sample's ground truth + `aidoc verify` of the output."""
-    from aidoc.pagemap import apply_inferred, infer_pages, pdf_text_layers, split_pages
-    from aidoc.verify import verify_markdown
+    """Metrics of one conversion against the sample's ground truth + `doc4ai verify` of the output."""
+    from doc4ai.pagemap import apply_inferred, infer_pages, pdf_text_layers, split_pages
+    from doc4ai.verify import verify_markdown
     md = conv.get("md")
     m: dict = {}
     v: dict = {"score": 0.0, "level": None, "pages_flagged": None, "flagged_pages": [], "verifiable": None}

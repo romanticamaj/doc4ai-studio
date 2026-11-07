@@ -32,8 +32,8 @@ def pkce() -> tuple[str, str]:
 
 
 def _make_ctx(tmp_root, monkeypatch, *, token, bind_host):
-    from aidoc.config import load_config
-    from aidoc.server.app import build_context
+    from doc4ai.config import load_config
+    from doc4ai.server.app import build_context
     from tests.fakes.scenario import fake_env, write_scenario
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     c = build_context(load_config(), token=token, start_workers=False)
@@ -51,7 +51,7 @@ def oauth_ctx(tmp_root, monkeypatch):
 
 @pytest.fixture
 def oauth_app(oauth_ctx):
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     return create_app(oauth_ctx)
 
 
@@ -73,7 +73,7 @@ def token_oauth_ctx(tmp_root, monkeypatch):
 def token_oauth_client(token_oauth_ctx):
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(token_oauth_ctx), client=("127.0.0.1", 50001), base_url=ISSUER) as c:
         yield c
 
@@ -99,10 +99,10 @@ class FakeCimd:
     def calls_for(self, url) -> int:
         return sum(1 for u in self.log if u == url)
 
-    # the two injectable module functions of aidoc.oauth.clients
+    # the two injectable module functions of doc4ai.oauth.clients
     def fetch_json(self, url, *, max_bytes, timeout, ssl_context=None):
         """Like the real fetch_json: one lookup, every address checked by the real rule, then the "request"."""
-        from aidoc.oauth.clients import FetchResult, check_addresses
+        from doc4ai.oauth.clients import FetchResult, check_addresses
         check_addresses(self.resolve_addrs(url.split("/")[2]))
         with self._lock:
             self.log.append(url)
@@ -120,7 +120,7 @@ class FakeCimd:
 
 @pytest.fixture
 def fake_cimd(monkeypatch):
-    from aidoc.oauth import clients
+    from doc4ai.oauth import clients
     f = FakeCimd()
     monkeypatch.setattr(clients, "fetch_json", f.fetch_json)
     return f
@@ -202,8 +202,8 @@ def exchange(client, row, code, verifier, redirect="http://127.0.0.1:3118/callba
 def mint_tokens(ctx, *, scopes=("doc4ai:read",), resource=RES, client_id=None, name="Test IDE",
                 redirect="http://127.0.0.1:3118/callback") -> SimpleNamespace:
     """A grant straight through GrantService (no HTTP): returns access_token, refresh_token, grant_id, client_id."""
-    from aidoc.oauth.grants import GrantService
-    from aidoc.oauth.tokens import generate_client_id
+    from doc4ai.oauth.grants import GrantService
+    from doc4ai.oauth.tokens import generate_client_id
     cid = client_id or generate_client_id()
     if ctx.store.get_oauth_client(cid) is None:
         ctx.store.upsert_oauth_client(client_id=cid, kind="dcr", name=name, redirect_uris=[LOOPBACK_CB])
@@ -225,7 +225,7 @@ def live_oauth(oauth_ctx):
 
     import uvicorn
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     server = uvicorn.Server(uvicorn.Config(create_app(oauth_ctx), host="127.0.0.1", port=0, log_level="warning",
                                            lifespan="on"))
     th = threading.Thread(target=server.run, daemon=True)
@@ -236,7 +236,7 @@ def live_oauth(oauth_ctx):
             raise RuntimeError("uvicorn did not start")
         _time.sleep(0.02)
     port = server.servers[0].sockets[0].getsockname()[1]
-    oauth_ctx.extras["bind_port"] = port              # like `aidoc serve`: the issuer's port is the bound one
+    oauth_ctx.extras["bind_port"] = port              # like `doc4ai serve`: the issuer's port is the bound one
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     th.join(10)

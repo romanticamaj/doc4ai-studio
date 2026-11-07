@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pymupdf
 
-from aidoc.mcp import tools_verify as TV
+from doc4ai.mcp import tools_verify as TV
 from tests.mcp.conftest import mcp_call, page_md
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures"
@@ -58,7 +58,7 @@ def test_verify_document_without_source_is_partial(mcp_server, mcp_env, make_doc
 def test_verify_markdown_against_library_pdf(mcp_server, mcp_env, make_doc):
     doc = _doc_with_pdf(mcp_env.ctx, make_doc, "furn2")
     raw, _ = mcp_env.issue(scopes=("doc4ai:read", "doc4ai:convert"))
-    from aidoc.pagemap import MARKER
+    from doc4ai.pagemap import MARKER
     md = base64.b64encode(MARKER.sub("", _own(FIX / "paged_furniture.pdf")).encode()).decode()
     sc = _out(mcp_call(mcp_server, raw, "verify_markdown", {"doc_id": doc["id"], "markdown_base64": md}))
     assert sc["inferred"] is True and sc["page_map"]["anchored"] >= 6 and sc["page_map"]["coverage"] is None
@@ -97,8 +97,8 @@ def test_budget_truncates_pages(ctx):
                      "advisories": 1192}, "pages": pages}
     out = TV.to_out(j, "d")
     assert len(out.pages) == 50 and out.pages_truncated is True
-    from aidoc.mcp.budget import estimate_tokens
-    from aidoc.mcp.registry import render_text
+    from doc4ai.mcp.budget import estimate_tokens
+    from doc4ai.mcp.registry import render_text
     small = TV.fit(out, 300)
     assert estimate_tokens(render_text(small))[0] <= 300 and small.pages_truncated is True
     assert estimate_tokens(render_text(TV.fit(TV.to_out(j, "d"), 8000)))[0] <= 8000

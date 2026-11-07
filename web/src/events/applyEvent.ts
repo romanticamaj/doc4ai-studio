@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { qk } from "@/api/queries";
 import { qk as mcpQk, type CallFilters } from "@/api/mcp";
-import type { AidocEvent, DocumentDetail, EventPayloads, PreviewState, Job, JobDetail, McpCall, McpCallsPage, McpClient, McpToken, Segment, SystemInfo, Task } from "@/api/types";
+import type { Doc4aiEvent, DocumentDetail, EventPayloads, PreviewState, Job, JobDetail, McpCall, McpCallsPage, McpClient, McpToken, Segment, SystemInfo, Task } from "@/api/types";
 import { mergeLiveCall } from "@/features/mcp/mergeCalls";
 import { logStore as defaultLogs, type LogStore } from "./useTaskLogs";
 
@@ -86,7 +86,7 @@ function refetchIfInFlight(qc: QueryClient, queryKey: readonly unknown[]): void 
  * Merge one SSE event into the TanStack Query cache. Pure with respect to the cache: it only reads and writes
  * query data (and the log store for log lines); it never fetches.
  */
-export function applyEvent(qc: QueryClient, ev: AidocEvent, logs: LogStore = defaultLogs): void {
+export function applyEvent(qc: QueryClient, ev: Doc4aiEvent, logs: LogStore = defaultLogs): void {
   switch (ev.kind) {
     case "job.updated": {
       const job = ev.payload as Job;

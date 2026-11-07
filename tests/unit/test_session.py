@@ -7,16 +7,16 @@ from pathlib import Path
 import psutil
 import pytest
 
-from aidoc import paths
-from aidoc.config import load_config
-from aidoc.engines.base import EngineCancelled, EngineError
-from aidoc.engines.docling import DoclingEngine
-from aidoc.engines.host import RunnerHost
-from aidoc.engines.mineru import MineruEngine
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, ErrorKind
-from aidoc.probe import probe_file
-from aidoc.segment import split_pdf
+from doc4ai import paths
+from doc4ai.config import load_config
+from doc4ai.engines.base import EngineCancelled, EngineError
+from doc4ai.engines.docling import DoclingEngine
+from doc4ai.engines.host import RunnerHost
+from doc4ai.engines.mineru import MineruEngine
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, ErrorKind
+from doc4ai.probe import probe_file
+from doc4ai.segment import split_pdf
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -76,8 +76,8 @@ def test_session_survives_engine_error(tmp_root, fixtures, monkeypatch):
 
 
 def test_unknown_runner_error_kind_is_engine_error(tmp_path, monkeypatch):
-    """P1 deferred: an AIDOC_ERROR with an unknown kind must not raise ValueError."""
-    monkeypatch.setenv("AIDOC_FAKE_SCENARIO", str(write_scenario(tmp_path / "sc.json", default="bad_kind")))
+    """P1 deferred: an DOC4AI_ERROR with an unknown kind must not raise ValueError."""
+    monkeypatch.setenv("DOC4AI_FAKE_SCENARIO", str(write_scenario(tmp_path / "sc.json", default="bad_kind")))
     h = RunnerHost(Path(sys.executable), paths.runner_script("fake"), {}, startup_timeout_s=30)
     h.start(tmp_path)
     req = {"src": str(tmp_path / "a.pdf"), "out_dir": str(tmp_path / "raw"), "lang": "cht",

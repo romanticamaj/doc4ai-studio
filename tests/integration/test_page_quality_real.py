@@ -1,11 +1,11 @@
-"""The real-document gate (spec 2026-10-01 §10.3). Run: AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration"""
+"""The real-document gate (spec 2026-10-01 §10.3). Run: DOC4AI_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration"""
 import json
 import re
 import shutil
 
 import pytest
 
-from aidoc.cli import main
+from doc4ai.cli import main
 from tests.manual import manual_sample, require_engine
 
 pytestmark = pytest.mark.slow

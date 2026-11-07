@@ -1,5 +1,5 @@
 /**
- * MCP personal access token format (aidoc.mcp.tokens, spec MCP §2.3): `doc4ai_pat_<43 base62>_<6 base62 CRC32>`.
+ * MCP personal access token format (doc4ai.mcp.tokens, spec MCP §2.3): `doc4ai_pat_<43 base62>_<6 base62 CRC32>`.
  * Checked in the browser only, so a pasted token can fill the config snippets without ever being sent anywhere.
  */
 export const PLACEHOLDER = "<YOUR_TOKEN>";

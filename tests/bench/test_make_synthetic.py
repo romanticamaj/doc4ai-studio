@@ -13,16 +13,16 @@ BENCH = Path(__file__).resolve().parents[2] / "bench"
 @pytest.fixture(scope="module")
 def corpus(tmp_path_factory):
     """The small corpus generated fresh (fonts/texts from the sha-pinned cache; downloaded when
-    AIDOC_BENCH_FETCH=1). Missing sources skip normally and fail in acceptance mode (AIDOC_REQUIRE_MANUAL=1)."""
+    DOC4AI_BENCH_FETCH=1). Missing sources skip normally and fail in acceptance mode (DOC4AI_REQUIRE_MANUAL=1)."""
     sys.path.insert(0, str(BENCH.parent))
     from bench.corpus import sources
     missing = [k for k, s in sources.SOURCES.items() if not (sources.CACHE / s["file"]).is_file()]
-    if missing and not os.environ.get("AIDOC_BENCH_FETCH"):
-        msg = f"bench sources not cached: {missing}; set AIDOC_BENCH_FETCH=1 to download"
-        pytest.fail(msg) if os.environ.get("AIDOC_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
+    if missing and not os.environ.get("DOC4AI_BENCH_FETCH"):
+        msg = f"bench sources not cached: {missing}; set DOC4AI_BENCH_FETCH=1 to download"
+        pytest.fail(msg) if os.environ.get("DOC4AI_REQUIRE_MANUAL") == "1" else pytest.skip(msg)
     out = tmp_path_factory.mktemp("corpus")
     r = subprocess.run([sys.executable, str(BENCH / "corpus" / "make_synthetic.py"), "--small", "--out", str(out)]
-                       + ([] if os.environ.get("AIDOC_BENCH_FETCH") else ["--offline"]),
+                       + ([] if os.environ.get("DOC4AI_BENCH_FETCH") else ["--offline"]),
                        capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     assert r.returncode == 0, r.stderr[-3000:]
     return out / "small"
@@ -49,8 +49,8 @@ def test_small_corpus_is_deterministic_and_matches_committed_gt(corpus):
 
 
 def test_text_layer_matches_ground_truth(corpus):
-    from aidoc.pagemap import squash
     from bench.metrics import ned
+    from doc4ai.pagemap import squash
     gt = json.loads((corpus / "syn-text-zh" / "gt.json").read_text(encoding="utf-8"))
     with pymupdf.open(corpus / "syn-text-zh" / "syn-text-zh.pdf") as d:
         for n, page in enumerate(d, 1):
@@ -61,7 +61,7 @@ def test_text_layer_matches_ground_truth(corpus):
 
 
 def test_broken_variant_has_glyph_id_layer_on_defect_pages(corpus):
-    from aidoc.probe import probe_file
+    from doc4ai.probe import probe_file
     for v in "abd":
         name = f"syn-broken-tounicode-{v}"
         gt = json.loads((corpus / name / "gt.json").read_text(encoding="utf-8"))

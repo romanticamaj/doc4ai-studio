@@ -5,7 +5,7 @@ Files are generated; do not edit by hand. Regenerate with:
     uv run python tests/fixtures/make_fixtures.py
 
 (needs a CJK font; on Windows `C:\Windows\Fonts\msjh.ttc` is used, else PyMuPDF's built-in `cjk` font).
-The same script copies self-check samples into `src/aidoc/engines/runner/samples/`.
+The same script copies self-check samples into `src/doc4ai/engines/runner/samples/`.
 
 | File | Content | Used by |
 |---|---|---|
@@ -29,18 +29,18 @@ The same script copies self-check samples into `src/aidoc/engines/runner/samples
 | `paged_furniture.pdf` | 8 pages A4, Helvetica: running header `Chapter 2 - Testing Pages` + footer page number on every non-blank page; page 2 table of contents with dot leaders; page 4 blank; a paragraph runs from the bottom of page 5 onto page 6; page 7 drawn figure + caption `Figure 7.1 A drawn box`; ≥ 600 chars of unique English per body page | probe (blank page, no broken fonts), MinerU per-page render plan (recorded `mineru_recorded/furniture8/`), page-map slow tests (spec 2026-10-01) |
 | `broken_tounicode.pdf` | 2 pages; Helvetica heading + 6 lines; page 1 also has `Wouldn't it be dreamy if there was a book on Android …` in PyMuPDF's built-in `cjk` font (Type0/Identity-H) with `/ToUnicode` deleted, page 2 uses that font only for a footer `7` — the text layer is glyph ids (T-001 reproduction) | probe broken fonts, T-001 detection/repair tests (Docling pypdfium backend, auto-routing fallback) |
 | `mineru_recorded/furniture8/` | real MinerU 4.0.7 `markdown.md` + `middle_json.json` of `paged_furniture.pdf` (8 pages, page 4 blank); recorded with `tests/fixtures/_tmp` + `mineru.parser.parse(..., tier="basic", ocr_mode="auto").save(...)`, not generated | MinerU per-page render plan test (`tests/integration/test_mineru_pages_env.py`) |
-| `docling_recorded/furniture8/export.md` | real Docling 2.130 *native* `export_to_markdown(page_break_placeholder="<!-- page break -->")` of `paged_furniture.pdf` (6 placeholders: the blank page 4 is dropped, docling #2623); recorded by `tests/integration/test_record_third_party.py` (re-record with `AIDOC_RECORD=1`) | verify Docling dialect + inference (`tests/unit/test_verify_formats.py`) |
+| `docling_recorded/furniture8/export.md` | real Docling 2.130 *native* `export_to_markdown(page_break_placeholder="<!-- page break -->")` of `paged_furniture.pdf` (6 placeholders: the blank page 4 is dropped, docling #2623); recorded by `tests/integration/test_record_third_party.py` (re-record with `DOC4AI_RECORD=1`) | verify Docling dialect + inference (`tests/unit/test_verify_formats.py`) |
 | `markitdown_recorded/furniture8/convert.md` | real MarkItDown *native* `MarkItDown().convert()` text of `paged_furniture.pdf` (no page markers); same recorder | verify page inference on marker-less output |
 
 Real samples live in `tests/fixtures/manual/` (gitignored, never committed — copyrighted books). They are listed in the
 committed `manual_samples.json` and obtained through `tests/manual.py` (`manual_sample(name)`, `require_engine(name)`):
-missing samples skip normally and **fail** with `AIDOC_REQUIRE_MANUAL=1` (spec 2026-10-01 §10).
+missing samples skip normally and **fail** with `DOC4AI_REQUIRE_MANUAL=1` (spec 2026-10-01 §10).
 Generate them from the original books (found by sha256 in the database's work copies, `--source`, or
 `tests/fixtures/manual/originals/`):
 
     uv run python tests/fixtures/make_manual.py [--db data/aidoc.db] [--source <sha8>=<path> ...]
 
-Acceptance run (a skip is a failure there): `AIDOC_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration -q`.
+Acceptance run (a skip is a failure there): `DOC4AI_REQUIRE_MANUAL=1 uv run pytest -m slow tests/integration -q`.
 
 The hand-judged page set `page_labels.json` (verifier round 2; identities, page numbers and verdicts only) also needs
 the judged Markdown in `tests/fixtures/manual/labelled/` — snapshots of the conversions that were judged, identified

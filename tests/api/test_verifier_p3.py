@@ -12,7 +12,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from aidoc.server.app import create_app
+from doc4ai.server.app import create_app
 from tests.api.test_jobs_inputs import upload
 
 
@@ -172,7 +172,7 @@ def test_settings_deeply_nested_json_is_4xx(client):
 
 # ---------------------------------------------------------------- #9 Last-Event-ID above the current max
 def test_last_event_id_above_max_resyncs(ctx):
-    from aidoc.server.sse import replay_plan
+    from doc4ai.server.sse import replay_plan
     ctx.bus.publish("x", None, {"i": 1})
     top = ctx.store.events_since(0)[-1]["seq"]
     assert replay_plan(ctx.store, top + 50)[0] == "resync"
@@ -181,7 +181,7 @@ def test_last_event_id_above_max_resyncs(ctx):
 
 # ---------------------------------------------------------------- SSE: overflow really sends resync; no thread polling
 def test_overflowing_subscriber_receives_a_resync_frame(ctx):
-    from aidoc.server.sse import RESYNC_FRAME, event_frames
+    from doc4ai.server.sse import RESYNC_FRAME, event_frames
 
     async def run():
         sub = ctx.bus.subscribe(maxsize=3)
@@ -198,7 +198,7 @@ def test_overflowing_subscriber_receives_a_resync_frame(ctx):
 
 
 def test_sse_payloads_carry_workspace(ctx):
-    from aidoc.server.sse import format_event
+    from doc4ai.server.sse import format_event
     assert '"workspace": "default"' in format_event(1, "x", {"a": 1})
 
 
@@ -232,9 +232,9 @@ def test_many_idle_streams_do_not_slow_uploads(live_server, ctx, fixtures):
 
 # ---------------------------------------------------------------- #4 lock liveness does not guess from the command line
 def test_lock_owner_answering_http_is_live_even_with_an_unusual_cmdline(live_server, monkeypatch):
-    from aidoc import lockfile
+    from doc4ai import lockfile
     port = int(live_server.rsplit(":", 1)[1])
-    monkeypatch.setattr(lockfile, "is_aidoc_process", lambda pid: False)     # e.g. python -c "...main(['serve'])"
+    monkeypatch.setattr(lockfile, "is_doc4ai_process", lambda pid: False)     # e.g. python -c "...main(['serve'])"
     import os
     assert lockfile.is_live({"pid": os.getpid(), "host": "127.0.0.1", "port": port}) is True
     assert lockfile.is_live({"pid": os.getpid(), "host": "127.0.0.1", "port": 1}) is False
@@ -300,7 +300,7 @@ def test_retry_after_the_source_changed_fails_source_changed(client, ctx, fixtur
 
 # ---------------------------------------------------------------- final review I2: empty events table
 def test_last_event_id_with_an_empty_events_table_resyncs(ctx):
-    from aidoc.server.sse import replay_plan
+    from doc4ai.server.sse import replay_plan
     assert ctx.store.newest_event_seq() is None
     assert replay_plan(ctx.store, 5000)[0] == "resync"
     assert replay_plan(ctx.store, 0)[0] == "replay"
@@ -308,7 +308,7 @@ def test_last_event_id_with_an_empty_events_table_resyncs(ctx):
 
 # ---------------------------------------------------------------- final review I1: all-or-nothing job creation
 def test_a_busy_upload_leaves_no_half_created_job(client, ctx, fixtures):
-    from aidoc.tasklock import TaskLock, lock_path
+    from doc4ai.tasklock import TaskLock, lock_path
     a = upload(client, fixtures / "text.pdf")
     first = client.post("/api/jobs", json={"inputs": [{"upload_id": a}]}).json()["job"]
     tid = ctx.store.list_tasks(first["id"])[0]["id"]

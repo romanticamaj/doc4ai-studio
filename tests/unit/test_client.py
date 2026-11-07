@@ -3,21 +3,21 @@ import shutil
 import threading
 import time
 
-from aidoc import lockfile as lf
-from aidoc import paths
-from aidoc.client import ServerClient, find_server
-from aidoc.config import load_config
-from aidoc.models import ConvertOptions
+from doc4ai import lockfile as lf
+from doc4ai import paths
+from doc4ai.client import ServerClient, find_server
+from doc4ai.config import load_config
+from doc4ai.models import ConvertOptions
 
 
 def test_find_server_reads_lock(tmp_root, monkeypatch):
-    monkeypatch.delenv("AIDOC_TOKEN", raising=False)
+    monkeypatch.delenv("DOC4AI_TOKEN", raising=False)
     assert find_server(load_config()) is None
     lf.acquire_lock(paths.data_dir() / "aidoc.lock",
                     {"pid": os.getpid(), "started_at": 0, "host": "0.0.0.0", "port": 8123, "auth": True})
     c = find_server(load_config())
     assert c.base_url == "http://127.0.0.1:8123" and c.token is None      # a wildcard bind is reached on loopback
-    monkeypatch.setenv("AIDOC_TOKEN", "fromenv")                          # the token never comes from the lock
+    monkeypatch.setenv("DOC4AI_TOKEN", "fromenv")                          # the token never comes from the lock
     assert find_server(load_config()).token == "fromenv"
     assert find_server(load_config(), token="explicit").token == "explicit"
 
@@ -25,11 +25,11 @@ def test_find_server_reads_lock(tmp_root, monkeypatch):
 def test_batch_to_token_server_without_token_explains(tmp_root, monkeypatch, capsys):
     import httpx
 
-    from aidoc.cli import main
+    from doc4ai.cli import main
 
     def reply(request):
         return httpx.Response(401, json={"error": "unauthorized", "workspace": "default"})
-    monkeypatch.setattr("aidoc.client.find_server",
+    monkeypatch.setattr("doc4ai.client.find_server",
                         lambda cfg, token=None: ServerClient("http://x", None, transport=httpx.MockTransport(reply)))
     (tmp_root / "in").mkdir()
     (tmp_root / "in" / "a.md").write_text("# a")
@@ -66,12 +66,12 @@ def test_follow_returns_at_once_for_a_finished_job(live_server, ctx, tmp_root, f
 
 
 def test_batch_forwards_to_running_server(live_server, ctx, tmp_root, fixtures, monkeypatch, capsys):
-    from aidoc.cli import main
+    from doc4ai.cli import main
     inp = tmp_root / "in"
     inp.mkdir()
     for n in ("text.pdf", "sample.docx", "corrupt.pdf"):
         shutil.copy(fixtures / n, inp / n)
-    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
+    monkeypatch.setattr("doc4ai.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
     ctx.queue.start()
     assert main(["batch", str(inp), "-o", str(tmp_root / "o2")]) == 2      # corrupt.pdf fails
     out = capsys.readouterr().out
@@ -83,7 +83,7 @@ def test_batch_forwards_to_running_server(live_server, ctx, tmp_root, fixtures, 
 
 
 def test_ctrl_c_while_following_detaches(live_server, ctx, tmp_root, fixtures, monkeypatch, capsys):
-    from aidoc.batch import run_batch_via_server
+    from doc4ai.batch import run_batch_via_server
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
     c = ServerClient(live_server, None)
 
@@ -93,20 +93,20 @@ def test_ctrl_c_while_following_detaches(live_server, ctx, tmp_root, fixtures, m
     rc = run_batch_via_server(c, [tmp_root / "t.pdf"], ConvertOptions(output_dir=tmp_root / "out"), print)
     out = capsys.readouterr().out
     job_id = ctx.store.list_jobs()[0]["id"]
-    assert rc == 0 and f"detached; job {job_id} keeps running (aidoc cancel {job_id} to cancel)" in out
+    assert rc == 0 and f"detached; job {job_id} keeps running (doc4ai cancel {job_id} to cancel)" in out
     assert ctx.store.list_tasks(job_id)[0]["status"] == "queued"          # still the server's to run
 
 
 def test_cancel_command(live_server, ctx, tmp_root, fixtures, monkeypatch, capsys):
-    from aidoc.cli import main
+    from doc4ai.cli import main
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
     c = ServerClient(live_server, None)
     job = c.create_job([tmp_root / "t.pdf"], ConvertOptions(output_dir=tmp_root / "out"))
-    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
+    monkeypatch.setattr("doc4ai.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
     assert main(["cancel", job["id"]]) == 0
     assert ctx.store.get_job(job["id"])["status"] == "cancelled"
     assert main(["cancel", "nope"]) == 1
-    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: None)
+    monkeypatch.setattr("doc4ai.client.find_server", lambda cfg, token=None: None)
     assert main(["cancel", job["id"]]) == 1
     assert "no server running" in capsys.readouterr().err
 
@@ -114,9 +114,9 @@ def test_cancel_command(live_server, ctx, tmp_root, fixtures, monkeypatch, capsy
 def test_convert_forwards_to_running_server(live_server, ctx, tmp_root, fixtures, monkeypatch, capsys):
     import json
 
-    from aidoc.cli import main
+    from doc4ai.cli import main
     shutil.copy(fixtures / "text.pdf", tmp_root / "t.pdf")
-    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
+    monkeypatch.setattr("doc4ai.client.find_server", lambda cfg, token=None: ServerClient(live_server, None))
     ctx.queue.start()
     assert main(["convert", str(tmp_root / "t.pdf"), "-o", str(tmp_root / "o3"), "--json"]) == 0
     captured = capsys.readouterr()
@@ -136,24 +136,24 @@ def test_unreachable_server_is_a_clear_error(tmp_root, monkeypatch, capsys):
     """Final review I4: a lock whose server is not listening yet gives a message, not a traceback."""
     import httpx
 
-    from aidoc.cli import main
+    from doc4ai.cli import main
 
     def refuse(request):
         raise httpx.ConnectError("connection refused")
-    monkeypatch.setattr("aidoc.client.find_server", lambda cfg, token=None: _mock_client(refuse))
+    monkeypatch.setattr("doc4ai.client.find_server", lambda cfg, token=None: _mock_client(refuse))
     (tmp_root / "in").mkdir()
     (tmp_root / "in" / "a.md").write_text("# a")
     assert main(["batch", str(tmp_root / "in")]) == 1
     assert main(["convert", str(tmp_root / "in" / "a.md")]) == 1
     assert main(["cancel", "x"]) == 1
     err = capsys.readouterr().err
-    assert err.count("cannot reach the aidoc server") == 3 and "Traceback" not in err
+    assert err.count("cannot reach the doc4ai server") == 3 and "Traceback" not in err
 
 
 def test_follow_stops_when_the_server_is_gone(tmp_root, capsys):
     import httpx
 
-    from aidoc.batch import run_batch_via_server
+    from doc4ai.batch import run_batch_via_server
 
     def handler(request):
         if request.method == "POST" and request.url.path == "/api/jobs":
@@ -191,7 +191,7 @@ def test_a_loopback_server_client_never_goes_through_a_proxy(monkeypatch):
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    from aidoc.client import ServerClient
+    from doc4ai.client import ServerClient
     from tests.fakes.proxy import RecordingProxy, point_env_at
 
     class H(BaseHTTPRequestHandler):

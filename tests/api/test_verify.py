@@ -34,7 +34,7 @@ def test_multipart_verify(client):
 def test_multipart_same_as_cli_json(client, tmp_path):
     import json
 
-    from aidoc.cli import main
+    from doc4ai.cli import main
     md = _own(FIX / "paged_furniture.pdf")
     (tmp_path / "a.md").write_text(md, encoding="utf-8")
     main(["verify", str(tmp_path / "a.md"), "--pdf", str(FIX / "paged_furniture.pdf"), "--json", str(tmp_path / "r.json")])
@@ -77,7 +77,7 @@ def test_local_path_form_is_guarded(client, ctx, tmp_path):
     md = tmp_path / "a.md"
     md.write_text(_own(FIX / "text.pdf"), encoding="utf-8")
     body = {"markdown_path": str(md), "pdf_path": str(FIX / "text.pdf")}
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(ctx), client=("10.0.0.7", 5555), base_url="http://127.0.0.1:8765") as remote:
         assert remote.post("/api/verify", json=body).status_code == 403      # non-loopback, no token
     r = client.post("/api/verify", json=body)

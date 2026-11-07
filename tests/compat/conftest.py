@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aidoc.mcp import tokens as T
-from aidoc.mcp.tokens import load_or_create_secret
+from doc4ai.mcp import tokens as T
+from doc4ai.mcp.tokens import load_or_create_secret
 from tests.mcp.conftest import TINY_PNG, make_doc, page_md  # noqa: F401  re-exported fixtures/helpers
 
 
@@ -15,8 +15,8 @@ def compat_env(ctx, monkeypatch):
     """ctx (fake engines, workers off) + PAT issuer + TestClient against the app with /v1 mounted."""
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
-    monkeypatch.setenv("AIDOC_TEST_ROUTES", "1")          # registers GET /v1/_whoami
+    from doc4ai.server.app import create_app
+    monkeypatch.setenv("DOC4AI_TEST_ROUTES", "1")          # registers GET /v1/_whoami
     secret = load_or_create_secret(ctx.config.data_dir)
 
     def issue(scopes=("doc4ai:read", "doc4ai:convert"), name="compat token", expires_in=3600):

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from aidoc.models import RawResult
-from aidoc.normalize import html_table_to_gfm, normalize
+from doc4ai.models import RawResult
+from doc4ai.normalize import html_table_to_gfm, normalize
 
 
 def raw(md, images=(), markers=True, tmp=Path(".")):
@@ -57,8 +57,8 @@ def test_formulas_untouched():
 
 
 def test_normalize_with_page_numbers(tmp_path):
-    from aidoc.models import RawResult
-    from aidoc.normalize import normalize
+    from doc4ai.models import RawResult
+    from doc4ai.normalize import normalize
     img = tmp_path / "images" / "a.png"
     img.parent.mkdir()
     img.write_bytes(b"\x89PNG\r\n\x1a\n")

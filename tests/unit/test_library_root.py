@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.config import ConfigError, default_library_root, load_config, root_dir_problem, root_dir_writable
+from doc4ai.config import ConfigError, default_library_root, load_config, root_dir_problem, root_dir_writable
 
 pytestmark = pytest.mark.library_root_env
 
@@ -17,8 +17,8 @@ def _default() -> Path:
 
 def test_unset_root_is_the_platform_default(tmp_root, monkeypatch):
     """User decision 2026-10-29: no Doc4AI folder set = C:\\doc4ai (Windows) / ~/doc4ai, never the repo's out/."""
-    monkeypatch.delenv("AIDOC_LIBRARY_ROOT", raising=False)
-    (tmp_root / "aidoc.toml").write_text('[general]\nlang = "cht"\n', encoding="utf-8")
+    monkeypatch.delenv("DOC4AI_LIBRARY_ROOT", raising=False)
+    (tmp_root / "doc4ai.toml").write_text('[general]\nlang = "cht"\n', encoding="utf-8")
     existed = _default().exists()
     cfg = load_config()
     assert default_library_root() == _default()
@@ -30,9 +30,9 @@ def test_unset_root_is_the_platform_default(tmp_root, monkeypatch):
 
 
 def test_legacy_output_dir_is_ignored_with_one_migration_note(tmp_root, tmp_path, monkeypatch):
-    monkeypatch.delenv("AIDOC_LIBRARY_ROOT", raising=False)
+    monkeypatch.delenv("DOC4AI_LIBRARY_ROOT", raising=False)
     lib = tmp_path / "lib"
-    (tmp_root / "aidoc.toml").write_text(f"[general]\nroot_dir = '{lib}'\noutput_dir = \"out\"\n",
+    (tmp_root / "doc4ai.toml").write_text(f"[general]\nroot_dir = '{lib}'\noutput_dir = \"out\"\n",
                                          encoding="utf-8")
     cfg = load_config()
     assert cfg.general.root_dir == str(lib)
@@ -46,8 +46,8 @@ def test_legacy_output_dir_is_ignored_with_one_migration_note(tmp_root, tmp_path
 
 def test_env_overrides_root_dir(tmp_root, tmp_path, monkeypatch):
     lib, env = tmp_path / "lib", tmp_path / "envlib"
-    (tmp_root / "aidoc.toml").write_text(f'[general]\nroot_dir = "{lib.as_posix()}"\n', encoding="utf-8")
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(env))
+    (tmp_root / "doc4ai.toml").write_text(f'[general]\nroot_dir = "{lib.as_posix()}"\n', encoding="utf-8")
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(env))
     cfg = load_config()
     assert cfg.root_from_env() and cfg.root_configured()
     assert cfg.library_root() == env and cfg.output_root() == env / "out" and cfg.source_root() == env / "source"
@@ -73,15 +73,15 @@ def test_root_dir_problem_accepts_empty_and_a_plain_folder(tmp_root, tmp_path):
 
 
 def test_invalid_root_dir_in_toml_refuses_to_start(tmp_root, monkeypatch):
-    monkeypatch.delenv("AIDOC_LIBRARY_ROOT", raising=False)
-    (tmp_root / "aidoc.toml").write_text('[general]\nroot_dir = "relative/dir"\n', encoding="utf-8")
+    monkeypatch.delenv("DOC4AI_LIBRARY_ROOT", raising=False)
+    (tmp_root / "doc4ai.toml").write_text('[general]\nroot_dir = "relative/dir"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="root_dir"):
         load_config()
 
 
 def test_invalid_env_root_refuses_to_start(tmp_root, monkeypatch):
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", "relative/dir")
-    with pytest.raises(ConfigError, match="AIDOC_LIBRARY_ROOT"):
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", "relative/dir")
+    with pytest.raises(ConfigError, match="DOC4AI_LIBRARY_ROOT"):
         load_config()
 
 
@@ -89,13 +89,13 @@ def test_root_dir_writable_creates_out_and_source(tmp_path):
     lib = tmp_path / "a" / "lib"
     assert root_dir_writable(lib, create=True) is None
     assert (lib / "out").is_dir() and (lib / "source").is_dir()
-    assert not list(lib.rglob(".aidoc-probe-*"))
+    assert not list(lib.rglob(".doc4ai-probe-*"))
 
 
 def test_root_dir_writable_check_creates_nothing(tmp_path):
     lib = tmp_path / "new" / "lib"
     assert root_dir_writable(lib, create=False) is None
-    assert not (tmp_path / "new").exists() and not list(tmp_path.glob(".aidoc-probe-*"))
+    assert not (tmp_path / "new").exists() and not list(tmp_path.glob(".doc4ai-probe-*"))
     f = tmp_path / "file"
     f.write_text("x", encoding="utf-8")
     assert "無法寫入" in root_dir_writable(f / "lib", create=False)
@@ -105,7 +105,7 @@ def test_root_is_normalized(tmp_root, tmp_path, monkeypatch):
     """Verifier P4: `lib\\x\\..` and `lib` are one folder, so planning and ownership checks see one path."""
     lib = tmp_path / "lib"
     lib.mkdir()
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(lib) + "\\x\\..")
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(lib) + "\\x\\..")
     cfg = load_config()
     assert cfg.library_root() == lib and cfg.source_root() == lib / "source"
 
@@ -113,7 +113,7 @@ def test_root_is_normalized(tmp_root, tmp_path, monkeypatch):
 def test_root_check_of_a_missing_folder_writes_nothing_anywhere(tmp_path, monkeypatch):
     """The live check of an unset field (C:/doc4ai) must not create a probe in the drive root: no folder and no
     file is created for a root that does not exist yet; only an existing root gets a probe file inside it."""
-    import aidoc.config as C
+    import doc4ai.config as C
     writes = []
     monkeypatch.setattr(C.Path, "mkdir", lambda self, *a, **k: writes.append(("mkdir", self)))
     monkeypatch.setattr(C, "_probe", lambda d: writes.append(("probe", d)))

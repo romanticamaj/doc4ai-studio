@@ -4,7 +4,7 @@ from tests.compat.test_sync import PDF
 
 
 def test_ua_identity():
-    from aidoc.mcp.calllog import ua_identity
+    from doc4ai.mcp.calllog import ua_identity
     assert ua_identity("python-requests/2.32.3") == ("python-requests", "2.32.3")
     assert ua_identity("Go-http-client/1.1") == ("Go-http-client", "1.1")
     assert ua_identity("curl/8.9.1 (x86_64)") == ("curl", "8.9.1")

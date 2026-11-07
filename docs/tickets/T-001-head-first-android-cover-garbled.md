@@ -56,8 +56,8 @@
 
 - **PDF 文字層**：根源（Identity-H 且無 ToUnicode）。
 - **Docling 解析（docling-parse 7.21.0 / docling 2.130.0）**：照字元碼直接輸出，glyph 3 被轉為 `U+FFFD`。
-- **我們的 normalize（`src/aidoc/normalize.py`）**：未參與，沒有任何字元替換。
-- **品質檢查（`src/aidoc/quality.py`）**：沒攔下（見第 4 節）。
+- **我們的 normalize（`src/doc4ai/normalize.py`）**：未參與，沒有任何字元替換。
+- **品質檢查（`src/doc4ai/quality.py`）**：沒攔下（見第 4 節）。
 
 ### 3. OCR 能不能救？（只跑封面 1 頁 PDF，真實引擎 venv）
 
@@ -111,7 +111,7 @@ PDF 裡的 Comic Sans 等手寫體字型以 Type0／Identity-H 嵌入、**沒有
 
 ## 相關
 
-- 品質檢查的亂碼規則：`src/aidoc/quality.py`
-- Docling runner：`src/aidoc/engines/runner/docling_runner.py`（目前 `FULL_PAGE` 只改 `ocr.mode`，未換 backend）
+- 品質檢查的亂碼規則：`src/doc4ai/quality.py`
+- Docling runner：`src/doc4ai/engines/runner/docling_runner.py`（目前 `FULL_PAGE` 只改 `ocr.mode`，未換 backend）
 - docling-parse 自繪頁面圖：`envs/docling/.venv/Lib/site-packages/docling/backend/docling_parse_backend.py`
 - 頁碼與逐頁品質系統性修正：per-page quality spec（2026-10-01）

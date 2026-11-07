@@ -146,7 +146,7 @@ def test_reconvert_source_missing(client, ctx, tmp_root, fixtures):
 
 def test_reconvert_starts_over_when_a_cancelled_task_is_reused(client, ctx, tmp_root, fixtures):
     """A cancelled reconvert keeps its row (index A14); a new reconvert must not resume its old engine's segments."""
-    from aidoc.models import Attempt
+    from doc4ai.models import Attempt
     did = converted(client, ctx, tmp_root, fixtures)
     job = client.post("/api/documents/reconvert", json={"ids": [did]}).json()["job"]
     client.post(f"/api/jobs/{job['id']}/cancel")
@@ -262,7 +262,7 @@ def test_list_flag_source_not_copied(client, ctx, tmp_root, fixtures):
 
 def test_flat_private_fields_absent(client, ctx, tmp_root, fixtures):
     did = converted(client, ctx, tmp_root, fixtures)
-    from aidoc.server.serialize import PRIVATE_DOC_FIELDS
+    from doc4ai.server.serialize import PRIVATE_DOC_FIELDS
     for doc in (client.get("/api/documents").json()["documents"][0], client.get(f"/api/documents/{did}").json()["document"]):
         assert not set(PRIVATE_DOC_FIELDS) & set(doc)
 
@@ -271,12 +271,12 @@ def test_source_served_from_copy_over_long_path(client, ctx, tmp_root, fixtures)
     """A4: a copy whose path is 300+ characters is served by GET /source (long-path safe end to end)."""
     import os
 
-    from aidoc import fsops
+    from doc4ai import fsops
     did = converted(client, ctx, tmp_root, fixtures)
     doc = ctx.store.get_document(did)
     deep = ctx.config.source_root() / ("d" * 150) / ("f" * 150 + ".pdf")
     assert len(str(deep)) >= 300
-    from aidoc.source_copy import copy_verified
+    from doc4ai.source_copy import copy_verified
     size, mtime_ns = copy_verified(fixtures / "text.pdf", deep, doc["sha256"])
     os.unlink(doc["source_copy_path"])
     ctx.store.set_source_copy(did, path=str(deep), status="copied", error=None, size=size, mtime_ns=mtime_ns)
@@ -292,7 +292,7 @@ def test_purge_orphaned_deletes_their_copies(client, ctx, tmp_root, fixtures):
     """A9: two orphans, one hardlinked with a live document -> 2 paths deleted, the live copy intact."""
     import os
 
-    from aidoc.names import file_sha256
+    from doc4ai.names import file_sha256
     live = converted(client, ctx, tmp_root, fixtures)
     shutil.copy(fixtures / "text.pdf", tmp_root / "copy.pdf")
     job = client.post("/api/jobs", json={"inputs": [{"path": str(tmp_root / "copy.pdf")}]}).json()["job"]

@@ -1,4 +1,4 @@
-"""aidoc sources status|backfill (spec 2026-10-29 §7.4, §10.3; plan Task 9): exit codes, JSON, forwarding."""
+"""doc4ai sources status|backfill (spec 2026-10-29 §7.4, §10.3; plan Task 9): exit codes, JSON, forwarding."""
 from __future__ import annotations
 
 import json
@@ -7,9 +7,9 @@ from pathlib import Path
 
 import httpx
 
-from aidoc.cli import main
-from aidoc.client import ServerClient
-from aidoc.source_copy import backfill
+from doc4ai.cli import main
+from doc4ai.client import ServerClient
+from doc4ai.source_copy import backfill
 from tests.unit.test_backfill import lib  # noqa: F401  the 8-document library of A6
 from tests.unit.test_pipeline_source_copy import Lib
 
@@ -51,14 +51,14 @@ def test_forwards_to_a_running_server(tmp_root, monkeypatch, capsys):
         return httpx.Response(200, json={"dry_run": True, "source_dir": "D:\\doc4ai\\source", "totals": {
             "copied": 1, "already_present": 0, "missing_original": 0, "sha_mismatch": 0, "unreadable": 0,
             "failed": 0, "skipped_orphaned": 0}, "documents": [], "unreferenced_files": 0, "workspace": "default"})
-    monkeypatch.setattr("aidoc.client.find_server",
+    monkeypatch.setattr("doc4ai.client.find_server",
                         lambda cfg, token=None: ServerClient("http://x", None, transport=httpx.MockTransport(reply)))
     assert main(["sources", "backfill", "--dry-run"]) == 0
     assert seen == [("POST", "/api/sources/backfill", {"dry_run": True})]
 
 
 def test_exit_1_when_a_document_is_unreadable(tmp_root, fixtures, monkeypatch, capsys):
-    from aidoc import source_copy
+    from doc4ai import source_copy
     lb = Lib(tmp_root, fixtures, monkeypatch)
     _st, t = lb.convert(lb.place("u.pdf"))
     d = lb.doc(t)
@@ -80,7 +80,7 @@ def test_exit_0_when_everything_is_copied(tmp_root, fixtures, monkeypatch, capsy
 
 def test_no_subcommand_is_usage(tmp_root, capsys):
     assert main(["sources"]) == 4
-    assert "usage: aidoc sources" in capsys.readouterr().err
+    assert "usage: doc4ai sources" in capsys.readouterr().err
 
 
 def test_serverless_dry_run_writes_nothing(tmp_root, fixtures, monkeypatch, capsys):

@@ -3,12 +3,12 @@ import threading
 
 import pymupdf
 
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pipeline import run_task
-from aidoc.store import Store
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pipeline import run_task
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -47,7 +47,7 @@ def test_repair_engine_error_degrades_to_warn(tmp_root, monkeypatch, fixtures):
 
 
 def test_cancel_during_repair_cancels_the_task(tmp_root, monkeypatch, fixtures):
-    from aidoc.pipeline import run_task as rt
+    from doc4ai.pipeline import run_task as rt
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json", garbled_pages=[1], default="garbled", slow_s=30,
                                          rules=[{"match": {"source_glob": "pages.pdf"}, "behavior": "slow_ok"}]))
     store = Store(tmp_root / "data" / "aidoc.db")

@@ -6,9 +6,9 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from aidoc.pagemap import pdf_layers
-from aidoc.probe import probe_file
-from aidoc.quality import assess, page_checks
+from doc4ai.pagemap import pdf_layers
+from doc4ai.probe import probe_file
+from doc4ai.quality import assess, page_checks
 
 WORDS = ["orthopaedic", "medicine", "relies", "on", "careful", "clinical", "examination", "of", "moving", "parts", "where", "each", "structure", "is", "tested", "by", "passive", "active", "and", "resisted", "movements", "and", "the", "pattern", "of", "pain", "and", "limitation", "points", "to", "the", "lesion", "while", "rehabilitation", "proceeds", "in", "stages", "from", "protection", "to", "range", "of", "motion", "then", "strengthening", "against", "resistance", "until", "return", "to", "sport", "after", "months", "of", "graded", "work", "guided", "by", "a", "physiotherapist", "who", "records", "every", "finding"]
 
@@ -175,7 +175,7 @@ def test_regrade_rechecks_a_page_with_an_old_repair(tmp_path):
 @pytest.mark.parametrize("fixture", ["scanned_en.pdf"])
 def test_scan_with_markers_is_partially_verifiable(fixture):
     """Verifier minor: a scanned PDF (no text layer) with page markers only gets marker coverage: "partial"."""
-    from aidoc.verify import verify_markdown
+    from doc4ai.verify import verify_markdown
     pdf = Path(__file__).resolve().parents[1] / "fixtures" / fixture
     n = probe_file(pdf).pages
     md = "".join(f"<!-- page: {i} -->\n\ntext {i}\n\n" for i in range(1, n + 1))
@@ -186,7 +186,7 @@ def test_xml_code_listing_is_page_text_not_html():
     """Verifier round 2 (found on the labelled Head First pages): a generic tag pattern removed `<LinearLayout ...>`
     from code listings, so complete code pages read as page_partial. Only HTML that engines emit is stripped;
     character entities are decoded."""
-    from aidoc.quality import section_text
+    from doc4ai.quality import section_text
     assert section_text('<Button android:text="Save" />') == "buttonandroidtextsave"
     assert section_text("&lt;Button android:text=&quot;Save&quot; /&gt;") == "buttonandroidtextsave"
     assert section_text("<table><tr><td>a1</td><td>b2</td></tr></table><br/>x<sub>2</sub>") == "a1b2x2"
@@ -196,7 +196,7 @@ def test_broken_font_spans_are_left_out_of_the_layer():
     """Head First marks 339 of 532 pages "broken font" (handwriting annotation fonts) while their body text and code
     extract fine: those pages are checked on their healthy-font text instead of skipping the checks (verifier
     round 2). The fixture's broken Type0 lines (shift-cipher garbage) are gone, its Helvetica lines stay."""
-    from aidoc.pagemap import page_lines
+    from doc4ai.pagemap import page_lines
     with pymupdf.open(Path(__file__).resolve().parents[1] / "fixtures" / "broken_tounicode.pdf") as d:
         lines, untrusted, _ = page_lines(d)
         raw = d[0].get_text()
@@ -213,13 +213,13 @@ def test_shifted_cipher_text_layer_is_untrusted_not_partial(tmp_path):
     coverage 0.0 and 34 false page_partial flags on the synthetic broken-font samples while the Markdown was right.
     A page whose layer reads far less like the document's language than its own section is untrusted: no coverage
     checks there."""
-    from aidoc.quality import language_gap, untrusted_layers
+    from doc4ai.quality import language_gap, untrusted_layers
     pages = [_text_page(i) for i in range(1, 7)]
     pdf = _pdf(tmp_path, pages)
     layers, content, body, untrusted = pdf_layers(pdf)
     secs = _own(pages)
     md = "".join(f"<!-- page: {p} -->\n\n{secs[p]}\n\n" for p in sorted(secs))
-    from aidoc.pagemap import squash
+    from doc4ai.pagemap import squash
     cipher = squash(_shift(" ".join(pages[2])))
     layers2 = list(layers)
     layers2[2] = cipher
@@ -279,8 +279,8 @@ def test_page_partial_is_an_advisory_that_never_raises_the_level(tmp_path):
 def test_check_document_does_not_repair_an_advisory_page(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    from aidoc import pipeline
-    from aidoc.models import NormalizedResult
+    from doc4ai import pipeline
+    from doc4ai.models import NormalizedResult
     pages = [_text_page(i) for i in range(1, 6)]
     pdf = _pdf(tmp_path, pages)
     secs = _own(pages)

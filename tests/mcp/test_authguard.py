@@ -4,11 +4,11 @@ import time
 
 from starlette.testclient import TestClient
 
-from aidoc.mcp.authguard import AuthFailureGuard
-from aidoc.mcp.calllog import CallRecorder
-from aidoc.mcp.gate import McpGate
-from aidoc.mcp.principal import PatVerifier
-from aidoc.mcp.ratelimit import RateLimiter
+from doc4ai.mcp.authguard import AuthFailureGuard
+from doc4ai.mcp.calllog import CallRecorder
+from doc4ai.mcp.gate import McpGate
+from doc4ai.mcp.principal import PatVerifier
+from doc4ai.mcp.ratelimit import RateLimiter
 from tests.mcp.test_gate import MODERN, SECRET, _issue, echo_inner
 
 LIST = {**MODERN, "Mcp-Method": "tools/list"}

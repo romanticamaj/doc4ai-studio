@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from aidoc.cli import main
+from doc4ai.cli import main
 
 pytestmark = pytest.mark.slow
 

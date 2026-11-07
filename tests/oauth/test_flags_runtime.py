@@ -1,7 +1,7 @@
 """Runtime effect of the [oauth] switches on existing grants (verifier INFO, 2026-11-06), and code consumption."""
 import time
 
-from aidoc.oauth import tokens as OT
+from doc4ai.oauth import tokens as OT
 from tests.oauth.conftest import (
     CLAUDE_CODE_CIMD,
     RES,
@@ -14,7 +14,7 @@ from tests.oauth.conftest import (
 
 
 def _cimd_grant(oauth_ctx, fake_cimd):
-    from aidoc.oauth.clients import ClientRegistry
+    from doc4ai.oauth.clients import ClientRegistry
     fake_cimd.put(CLAUDE_CODE_CIMD["client_id"], CLAUDE_CODE_CIMD)
     ClientRegistry(oauth_ctx).resolve(CLAUDE_CODE_CIMD["client_id"], time.time())
     return mint_tokens(oauth_ctx, client_id=CLAUDE_CODE_CIMD["client_id"], redirect="http://localhost:3118/callback")
@@ -70,7 +70,7 @@ def test_non_canonical_cimd_ids_refused_at_admission(oauth_ctx, fake_cimd):
     userinfo or fragment), so no client id can be fetched as CIMD yet look like something else elsewhere."""
     import pytest
 
-    from aidoc.oauth.clients import ClientError, ClientRegistry
+    from doc4ai.oauth.clients import ClientError, ClientRegistry
     reg = ClientRegistry(oauth_ctx)
     for cid in ("HTTPS://claude.ai/oauth/x", "Https://claude.ai/oauth/x", " https://claude.ai/oauth/x",
                 "https://claude.ai/oauth/x\t", "https://claude.ai/oa uth/x", "https://claude.ai/oauth/x\n",

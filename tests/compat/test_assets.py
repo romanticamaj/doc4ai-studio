@@ -68,7 +68,7 @@ def test_asset_route_refuses_links_out_of_assets(compat_env, make_doc):
 def test_embedded_images_refuse_links_out_of_assets(tmp_path):
     from pathlib import Path
 
-    from aidoc.compat.render import asset_file
+    from doc4ai.compat.render import asset_file
     assets = tmp_path / "assets"
     assets.mkdir()
     outside = tmp_path / "outside"

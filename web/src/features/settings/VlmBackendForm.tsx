@@ -188,7 +188,7 @@ export function VlmBackendForm({
             <Row label="model" htmlFor="vlm-model">
               <Input id="vlm-model" value={v.model} onChange={(e) => set("model", e.target.value)} className="font-mono" />
             </Row>
-            <Row label="API key" hint={`建議改用環境變數 ${v.api_key_env || "AIDOC_VLM_API_KEY"}；留空 = 不變`} htmlFor="vlm-key">
+            <Row label="API key" hint={`建議改用環境變數 ${v.api_key_env || "DOC4AI_VLM_API_KEY"}；留空 = 不變`} htmlFor="vlm-key">
               <Input
                 id="vlm-key"
                 type="password"

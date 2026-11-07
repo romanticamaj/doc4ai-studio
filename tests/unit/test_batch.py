@@ -1,12 +1,12 @@
 import json
 import shutil
 
-from aidoc.batch import collect_inputs, manifest_rows, run_batch
-from aidoc.cli import main
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions
-from aidoc.store import Store
+from doc4ai.batch import collect_inputs, manifest_rows, run_batch
+from doc4ai.cli import main
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -112,7 +112,7 @@ def test_rerun_reuses_unfinished_row_for_sanitised_stem(tmp_root, fixtures, monk
     cfg = load_config()
     store = Store(tmp_root / "data" / "aidoc.db")
     out = tmp_root / "out"
-    from aidoc.names import file_sha256
+    from doc4ai.names import file_sha256
     j1 = store.create_job(ConvertOptions(output_dir=out), "cli")
     tid, _ = store.create_task(j1, str(src), file_sha256(src), src.stat().st_size, src.stat().st_mtime, "cht",
                                str(out / "CON_"))
@@ -125,18 +125,18 @@ def test_rerun_reuses_unfinished_row_for_sanitised_stem(tmp_root, fixtures, monk
 
 def test_batch_unreadable_and_vanished_inputs_do_not_abort(tmp_root, fixtures, monkeypatch, capsys):
     """P1 verifier 1/10: an I/O error on one input fails that input only; the batch goes on and exits 2."""
-    import aidoc.names
+    import doc4ai.names
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     d = tmp_root / "in"; d.mkdir()
     for n in ("a_locked.docx", "b_ok.docx"):
         shutil.copy(fixtures / "sample.docx", d / n)
-    real = aidoc.names.file_sha256
+    real = doc4ai.names.file_sha256
 
     def sha(p):
         if "a_locked" in str(p):
             raise PermissionError(13, "being used by another process")
         return real(p)
-    monkeypatch.setattr(aidoc.names, "file_sha256", sha)
+    monkeypatch.setattr(doc4ai.names, "file_sha256", sha)
     out = tmp_root / "out"
     assert main(["batch", str(d), "-o", str(out)]) == 2
     rows = {r["source"]: r for r in map(json.loads, (out / "_manifest.jsonl").read_text(encoding="utf-8").splitlines())}
@@ -155,10 +155,10 @@ def test_batch_unreadable_and_vanished_inputs_do_not_abort(tmp_root, fixtures, m
 def test_batch_job_never_left_queued_when_collection_crashes(tmp_root, fixtures, monkeypatch):
     import pytest
 
-    import aidoc.batch
+    import doc4ai.batch
     fake_env(monkeypatch, write_scenario(tmp_root / "sc.json"))
     d = tmp_root / "in"; d.mkdir(); shutil.copy(fixtures / "sample.docx", d / "a.docx")
-    monkeypatch.setattr(aidoc.batch, "planned_output_dir", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(doc4ai.batch, "planned_output_dir", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     store = Store(tmp_root / "data" / "aidoc.db"); cfg = load_config()
     with pytest.raises(RuntimeError):
         run_batch(store, cfg, get_engines(cfg), [d / "a.docx"], ConvertOptions(output_dir=tmp_root / "out"))
@@ -171,8 +171,8 @@ def test_batch_resumes_unfinished_segments(tmp_root, fixtures, monkeypatch):
     import threading
     import time
 
-    from aidoc.names import file_sha256
-    from aidoc.pipeline import run_task
+    from doc4ai.names import file_sha256
+    from doc4ai.pipeline import run_task
     sc = write_scenario(tmp_root / "sc.json", rules=[{"match": {"segment_idx": 1}, "behavior": "slow_ok"}], slow_s=30)
     fake_env(monkeypatch, sc)
     d = tmp_root / "in"; d.mkdir(); shutil.copy(fixtures / "big.pdf", d / "big.pdf"); out = tmp_root / "out"

@@ -2,8 +2,8 @@ import sqlite3
 
 import pytest
 
-from aidoc import pageindex as PI
-from aidoc.store import Store
+from doc4ai import pageindex as PI
+from doc4ai.store import Store
 
 MD = ("Preamble line\n<!-- page: 1 -->\n# 第一章 機器學習\n\n機器學習 machine learning 概論。\n"
       "<!-- page: 2 -->\n## 2.1 Gradient descent\n\n梯度下降 gradient descent 的步驟如下。\n"

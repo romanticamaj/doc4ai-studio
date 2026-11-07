@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { VlmBackendForm } from "../VlmBackendForm";
 import type { VlmSettings } from "@/api/types";
 
-const base: VlmSettings = { backend: "openai", remote_enabled: false, base_url: "", model: "", api_key: "", api_key_env: "AIDOC_VLM_API_KEY",
+const base: VlmSettings = { backend: "openai", remote_enabled: false, base_url: "", model: "", api_key: "", api_key_env: "DOC4AI_VLM_API_KEY",
   allow_no_key: false, request_timeout_s: 120, max_concurrent: 2, max_output_tokens: 4096, remote_max_pages_per_doc: 200,
   remote_daily_page_budget: 500, use_as_fallback: true, use_for_repair: true, dpi: 150, max_image_px: 2000,
   local_preset: "paddleocr-vl-1.6", local_dpi: 200, local_max_image_px: 1400, local_ctx_size: 8192, local_gguf: "", local_mmproj: "", local_prompt_style: "" };

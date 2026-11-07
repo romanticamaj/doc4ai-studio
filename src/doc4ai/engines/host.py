@@ -1,0 +1,266 @@
+"""RunnerHost: spawn an engine runner and speak the index §5 protocol over stdin/stderr."""
+from __future__ import annotations
+
+import collections
+import io
+import json
+import math
+import os
+import queue
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+from doc4ai import paths, procs
+from doc4ai.engines.base import EngineCancelled, EngineError
+from doc4ai.models import ConvertOptions, ErrorKind, ProgressCb
+
+_PREFIXES = ("DOC4AI_READY", "DOC4AI_PROGRESS", "DOC4AI_DONE", "DOC4AI_ERROR")
+
+
+def _is_oom_text(text: str) -> bool:
+    """Same markers as runner/_proto.py (runners cannot import doc4ai, so the list is duplicated there)."""
+    low = text.lower()
+    return any(m in low for m in ("cuda out of memory", "outofmemoryerror", "out of memory"))
+
+
+def runner_env(data_dir: Path) -> dict[str, str]:
+    env_models = os.environ.get("DOC4AI_MODELS")
+    models = Path(env_models) if env_models else Path(data_dir) / "models"
+    return {
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "MINERU_HOME": str(models / "mineru"),
+        "MINERU_MODEL_SMALL_BACKEND": "torch",
+        "HF_HOME": str(models / "hf"),
+        "EASYOCR_MODULE_PATH": str(models / "easyocr"),
+        "DOC4AI_MODELS_DIR": str(models),
+    }
+
+
+def compute_timeout(pages: int | None, size_bytes: int, opts: ConvertOptions, limits) -> float:
+    if opts.timeout_s:
+        return opts.timeout_s
+    if pages:
+        return max(limits.timeout_min_s, pages * limits.timeout_per_page_s)
+    mb = math.ceil(size_bytes / 2**20)
+    return min(limits.timeout_max_no_pages_s, max(limits.timeout_min_s, mb * limits.timeout_per_mb_s))
+
+
+def _parse(line: str) -> tuple[str | None, dict]:
+    for p in _PREFIXES:
+        if line.startswith(p + " ") or line.rstrip("\r\n") == p:
+            rest = line[len(p):].strip()
+            try:
+                return p[len("DOC4AI_"):], (json.loads(rest) if rest else {})
+            except json.JSONDecodeError:
+                return None, {}
+    return None, {}
+
+
+class RunnerHost:
+    def __init__(self, python: Path, script: Path, env_extra: dict[str, str], startup_timeout_s: float = 900.0,
+                 memory_limit_mb: int | None = None):
+        self.python, self.script = Path(python), Path(script)
+        self.memory_limit_mb = memory_limit_mb
+        self.memory_exceeded_mb: int | None = None      # set by the watchdog when it killed the runner
+        self.env_extra = dict(env_extra)
+        self.startup_timeout_s = startup_timeout_s
+        self.proc: subprocess.Popen | None = None
+        self._lines: queue.Queue[str | None] = queue.Queue()
+        self._tail: collections.deque[str] = collections.deque(maxlen=200)
+        self._pump_thread: threading.Thread | None = None
+        self.ready = False
+        self.pid: int | None = None
+
+    def start(self, cwd: Path) -> None:
+        cwd = Path(cwd).resolve()
+        cwd.mkdir(parents=True, exist_ok=True)
+        env = {**os.environ, **runner_env(paths.data_dir()), **self.env_extra}
+        self.proc = subprocess.Popen([str(self.python), str(self.script)], cwd=str(cwd), env=env,
+                                     stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                     **procs.popen_kwargs())
+        self.pid = self.proc.pid
+        self._pump_thread = threading.Thread(target=self._pump, daemon=True)
+        self._pump_thread.start()
+        if self.memory_limit_mb:
+            threading.Thread(target=self._watch_memory, name="doc4ai-runner-memory", daemon=True).start()
+
+    def _watch_memory(self, interval_s: float = 0.2) -> None:
+        """Kill the runner tree when its resident memory passes memory_limit_mb (an RLIMIT_AS / Job Object cap
+        would also count the GPU engines' huge virtual reservations, so the watchdog measures what is resident)."""
+        import psutil
+        proc = self.proc
+        try:
+            root = psutil.Process(proc.pid)
+        except psutil.Error:
+            return
+        limit = self.memory_limit_mb * 1024 * 1024
+        while proc.poll() is None:
+            total = 0
+            try:
+                members = [root, *root.children(recursive=True)]
+            except psutil.Error:
+                return
+            for p in members:
+                try:
+                    total += p.memory_info().rss
+                except psutil.Error:
+                    pass
+            if total > limit:
+                self.memory_exceeded_mb = total // (1024 * 1024)
+                procs.kill_tree(proc.pid)
+                return
+            time.sleep(interval_s)
+
+    def _pump(self) -> None:
+        assert self.proc is not None and self.proc.stderr is not None
+        with io.TextIOWrapper(self.proc.stderr, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                self._tail.append(line)
+                self._lines.put(line)
+        self._lines.put(None)
+
+    def alive(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
+
+    def _next_line(self, timeout: float = 0.25) -> str | None:
+        """'' = nothing yet; None = stream closed."""
+        try:
+            return self._lines.get(timeout=timeout)
+        except queue.Empty:
+            return ""
+
+    def _raise_dead(self, why: str):
+        if self._pump_thread is not None:
+            self._pump_thread.join(timeout=5)          # make sure the stderr tail is complete
+        if self.proc is not None:
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        if self.memory_exceeded_mb is not None:      # killed by the watchdog: not retried, the next engine runs
+            raise EngineError(ErrorKind.engine, f"memory_limit: the runner used {self.memory_exceeded_mb} MB, over the "
+                                                f"{self.memory_limit_mb} MB cap ([limits] engine_memory_mb / markitdown_memory_mb)")
+        tail = "".join(self._tail)
+        oom = _is_oom_text(tail)
+        code = self.proc.returncode if self.proc else None
+        raise EngineError(ErrorKind.transient, f"{why} (code {code}): {tail[-500:]}", oom=oom)
+
+    def _check_cancel(self, cancel: threading.Event | None) -> None:
+        if cancel is not None and cancel.is_set():
+            self.kill()
+            raise EngineCancelled("cancelled")
+
+    def _wait_ready(self, on_progress: ProgressCb, cancel: threading.Event | None = None) -> None:
+        if self.ready:
+            return
+        deadline = time.monotonic() + self.startup_timeout_s
+        while True:
+            self._check_cancel(cancel)
+            line = self._next_line()
+            if line is None or (line == "" and not self.alive() and self._lines.empty()):
+                self._raise_dead("runner exited during startup")
+            if line:
+                kind, _ = _parse(line)
+                if kind in ("READY", "PROGRESS"):
+                    self.ready = True
+                    return
+                if kind is None:
+                    on_progress(-1.0, line.rstrip("\r\n"))
+            if time.monotonic() > deadline:
+                self.kill()
+                raise EngineError(ErrorKind.transient, f"startup timeout after {self.startup_timeout_s:.0f}s")
+
+    def run(self, request: dict, workdir: Path, timeout_s: float, on_progress: ProgressCb,
+            cancel: threading.Event | None = None) -> dict:
+        try:
+            return self._run(request, workdir, timeout_s, on_progress, cancel)
+        except (EngineError, EngineCancelled):
+            self._drain(on_progress)
+            raise
+
+    def _drain(self, on_progress: ProgressCb) -> None:
+        """After a kill / timeout / crash: hand the runner's last lines (e.g. DOC4AI_VLM_USAGE accounting) to the
+        caller instead of dropping them with the queue (verifier finding 1)."""
+        if self._pump_thread is not None:
+            self._pump_thread.join(timeout=3)
+        while True:
+            try:
+                line = self._lines.get_nowait()
+            except queue.Empty:
+                return
+            if line and _parse(line)[0] is None:
+                try:
+                    on_progress(-1.0, line.rstrip("\r\n"))
+                except Exception:  # noqa: BLE001, S110 - best effort while failing
+                    pass
+
+    def _run(self, request: dict, workdir: Path, timeout_s: float, on_progress: ProgressCb,
+             cancel: threading.Event | None = None) -> dict:
+        """Send one request and wait for its result. `cancel` is polled every 0.25 s (set -> kill, EngineCancelled)."""
+        if self.proc is None:
+            raise RuntimeError("RunnerHost.start() not called")
+        workdir = Path(workdir).resolve()          # runner cwd is the workdir: never hand it a relative path
+        workdir.mkdir(parents=True, exist_ok=True)
+        req_path = workdir / "request.json"
+        req_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
+        self._wait_ready(on_progress, cancel)
+        self._check_cancel(cancel)
+        try:
+            assert self.proc.stdin is not None
+            self.proc.stdin.write((str(req_path) + "\n").encode("utf-8"))
+            self.proc.stdin.flush()
+        except OSError:
+            self._raise_dead("runner stdin closed")
+        deadline = time.monotonic() + timeout_s
+        while True:
+            self._check_cancel(cancel)
+            line = self._next_line()
+            if line is None or (line == "" and not self.alive() and self._lines.empty()):
+                self._check_cancel(cancel)
+                self._raise_dead("runner exited")
+            if time.monotonic() > deadline:
+                self.kill()
+                raise EngineError(ErrorKind.transient, f"timeout after {timeout_s:.0f}s")
+            if not line:
+                continue
+            kind, payload = _parse(line)
+            if kind == "PROGRESS":
+                total = max(1, int(payload.get("total") or 1))
+                on_progress(min(1.0, int(payload.get("page") or 0) / total), "")
+            elif kind == "DONE":
+                return json.loads(Path(payload["result"]).read_text(encoding="utf-8"))
+            elif kind == "ERROR":
+                kind_s, msg = str(payload.get("kind", "engine")), str(payload.get("message", ""))
+                try:
+                    kind_e = ErrorKind(kind_s)
+                except ValueError:                   # unknown kind from a runner: treat as an engine failure
+                    kind_e, msg = ErrorKind.engine, f"[runner error kind {kind_s!r}] {msg}"
+                oom = kind_e == ErrorKind.transient and _is_oom_text(msg)
+                raise EngineError(kind_e, msg, oom=oom)
+            elif kind is None:
+                on_progress(-1.0, line.rstrip("\r\n"))   # log line, fraction -1 means "no progress info"
+
+    def kill(self) -> None:
+        if self.proc is None:
+            return
+        procs.kill_tree(self.proc.pid)
+        try:
+            self.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+
+    def close(self) -> None:
+        if self.proc is None:
+            return
+        try:
+            if self.proc.stdin:
+                self.proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self.kill()

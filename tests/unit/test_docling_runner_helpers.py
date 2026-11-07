@@ -2,7 +2,7 @@ import importlib.util
 import sys
 from types import SimpleNamespace as NS
 
-from aidoc import paths
+from doc4ai import paths
 
 sys.path.insert(0, str(paths.runner_dir()))
 spec = importlib.util.spec_from_file_location("docling_runner", paths.runner_script("docling"))

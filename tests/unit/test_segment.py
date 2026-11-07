@@ -1,6 +1,6 @@
 import pymupdf as fitz
 
-from aidoc.segment import plan_segments, segment_dir, split_pdf
+from doc4ai.segment import plan_segments, segment_dir, split_pdf
 
 
 def test_plan():
@@ -24,7 +24,7 @@ def test_segment_dir(tmp_path):
 def test_extract_pages_in_order(fixtures, tmp_path):
     import pymupdf
 
-    from aidoc.segment import extract_pages
+    from doc4ai.segment import extract_pages
     out = extract_pages(fixtures / "big.pdf", [7, 2, 45], tmp_path / "r.pdf")
     d = pymupdf.open(out)
     assert d.page_count == 3 and "第 7 頁" in d[0].get_text() and "第 45 頁" in d[2].get_text()

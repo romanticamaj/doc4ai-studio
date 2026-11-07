@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from aidoc import preview as P
+from doc4ai import preview as P
 
 FAKE = Path(__file__).resolve().parents[1] / "fakes" / "fake_soffice.py"
 
@@ -147,7 +147,7 @@ def test_settings_preview_section(client, ctx):
 
 
 def test_maintenance_purges_previews_of_deleted_documents(client, ctx, tmp_root, fixtures, fake_preview):
-    from aidoc.server.maintenance import Maintenance
+    from doc4ai.server.maintenance import Maintenance
     fake_preview()
     did = converted(client, ctx, tmp_root, fixtures, "sample.docx")
     client.post(f"/api/documents/{did}/preview")

@@ -10,69 +10,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "aidoc"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi" },
-    { name = "mcp" },
-    { name = "nvidia-ml-py" },
-    { name = "psutil" },
-    { name = "pymupdf" },
-    { name = "tiktoken" },
-    { name = "tomli", marker = "python_full_version < '3.11'" },
-    { name = "tomlkit" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.dev-dependencies]
-bench = [
-    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "rapidfuzz", version = "3.14.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "rapidfuzz", version = "3.14.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-dev = [
-    { name = "httpx" },
-    { name = "openpyxl" },
-    { name = "pillow" },
-    { name = "pytest" },
-    { name = "pytest-timeout" },
-    { name = "python-docx" },
-    { name = "python-pptx" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "mcp", specifier = ">=2.2,<2.3" },
-    { name = "nvidia-ml-py", specifier = ">=12" },
-    { name = "psutil", specifier = ">=6" },
-    { name = "pymupdf", specifier = ">=1.24" },
-    { name = "tiktoken", specifier = ">=0.8" },
-    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2" },
-    { name = "tomlkit", specifier = ">=0.12" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
-]
-
-[package.metadata.requires-dev]
-bench = [
-    { name = "matplotlib", specifier = ">=3.8" },
-    { name = "rapidfuzz", specifier = ">=3" },
-]
-dev = [
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "openpyxl", specifier = ">=3.1" },
-    { name = "pillow", specifier = ">=10" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-timeout", specifier = ">=2" },
-    { name = "python-docx", specifier = ">=1.1" },
-    { name = "python-pptx", specifier = ">=1.0" },
-    { name = "ruff", specifier = ">=0.6" },
-]
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -730,6 +667,69 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a9/95/a3dbbb5028f35eafb79008e7522a75244477d2838f38cbb722248dabc2a8/cycler-0.12.1.tar.gz", hash = "sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c", size = 7615, upload-time = "2023-10-07T05:32:18.335Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl", hash = "sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30", size = 8321, upload-time = "2023-10-07T05:32:16.783Z" },
+]
+
+[[package]]
+name = "doc4ai"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "mcp" },
+    { name = "nvidia-ml-py" },
+    { name = "psutil" },
+    { name = "pymupdf" },
+    { name = "tiktoken" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+    { name = "tomlkit" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.dev-dependencies]
+bench = [
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "rapidfuzz", version = "3.14.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "rapidfuzz", version = "3.14.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+dev = [
+    { name = "httpx" },
+    { name = "openpyxl" },
+    { name = "pillow" },
+    { name = "pytest" },
+    { name = "pytest-timeout" },
+    { name = "python-docx" },
+    { name = "python-pptx" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "mcp", specifier = ">=2.2,<2.3" },
+    { name = "nvidia-ml-py", specifier = ">=12" },
+    { name = "psutil", specifier = ">=6" },
+    { name = "pymupdf", specifier = ">=1.24" },
+    { name = "tiktoken", specifier = ">=0.8" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2" },
+    { name = "tomlkit", specifier = ">=0.12" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+]
+
+[package.metadata.requires-dev]
+bench = [
+    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "rapidfuzz", specifier = ">=3" },
+]
+dev = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "openpyxl", specifier = ">=3.1" },
+    { name = "pillow", specifier = ">=10" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-timeout", specifier = ">=2" },
+    { name = "python-docx", specifier = ">=1.1" },
+    { name = "python-pptx", specifier = ">=1.0" },
+    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]

@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from aidoc.store import SCHEMA_VERSION, Store
+from doc4ai.store import SCHEMA_VERSION, Store
 
 
 @pytest.fixture

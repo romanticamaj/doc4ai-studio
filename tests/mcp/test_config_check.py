@@ -1,17 +1,17 @@
-"""[mcp] lists edited by hand in aidoc.toml are validated at load with the settings-API rules (S-phase finding 6).
+"""[mcp] lists edited by hand in doc4ai.toml are validated at load with the settings-API rules (S-phase finding 6).
 
 Policy: a bad `allowed_hosts` entry or a `local_path_roots` directory that does not exist is ignored with a startup
 warning; a `local_path_roots` entry that is a network (UNC / \\\\?\\) or relative path, or a list that is not a list
 of strings, refuses to start — those would widen what convert_path can reach."""
 import pytest
 
-from aidoc import paths
-from aidoc.cli import main
-from aidoc.config import ConfigError, load_config
+from doc4ai import paths
+from doc4ai.cli import main
+from doc4ai.config import ConfigError, load_config
 
 
 def _write(tmp_root, body: str):
-    (tmp_root / "aidoc.toml").write_text(body, encoding="utf-8")
+    (tmp_root / "doc4ai.toml").write_text(body, encoding="utf-8")
 
 
 def _toml_list(items):
@@ -46,14 +46,14 @@ def test_lists_must_be_lists_of_strings(tmp_root, body):
 
 
 def test_serve_prints_warnings_and_refuses_unsafe_roots(tmp_root, monkeypatch, capsys):
-    monkeypatch.setattr("aidoc.cli._run_uvicorn", lambda app, host, port: None)
+    monkeypatch.setattr("doc4ai.cli._run_uvicorn", lambda app, host, port: None)
     _write(tmp_root, "[mcp]\nallowed_hosts = ['bad host!']\n")
     assert main(["serve"]) == 0
     assert "warning: mcp.allowed_hosts entry 'bad host!'" in capsys.readouterr().err
     _write(tmp_root, "[mcp]\nlocal_path_roots = ['\\\\nas\\share']\n")
     assert main(["serve"]) == 6
     err = capsys.readouterr().err
-    assert "aidoc.toml" in err and "local_path_roots" in err
+    assert "doc4ai.toml" in err and "local_path_roots" in err
     assert not (paths.data_dir() / "aidoc.lock").exists()
 
 

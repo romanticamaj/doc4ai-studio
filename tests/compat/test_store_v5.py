@@ -1,6 +1,6 @@
 import time
 
-from aidoc.models import ConvertOptions
+from doc4ai.models import ConvertOptions
 
 
 def _opts(tmp_root):
@@ -8,7 +8,7 @@ def _opts(tmp_root):
 
 
 def test_schema_v5_and_compat_task_roundtrip(tmp_root):
-    from aidoc.store import Store
+    from doc4ai.store import Store
     s = Store(tmp_root / "data" / "aidoc.db")
     assert s._q1("SELECT value FROM meta WHERE key='schema_version'")["value"] == "8"
     job = s.create_job(_opts(tmp_root), "compat")
@@ -23,7 +23,7 @@ def test_v4_database_upgrades_in_place(tmp_root):
     """A v4 database (no compat_tasks) opens as v5 with its data intact (idempotent migration)."""
     import sqlite3
 
-    from aidoc.store import Store
+    from doc4ai.store import Store
     db = tmp_root / "data" / "aidoc.db"
     s = Store(db)
     job = s.create_job(_opts(tmp_root), "web")
@@ -41,7 +41,7 @@ def test_v4_database_upgrades_in_place(tmp_root):
 
 
 def test_prune_compat_tasks(tmp_root):
-    from aidoc.store import Store
+    from doc4ai.store import Store
     s = Store(tmp_root / "data" / "aidoc.db")
     old = s.create_job(_opts(tmp_root), "compat")
     new = s.create_job(_opts(tmp_root), "compat")
@@ -53,7 +53,7 @@ def test_prune_compat_tasks(tmp_root):
 
 
 def test_maintenance_prunes_compat_tasks(ctx):
-    from aidoc.server.maintenance import Maintenance
+    from doc4ai.server.maintenance import Maintenance
     job = ctx.store.create_job(_opts(ctx.config.root), "compat")
     ctx.store.create_compat_task(job, token_id="t", options={}, protocol="docling-serve-v1")
     ctx.store._update("compat_tasks", "job_id", job, {"created_at": time.time() - 31 * 86400})

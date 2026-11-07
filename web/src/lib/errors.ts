@@ -46,11 +46,11 @@ export function describeError(e: unknown): string {
       case "output_missing":
         return "輸出目錄已不存在";
       case "tokenizer_unavailable":
-        return "tokenizer 尚未下載，請先執行 aidoc setup";
+        return "tokenizer 尚未下載，請先執行 doc4ai setup";
       case "invalid_settings":
         return `設定值無效：${b.detail}`;
       case "token_readonly":
-        return "token 只能在啟動 aidoc serve 時設定";
+        return "token 只能在啟動 doc4ai serve 時設定";
       case "invalid_scopes":
         return "scopes 無效：每把 token 都要有 doc4ai:read";
       case "ttl_too_long":
@@ -66,17 +66,17 @@ export function describeError(e: unknown): string {
       case "backfill_running":
         return "已有補齊在進行中";
       case "root_env_override":
-        return "Doc4AI 資料夾由環境變數 AIDOC_LIBRARY_ROOT 指定，不能在這裡變更";
+        return "Doc4AI 資料夾由環境變數 DOC4AI_LIBRARY_ROOT 指定，不能在這裡變更";
       case "output_dir_unwritable":
         return `無法建立或寫入 Doc4AI 資料夾：${b.path}`;
       case "copy_failed":
         return `備份失敗：${b.detail ?? b.outcome ?? ""}`;
       case "network_error":
-        return "連不上伺服器，請確認 aidoc serve 仍在執行";
+        return "連不上伺服器，請確認 doc4ai serve 仍在執行";
       default:
         return `${b.error}${e.status ? `（HTTP ${e.status}）` : ""}`;
     }
   }
-  if (e instanceof TypeError) return "連不上伺服器，請確認 aidoc serve 仍在執行";
+  if (e instanceof TypeError) return "連不上伺服器，請確認 doc4ai serve 仍在執行";
   return e instanceof Error ? e.message : String(e);
 }

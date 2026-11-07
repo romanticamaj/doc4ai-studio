@@ -4,7 +4,7 @@ import zipfile
 
 import pytest
 
-from aidoc.config import Limits
+from doc4ai.config import Limits
 
 
 def bomb_docx(path, *, mb=50, entries=1):
@@ -27,14 +27,14 @@ def test_limits_defaults():
 
 
 def test_ratio_bomb_is_refused(tmp_path):
-    from aidoc.archive import check_archive
+    from doc4ai.archive import check_archive
     p = bomb_docx(tmp_path / "bomb.docx", mb=50)
     problem = check_archive(p, Limits())
     assert problem and problem.startswith("archive_too_large") and "ratio" in problem
 
 
 def test_total_entry_and_count_limits(tmp_path):
-    from aidoc.archive import check_archive
+    from doc4ai.archive import check_archive
     p = tmp_path / "big.docx"
     import os
     with zipfile.ZipFile(p, "w", compression=zipfile.ZIP_STORED) as z:
@@ -47,7 +47,7 @@ def test_total_entry_and_count_limits(tmp_path):
 
 
 def test_non_zip_and_broken_zip_are_left_to_the_engines(tmp_path):
-    from aidoc.archive import check_archive
+    from doc4ai.archive import check_archive
     (tmp_path / "a.pdf").write_bytes(b"%PDF-1.4")
     (tmp_path / "b.docx").write_bytes(b"PK\x03\x04garbage")
     assert check_archive(tmp_path / "a.pdf", Limits()) is None
@@ -56,22 +56,22 @@ def test_non_zip_and_broken_zip_are_left_to_the_engines(tmp_path):
 
 @pytest.mark.parametrize("ext", [".docx", ".xlsx", ".pptx", ".epub", ".odt", ".zip"])
 def test_every_zip_based_type_is_checked(tmp_path, ext):
-    from aidoc.archive import check_archive
+    from doc4ai.archive import check_archive
     p = bomb_docx(tmp_path / f"bomb{ext}", mb=30)
     assert check_archive(p, Limits()) is not None
 
 
 def test_pipeline_refuses_the_bomb_before_any_engine_runs(ctx, tmp_path):
     """The web upload, CLI, MCP and compat entry points all reach run_task: one check covers them."""
-    from aidoc.models import ConvertOptions
-    from aidoc.pipeline import run_task
+    from doc4ai.models import ConvertOptions
+    from doc4ai.pipeline import run_task
     src = bomb_docx(tmp_path / "bomb.docx", mb=50)
     opts = ConvertOptions(output_dir=ctx.config.output_root())
     job = ctx.store.create_job(opts, "cli")
-    from aidoc.names import file_sha256
+    from doc4ai.names import file_sha256
     tid, _ = ctx.store.create_task(job, str(src), file_sha256(src), src.stat().st_size, src.stat().st_mtime, "cht",
                                    str(ctx.config.output_root() / "bomb"))
-    from aidoc.engines.registry import get_engines
+    from doc4ai.engines.registry import get_engines
     status = run_task(ctx.store, tid, get_engines(ctx.config), ctx.config)
     task = ctx.store.get_task(tid)
     assert status.value == "failed" and task["error_kind"] == "input" and task["error_msg"].startswith("archive_too_large")

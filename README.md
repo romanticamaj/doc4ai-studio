@@ -12,7 +12,7 @@ What exists today:
 - **Large documents** — PDFs over 40 pages are converted in 40-page segments with resume after a crash or cancel; tables that cross a segment boundary are joined. Tested on a 1,192-page book.
 - **Traditional Chinese + English OCR**, including mixed pages.
 - **Web studio** — resumable chunked uploads, live job progress (SSE), a library with quality badges, and a side-by-side view of the source and the Markdown with page-synced scrolling for PDFs. Word / PowerPoint / Excel / OpenDocument / RTF sources are shown as a PDF preview rendered by LibreOffice when it is installed (without scroll sync: MarkItDown output has no page markers).
-- **CLI** — `aidoc convert`, `aidoc batch`, `aidoc chunk` (heading-aware RAG chunks with page ranges, tables never split), `aidoc serve`.
+- **CLI** — `doc4ai convert`, `doc4ai batch`, `doc4ai chunk` (heading-aware RAG chunks with page ranges, tables never split), `doc4ai serve`.
 - **Claude Code skill** — [`skill/SKILL.md`](skill/SKILL.md).
 - **MCP server** — Streamable HTTP at `/mcp` with personal access tokens (scopes, expiry, revoke, rotate, rate limits) and an admin dashboard showing tokens, connected clients and every call.
 - **docling-serve compatible API** — `/v1/convert/*` on the same port, so Open WebUI (and other RAG platforms that can call a docling-serve server) use Doc4AI as their document parser, page numbers included.
@@ -36,20 +36,20 @@ Library with engine and quality per document:
 - Python 3.10+ and [uv](https://docs.astral.sh/uv/)
 - Node 20+ and pnpm (for the web studio)
 - An NVIDIA GPU is strongly recommended for Docling / MinerU. Engine environments pin CUDA 12.8 PyTorch wheels (needed for RTX 50-series / Blackwell).
-- Optional: [LibreOffice](https://www.libreoffice.org/) for the Office preview in the web studio (found on `PATH` or in the usual install folder; otherwise set `[preview] soffice_path` in `aidoc.toml`).
+- Optional: [LibreOffice](https://www.libreoffice.org/) for the Office preview in the web studio (found on `PATH` or in the usual install folder; otherwise set `[preview] soffice_path` in `doc4ai.toml`).
 - Developed and tested on Windows 11; the code is cross-platform but other OSes are less tested. There is no Docker image yet.
 
 ## Quick start
 
-The command-line tool is `aidoc`.
+The command-line tool is `doc4ai`.
 
 ```bash
 uv sync
-uv run aidoc setup all          # creates the engine envs and downloads models (several GB)
+uv run doc4ai setup all          # creates the engine envs and downloads models (several GB)
 
-uv run aidoc convert report.pdf -o out
-uv run aidoc batch ./inbox -o out
-uv run aidoc chunk out --max-tokens 800
+uv run doc4ai convert report.pdf -o out
+uv run doc4ai batch ./inbox -o out
+uv run doc4ai chunk out --max-tokens 800
 ```
 
 Web studio:
@@ -57,24 +57,24 @@ Web studio:
 ```bash
 pnpm --dir web install
 pnpm --dir web build
-uv run aidoc serve              # http://127.0.0.1:8765
+uv run doc4ai serve              # http://127.0.0.1:8765
 ```
 
 By default the server binds to `127.0.0.1`. To expose it on your network, a token is required. Give it through the
-`AIDOC_TOKEN` environment variable (or `server.token` in `aidoc.toml`), not with `--token`: every local user can read
+`DOC4AI_TOKEN` environment variable (or `server.token` in `doc4ai.toml`), not with `--token`: every local user can read
 a process's command line in the process list.
 
 ```powershell
-$env:AIDOC_TOKEN = (Get-Content data\serve.token -Raw).Trim()   # a file only you can read
-uv run aidoc serve --host 0.0.0.0
-Remove-Item Env:AIDOC_TOKEN
+$env:DOC4AI_TOKEN = (Get-Content data\serve.token -Raw).Trim()   # a file only you can read
+uv run doc4ai serve --host 0.0.0.0
+Remove-Item Env:DOC4AI_TOKEN
 ```
 
 ```bash
-AIDOC_TOKEN="$(cat data/serve.token)" uv run aidoc serve --host 0.0.0.0
+DOC4AI_TOKEN="$(cat data/serve.token)" uv run doc4ai serve --host 0.0.0.0
 ```
 
-While the server runs, `aidoc convert` and `aidoc batch` hand their work to its queue.
+While the server runs, `doc4ai convert` and `doc4ai batch` hand their work to its queue.
 
 ### Windows Firewall
 
@@ -117,24 +117,24 @@ backend = "openai"
 base_url = "http://127.0.0.1:11434/v1"   # Ollama on this computer
 model = "gemma4:12b"
 remote_enabled = true                    # consent: page images go to base_url
-allow_no_key = true                      # local servers need no key; otherwise set AIDOC_VLM_API_KEY
+allow_no_key = true                      # local servers need no key; otherwise set DOC4AI_VLM_API_KEY
 ```
 
 - **Privacy:** pages are sent only after `remote_enabled = true` (Settings → VLM OCR has the consent switch; an endpoint
   that is not on this computer is shown in red). Every use is logged (`vlm(openai): sending N page image(s) to <host>`)
-  and recorded in the sidecar (`vlm.endpoint_host`, `vlm.pages_sent`). `aidoc convert --no-vlm-remote` turns it off for
-  one run. Keep the key in the `AIDOC_VLM_API_KEY` environment variable; a key in `aidoc.toml` is masked by the API.
+  and recorded in the sidecar (`vlm.endpoint_host`, `vlm.pages_sent`). `doc4ai convert --no-vlm-remote` turns it off for
+  one run. Keep the key in the `DOC4AI_VLM_API_KEY` environment variable; a key in `doc4ai.toml` is masked by the API.
 - **Limits:** a daily page budget (`remote_daily_page_budget`, default 500) and a per-document page cap
   (`remote_max_pages_per_doc`, default 200; per-page repair is limited by the budget only).
-- `aidoc setup vlm` (or 「測試連線」 in Settings) sends one built-in test image and checks the answer.
+- `doc4ai setup vlm` (or 「測試連線」 in Settings) sends one built-in test image and checks the answer.
 - The VLM engine **does not extract images** (no layout boxes): pictures become `<!-- image missing -->`.
-- The **local backend** (a llama.cpp server with PaddleOCR-VL-1.6 managed by aidoc) is **not available yet**: the
+- The **local backend** (a llama.cpp server with PaddleOCR-VL-1.6 managed by doc4ai) is **not available yet**: the
   feasibility spike did not pass its acceptance rule on this hardware.
 
 ## Output
 
-Everything goes into one **Doc4AI folder** — Settings → 「Doc4AI 資料夾」, `[general] root_dir` in `aidoc.toml`, or
-the `AIDOC_LIBRARY_ROOT` environment variable. When none is set it is `C:\doc4ai` on Windows and `~/doc4ai` on
+Everything goes into one **Doc4AI folder** — Settings → 「Doc4AI 資料夾」, `[general] root_dir` in `doc4ai.toml`, or
+the `DOC4AI_LIBRARY_ROOT` environment variable. When none is set it is `C:\doc4ai` on Windows and `~/doc4ai` on
 macOS/Linux (created on first use; a folder that cannot be created fails the job with its path, it never falls back
 elsewhere). The old `general.output_dir` key is no longer used for new conversions.
 
@@ -149,7 +149,7 @@ elsewhere). The old `general.output_dir` key is no longer used for new conversio
 
 Every conversion keeps a **source copy**: copied from the sha256-verified work copy, hashed again after writing,
 written atomically, never removed by the 7-day work-copy cleanup, and hardlinked when two documents have the same
-content. When the original is moved or deleted, the Document view, Office preview, `aidoc verify`, re-assessment and
+content. When the original is moved or deleted, the Document view, Office preview, `doc4ai verify`, re-assessment and
 「重新轉換」 use the copy. A copy that fails (disk full, a locked file) never fails the conversion: the document is
 marked 「未備份」 in the Library and can be retried from the Document view. Changing the Doc4AI folder never moves
 converted documents; only new conversions go to the new folder.
@@ -158,9 +158,9 @@ Documents converted before source copies existed get one with a **backfill**, wh
 proves (the retained work copy, the original, or another document with the same content) and lists the rest:
 
 ```bash
-uv run aidoc sources backfill --dry-run   # report only, writes nothing
-uv run aidoc sources backfill             # exit 0 all copied, 3 some cannot be recovered, 1 unreadable/failed
-uv run aidoc sources status
+uv run doc4ai sources backfill --dry-run   # report only, writes nothing
+uv run doc4ai sources backfill             # exit 0 all copied, 3 some cannot be recovered, 1 unreadable/failed
+uv run doc4ai sources status
 ```
 
 The same is in Settings → 「原始檔備份」 (「檢查（不寫入）」 / 「補齊備份」).
@@ -258,7 +258,7 @@ Then in Claude Code type `/mcp`, choose `doc4ai`, and pick 認證 (Authenticate)
 { "servers": { "doc4ai": { "type": "http", "url": "http://127.0.0.1:3333/mcp" } } }
 ```
 
-How it works: the `401` from `/mcp` names the protected-resource metadata (`WWW-Authenticate: Bearer realm="doc4ai", resource_metadata=".../.well-known/oauth-protected-resource/mcp", scope="doc4ai:read doc4ai:convert"`); the client finds the authorization server on the same origin, identifies itself by its client metadata document (Claude Code) or registers itself (Cursor, the SDK, Inspector), and uses PKCE (S256 only). Access tokens last 60 minutes and refresh on their own; a connection idle for 30 days, or 90 days old, authorizes again. Each connection appears in the MCP page's Tokens list as an `OAuth` row (撤銷 there, `claude mcp logout`, or a reused refresh token cuts it off at the next request), and the 連線 and 呼叫紀錄 tabs name it. Settings → 「OAuth 授權」 holds the switches and lifetimes; `[oauth] enabled = false` in `aidoc.toml` turns it off and brings back the token-only `401`.
+How it works: the `401` from `/mcp` names the protected-resource metadata (`WWW-Authenticate: Bearer realm="doc4ai", resource_metadata=".../.well-known/oauth-protected-resource/mcp", scope="doc4ai:read doc4ai:convert"`); the client finds the authorization server on the same origin, identifies itself by its client metadata document (Claude Code) or registers itself (Cursor, the SDK, Inspector), and uses PKCE (S256 only). Access tokens last 60 minutes and refresh on their own; a connection idle for 30 days, or 90 days old, authorizes again. Each connection appears in the MCP page's Tokens list as an `OAuth` row (撤銷 there, `claude mcp logout`, or a reused refresh token cuts it off at the next request), and the 連線 and 呼叫紀錄 tabs name it. Settings → 「OAuth 授權」 holds the switches and lifetimes; `[oauth] enabled = false` in `doc4ai.toml` turns it off and brings back the token-only `401`.
 
 Limits:
 
@@ -318,29 +318,29 @@ Doc4AI Studio is useful when you have a mixed pile of documents (scanned and bor
 | [PyMuPDF](https://github.com/pymupdf/PyMuPDF) | Probing, splitting and checking PDFs in the main program | AGPL-3.0 |
 | [LibreOffice](https://www.libreoffice.org/) (optional, external program) | Office → PDF preview in the web studio | MPL-2.0 |
 
-The engines are separate projects installed into their own environments by `aidoc setup`; they are not redistributed with this repository. MinerU's license has additional conditions for large-scale or online-service use — check each project's license before redistributing Doc4AI Studio or offering it as a service.
+The engines are separate projects installed into their own environments by `doc4ai setup`; they are not redistributed with this repository. MinerU's license has additional conditions for large-scale or online-service use — check each project's license before redistributing Doc4AI Studio or offering it as a service.
 
 ## Tests
 
 ```bash
 uv run pytest -m "not slow"     # fast suite, uses a fake engine (no GPU)
 uv run pytest -m slow           # real engines on the GPU (and LibreOffice, when installed)
-# VLM slow tests need an endpoint: AIDOC_VLM_REAL_BASE_URL=http://127.0.0.1:11434/v1 AIDOC_VLM_REAL_MODEL=gemma4:12b
+# VLM slow tests need an endpoint: DOC4AI_VLM_REAL_BASE_URL=http://127.0.0.1:11434/v1 DOC4AI_VLM_REAL_MODEL=gemma4:12b
 pnpm --dir web test             # Vitest
 pnpm --dir web e2e              # Playwright
 ```
 
 ## Verify
 
-`aidoc verify` checks any Markdown against its source PDF, page by page — our own output or one made by MinerU, Docling,
+`doc4ai verify` checks any Markdown against its source PDF, page by page — our own output or one made by MinerU, Docling,
 MarkItDown or another tool — with the same page model the converter uses. It reads `<!-- page: N -->` markers, the
 MinerU / Docling / pdfmux marker styles or a custom marker template (`[[p {page}]]`: literal text around one page number — no free-form regex), and infers the page boundaries from the PDF text layer when
 there are no markers.
 
 ```bash
-uv run aidoc verify out/<stem>/                               # one of our outputs (sidecar + source found for you)
-uv run aidoc verify book.md --pdf book.pdf --json report.json --html report.html --thumbnails   # any tool's Markdown
-uv run aidoc verify book.md --pdf book.pdf --fail-on warn     # CI: exit 1 on warn or low
+uv run doc4ai verify out/<stem>/                               # one of our outputs (sidecar + source found for you)
+uv run doc4ai verify book.md --pdf book.pdf --json report.json --html report.html --thumbnails   # any tool's Markdown
+uv run doc4ai verify book.md --pdf book.pdf --fail-on warn     # CI: exit 1 on warn or low
 ```
 
 It reports dropped pages (`page_dropped`: the PDF page has text, the Markdown section is empty), page markers that are

@@ -1,7 +1,7 @@
 import pytest
 
-from aidoc.mcp import docs as D
-from aidoc.mcp.errors import ToolFailure
+from doc4ai.mcp import docs as D
+from doc4ai.mcp.errors import ToolFailure
 from tests.mcp.conftest import page_md
 
 
@@ -51,7 +51,7 @@ def test_page_warnings_and_flagged_count():
 
 
 def test_stale_job_detects_live_reconvert(ctx, make_doc):
-    from aidoc.models import ConvertOptions
+    from doc4ai.models import ConvertOptions
     doc = make_doc("book", pages=2)
     assert D.stale_job(ctx, doc) is None
     job = ctx.store.create_job(ConvertOptions(output_dir=ctx.config.output_root()), "web")

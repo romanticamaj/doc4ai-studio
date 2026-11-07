@@ -23,5 +23,5 @@ def test_serve_section_passes_the_token_through_the_environment():
     """The token must not sit on a command line (process listings show argv)."""
     i = README.index("By default the server binds to `127.0.0.1`")
     section = README[i:i + 1500]
-    assert "AIDOC_TOKEN" in section and "process list" in section.lower()
+    assert "DOC4AI_TOKEN" in section and "process list" in section.lower()
     assert "--token <secret>" not in section

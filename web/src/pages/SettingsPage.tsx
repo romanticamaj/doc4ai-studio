@@ -44,7 +44,7 @@ export default function SettingsPage() {
 
   return (
     <Page>
-      <PageHeader title="Settings" description="轉換引擎的安裝狀態、GPU，以及 aidoc.toml 裡的預設值。" />
+      <PageHeader title="Settings" description="轉換引擎的安裝狀態、GPU，以及 doc4ai.toml 裡的預設值。" />
       <div className="flex flex-col gap-8">
         {unauthorized && <TokenCard highlight />}
 
@@ -105,7 +105,7 @@ export default function SettingsPage() {
                   </dd>
                   <dt className="text-muted-foreground">可用空間</dt>
                   <dd className="tabular">{formatBytes(sys.data?.source_disk_free)}</dd>
-                  <dt className="text-muted-foreground">aidoc</dt>
+                  <dt className="text-muted-foreground">doc4ai</dt>
                   <dd className="font-mono">{sys.data?.version ?? "—"}</dd>
                   {sys.data && !sys.data.long_paths_enabled && (
                     <dd className="col-span-2 mt-1 flex items-start gap-1.5 text-warn">
@@ -137,7 +137,7 @@ export default function SettingsPage() {
                   <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warn" />
                   <span>
                     未偵測到 LibreOffice：Office 檔仍可轉換，只是文件頁左側沒有預覽。安裝 LibreOffice 後重新整理即可；裝在非預設位置時，在
-                    aidoc.toml 的 <code className="font-mono">[preview] soffice_path</code> 指定 soffice 的路徑。
+                    doc4ai.toml 的 <code className="font-mono">[preview] soffice_path</code> 指定 soffice 的路徑。
                   </span>
                 </p>
               )}
@@ -146,7 +146,7 @@ export default function SettingsPage() {
         </section>
 
         <section aria-labelledby="defaults-h">
-          <SectionTitle id="defaults-h" title="轉換預設值" description="存到 aidoc.toml，立即套用到之後的工作。" />
+          <SectionTitle id="defaults-h" title="轉換預設值" description="存到 doc4ai.toml，立即套用到之後的工作。" />
           {settings.isError && !unauthorized ? (
             <ErrorState title="無法讀取設定" error={settings.error} onRetry={() => settings.refetch()} />
           ) : settings.data ? (
@@ -331,7 +331,7 @@ function SettingsForm({ original, sys }: { original: Settings; sys: SystemInfo |
             <span>
               token <span className="font-mono text-foreground">{original.server.token ? "已設定" : "未設定"}</span>
             </span>
-            <span>需重新啟動 aidoc serve 才會改變，請在啟動參數或 aidoc.toml 設定。</span>
+            <span>需重新啟動 doc4ai serve 才會改變，請在啟動參數或 doc4ai.toml 設定。</span>
           </div>
         </div>
 
@@ -485,7 +485,7 @@ function TokenCard({ highlight }: { highlight?: boolean }) {
             autoComplete="off"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="貼上啟動 aidoc serve 時的 --token"
+            placeholder="貼上啟動 doc4ai serve 時的 --token"
             className="pl-8 font-mono"
           />
         </div>

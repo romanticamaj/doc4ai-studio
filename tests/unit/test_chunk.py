@@ -1,6 +1,6 @@
 import json
 
-from aidoc.chunk import chunk_markdown, chunk_output_dir, count_tokens
+from doc4ai.chunk import chunk_markdown, chunk_output_dir, count_tokens
 
 
 def words(t):
@@ -84,7 +84,7 @@ def test_real_tokenizer_counts():
 
 
 def test_cli_chunk(tmp_path, capsys):
-    from aidoc.cli import main
+    from doc4ai.cli import main
     d = tmp_path / "a"; d.mkdir(); (d / "a.md").write_text(MD, encoding="utf-8")
     (d / "a.json").write_text(json.dumps({"source": "a.pdf"}))
     assert main(["chunk", str(tmp_path), "--max-tokens", "600"]) == 0
@@ -145,8 +145,8 @@ def test_text_before_first_marker_is_not_given_the_next_page():
 
 
 def test_offline_tokenizer_gives_clear_error(tmp_root, monkeypatch, capsys):
-    import aidoc.chunk as ch
-    from aidoc.cli import main
+    import doc4ai.chunk as ch
+    from doc4ai.cli import main
 
     def boom(name):
         raise ConnectionError("ProxyError: cannot reach openaipublic.blob.core.windows.net")
@@ -158,4 +158,4 @@ def test_offline_tokenizer_gives_clear_error(tmp_root, monkeypatch, capsys):
     (d / "doc.md").write_text("# T\ntext\n", encoding="utf-8")
     assert main(["chunk", str(tmp_root / "out")]) == 1
     err = capsys.readouterr().err
-    assert "aidoc setup" in err and "Traceback" not in err
+    assert "doc4ai setup" in err and "Traceback" not in err

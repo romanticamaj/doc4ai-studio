@@ -26,7 +26,7 @@ export function RootDirField({
   onValidity,
 }: {
   value: string;
-  /** the value in aidoc.toml (no check needed while the field still shows it) */
+  /** the value in doc4ai.toml (no check needed while the field still shows it) */
   saved: string;
   sys: SystemInfo | undefined;
   onChange: (v: string) => void;
@@ -60,7 +60,7 @@ export function RootDirField({
         className={cn("font-mono text-[12.5px]", fromEnv && "bg-muted text-muted-foreground")}
         spellCheck={false}
       />
-      {fromEnv && <p className="text-xs text-muted-foreground">由環境變數 AIDOC_LIBRARY_ROOT 指定</p>}
+      {fromEnv && <p className="text-xs text-muted-foreground">由環境變數 DOC4AI_LIBRARY_ROOT 指定</p>}
       {!fromEnv && !value.trim() && (
         <p className="text-xs text-muted-foreground">
           尚未設定：使用預設的 Doc4AI 資料夾（<span className="font-mono">{fallback}</span>）

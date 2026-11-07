@@ -1,6 +1,6 @@
 """Real documents in tests/fixtures/manual/ (gitignored) convert to ok or warn.
 
-The samples listed in manual_samples.json are required in acceptance mode (AIDOC_REQUIRE_MANUAL=1: a missing one
+The samples listed in manual_samples.json are required in acceptance mode (DOC4AI_REQUIRE_MANUAL=1: a missing one
 fails, spec 2026-10-01 §10.2); any other file dropped into the folder is converted too when present."""
 import json
 import shutil
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.cli import main
+from doc4ai.cli import main
 from tests.manual import MANIFEST, manual_sample, require_engine
 
 pytestmark = pytest.mark.slow

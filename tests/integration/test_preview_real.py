@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from aidoc import preview as P
+from doc4ai import preview as P
 
 pytestmark = pytest.mark.slow
 

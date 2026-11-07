@@ -2,7 +2,7 @@
 import base64
 import io
 
-from aidoc.compat.options import CompatOptions
+from doc4ai.compat.options import CompatOptions
 from tests.compat.test_sync import PDF
 from tests.mcp.conftest import page_md
 
@@ -12,7 +12,7 @@ BASE = {"to_formats": ["md"], "unsupported_formats": [], "placeholder": "", "kee
 
 
 def test_placeholder_mode_replaces_every_picture():
-    from aidoc.compat.render import assemble_markdown
+    from doc4ai.compat.render import assemble_markdown
     body = ("![a](data:image/png;base64,iVBORw0KGgo=) ![b](https://example.com/x.png) ![c](assets/p1_1.png)\n"
             '<img src="http://example.com/y.png"> <IMG alt="z" src="data:image/gif;base64,R0lGOD">\n[link](https://example.com)\n')
     out, _ = assemble_markdown(page_md(1, body=body), 1, CompatOptions(**BASE), doc_id="d", asset_base=None,

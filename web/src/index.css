@@ -63,7 +63,7 @@
 }
 
 /*
- * aidoc design tokens.
+ * doc4ai design tokens.
  * A graphite workbench: neutral canvas, white work surfaces, one ink-blue accent (focus, links, the running
  * state) and four status hues that mean the same thing on every page:
  *   ok = converted fine · warn = low quality · danger = failed · info = running.

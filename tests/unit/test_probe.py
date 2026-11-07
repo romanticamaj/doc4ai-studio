@@ -1,4 +1,4 @@
-from aidoc.probe import kind_for, probe_file
+from doc4ai.probe import kind_for, probe_file
 
 
 def test_text_pdf(fixtures):
@@ -33,7 +33,7 @@ def test_errors(fixtures):
 
 def test_big_pdf_samples_at_most_20(fixtures, monkeypatch):
     seen = []
-    import aidoc.probe as pr
+    import doc4ai.probe as pr
     orig = pr._analyse_page
     monkeypatch.setattr(pr, "_analyse_page", lambda page: (seen.append(page.number), orig(page))[1])
     probe_file(fixtures / "big.pdf")
@@ -52,7 +52,7 @@ def test_blank_pages_counted_on_every_page_not_just_the_sample(tmp_path):
     """P1 verifier 3: blank pages from a <=20-page sample were subtracted from the full page count."""
     import pymupdf as fitz
 
-    from aidoc.quality import assess
+    from doc4ai.quality import assess
     doc = fitz.open()
     for i in range(45):
         page = doc.new_page()
@@ -78,7 +78,7 @@ def test_broken_tounicode_fonts_detected(fixtures):
 
 def test_symbol_and_dingbat_fonts_are_not_broken_fonts():
     """Verifier round 3: Webdings alone put 248 Head First pages on the broken-font list."""
-    from aidoc.probe import is_symbol_font
+    from doc4ai.probe import is_symbol_font
     for name in ("Webdings", "ABCDEF+Wingdings-Regular", "Wingdings2", "Symbol", "ZapfDingbats", "ITCZapfDingbats",
                  "MT-Extra", "Marlett"):
         assert is_symbol_font(name), name

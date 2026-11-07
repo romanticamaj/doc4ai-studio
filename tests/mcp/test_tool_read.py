@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from aidoc.mcp import docs as D
-from aidoc.mcp.budget import estimate_tokens
-from aidoc.mcp.errors import ToolFailure
+from doc4ai.mcp import docs as D
+from doc4ai.mcp.budget import estimate_tokens
+from doc4ai.mcp.errors import ToolFailure
 from tests.mcp.conftest import mcp_call, page_md
 
 
@@ -98,7 +98,7 @@ def test_read_pageless_document_uses_chunks(mcp_server, mcp_env, make_doc):
 
 
 def test_read_reports_page_warnings_and_stale(mcp_server, mcp_env, make_doc):
-    from aidoc.models import ConvertOptions
+    from doc4ai.models import ConvertOptions
     q = {"score": 0.9, "level": "warn", "reasons": ["pages_flagged"],
          "pages": [{"page": 2, "reasons": ["broken_text_layer"], "repaired_by": "docling"}, {"page": 4, "reasons": ["garbage"]}]}
     doc = make_doc("w", pages=4, quality=q, status="warn")

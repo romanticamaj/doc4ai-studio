@@ -8,7 +8,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from aidoc import scanchecks as S
+from doc4ai import scanchecks as S
 from tests.fixtures.make_fixtures import EN, ZH, make_scanned_pdf
 
 

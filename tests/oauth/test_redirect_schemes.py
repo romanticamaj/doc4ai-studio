@@ -9,9 +9,9 @@ import time
 
 import pytest
 
-from aidoc.oauth import clients
-from aidoc.oauth.clients import ClientError, ClientRegistry, classify_redirect
-from aidoc.oauth.consent import TEXT
+from doc4ai.oauth import clients
+from doc4ai.oauth.clients import ClientError, ClientRegistry, classify_redirect
+from doc4ai.oauth.consent import TEXT
 from tests.oauth.conftest import (
     auth_params,
     consent_post,

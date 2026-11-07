@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from aidoc import fsops
+from doc4ai import fsops
 
 
 def test_atomic_write_text_replaces_and_leaves_no_tmp(tmp_path):

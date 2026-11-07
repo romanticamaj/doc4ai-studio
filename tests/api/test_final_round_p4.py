@@ -69,7 +69,7 @@ def test_spa_pages_carry_a_csp(client, ctx, tmp_root):
     (dist / "index.html").write_text("<!doctype html><title>spa</title>", encoding="utf-8")
     from fastapi.testclient import TestClient
 
-    from aidoc.server.app import create_app
+    from doc4ai.server.app import create_app
     with TestClient(create_app(ctx), base_url="http://127.0.0.1:8765") as c:
         r = c.get("/jobs")
     csp = r.headers.get("content-security-policy", "")
@@ -97,9 +97,9 @@ def test_identical_inputs_in_one_job_are_reported(client, ctx, fixtures, tmp_roo
 
 # ---------------------------------------------------------------- M4 a no-op settings PUT writes nothing
 def test_noop_settings_put_does_not_rewrite_the_file(client, ctx, tmp_root):
-    toml = tmp_root / "aidoc.toml"
+    toml = tmp_root / "doc4ai.toml"
     toml.write_text('[general]\nlang = "cht"  # keep me\n', encoding="utf-8")
-    from aidoc.config import load_config
+    from doc4ai.config import load_config
     ctx.config = load_config()
     before = toml.read_text(encoding="utf-8")
     assert client.put("/api/settings", json={"general": {"lang": "cht"}}).status_code == 200
@@ -131,7 +131,7 @@ def test_disk_full_while_writing_a_chunk_is_507(client, ctx, fixtures, monkeypat
         if str(path).endswith(".part") and "b" in mode:
             raise OSError(errno.ENOSPC, "No space left on device")
         return real_open(path, mode, *a, **k)
-    monkeypatch.setattr("aidoc.server.uploads.open", full_open, raising=False)
+    monkeypatch.setattr("doc4ai.server.uploads.open", full_open, raising=False)
     r = client.put(f"/api/uploads/{uid}?offset=0", content=data)
     assert r.status_code == 507 and r.json()["error"] == "disk_full"
     monkeypatch.undo()
@@ -152,7 +152,7 @@ def test_other_write_errors_are_500_with_a_code(client, fixtures, monkeypatch):
         if str(path).endswith(".part") and "b" in mode:
             raise OSError(errno.EIO, "I/O error")
         return real_open(path, mode, *a, **k)
-    monkeypatch.setattr("aidoc.server.uploads.open", bad_open, raising=False)
+    monkeypatch.setattr("doc4ai.server.uploads.open", bad_open, raising=False)
     r = client.put(f"/api/uploads/{uid}?offset=0", content=data)
     assert r.status_code == 500 and r.json()["error"] == "upload_write_failed"
 

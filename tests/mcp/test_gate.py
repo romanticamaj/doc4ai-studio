@@ -4,11 +4,11 @@ import time
 import pytest
 from starlette.testclient import TestClient
 
-from aidoc.mcp import tokens as T
-from aidoc.mcp.calllog import CallRecorder
-from aidoc.mcp.gate import CallState, McpGate, max_body_bytes, www_authenticate
-from aidoc.mcp.principal import PatVerifier
-from aidoc.mcp.ratelimit import RateLimiter
+from doc4ai.mcp import tokens as T
+from doc4ai.mcp.calllog import CallRecorder
+from doc4ai.mcp.gate import CallState, McpGate, max_body_bytes, www_authenticate
+from doc4ai.mcp.principal import PatVerifier
+from doc4ai.mcp.ratelimit import RateLimiter
 
 SECRET = b"s" * 32
 MODERN = {"MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/call", "Content-Type": "application/json",
@@ -260,7 +260,7 @@ def test_body_is_buffered_linearly(gate_client):
 
 def test_access_token_query_parameter_is_rejected_too(gate_client):
     """Review finding: RFC 6750's `?access_token=` got a 401 but the raw PAT stayed in uvicorn's access log."""
-    from aidoc.server.logfilter import redact
+    from doc4ai.server.logfilter import redact
     c, ctx = gate_client
     raw, _ = _issue(ctx)
     for name in ("access_token", "Access_Token", "TOKEN"):

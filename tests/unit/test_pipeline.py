@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from aidoc.config import load_config
-from aidoc.engines.registry import get_engines
-from aidoc.models import ConvertOptions, TaskStatus
-from aidoc.names import file_sha256
-from aidoc.pipeline import run_task
-from aidoc.store import Store
+from doc4ai.config import load_config
+from doc4ai.engines.registry import get_engines
+from doc4ai.models import ConvertOptions, TaskStatus
+from doc4ai.names import file_sha256
+from doc4ai.pipeline import run_task
+from doc4ai.store import Store
 from tests.fakes.scenario import fake_env, write_scenario
 
 
@@ -128,11 +128,11 @@ def test_no_engine_available(env, monkeypatch):
         monkeypatch.setattr(e, "available", lambda: False)
     tid = env["make"]("text.pdf")
     assert run_task(env["store"], tid, engines, env["cfg"]) == TaskStatus.failed
-    assert "aidoc setup" in env["store"].get_task(tid)["error_msg"]
+    assert "doc4ai setup" in env["store"].get_task(tid)["error_msg"]
 
 
 def test_unexpected_exception_marks_task_failed(env, monkeypatch):
-    import aidoc.pipeline as pl
+    import doc4ai.pipeline as pl
 
     def boom(*a, **k):
         raise RuntimeError("normalize exploded")
@@ -160,7 +160,7 @@ def test_any_finalize_error_discards_tmp_dir(env, monkeypatch):
 
     def boom(*a, **k):
         raise OSError(22, "Invalid argument")
-    monkeypatch.setattr("aidoc.output.fsops.replace_dir_three_step", boom)
+    monkeypatch.setattr("doc4ai.output.fsops.replace_dir_three_step", boom)
     assert run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"]) == TaskStatus.failed
     t = env["store"].get_task(tid)
     assert t["error_kind"] == "transient" and "output" in t["error_msg"]
@@ -240,7 +240,7 @@ def test_misaligned_markers_fall_back(env):
 
 
 def test_segment_quick_check_is_quick(env, monkeypatch):
-    import aidoc.pipeline as pl
+    import doc4ai.pipeline as pl
     calls = []
     real = pl.assess
     monkeypatch.setattr(pl, "assess", lambda *a, **k: calls.append(k) or real(*a, **k))
@@ -287,11 +287,11 @@ def test_missing_images_are_counted_in_the_sidecar(env):
 
 
 def test_benchmark_no_repair_env_keeps_broken_pages(env, fixtures, monkeypatch):
-    """AIDOC_BENCH_NO_REPAIR=1 (bench single-engine / auto-norepair configs, spec 2026-10-05 verify §3.5): the
+    """DOC4AI_BENCH_NO_REPAIR=1 (bench single-engine / auto-norepair configs, spec 2026-10-05 verify §3.5): the
     flagged page is not repaired, the log says so, and the result is honest about it (warn, 1 unrepaired)."""
     _b10(fixtures, env["root"])
     write_scenario(env["sc"], rules=[{"match": {"engine": "docling"}, "behavior": "garbled"}], garbled_pages=[1])
-    monkeypatch.setenv("AIDOC_BENCH_NO_REPAIR", "1")
+    monkeypatch.setenv("DOC4AI_BENCH_NO_REPAIR", "1")
     tid = env["make_path"](env["root"] / "b10.pdf")
     lines = []
     st = run_task(env["store"], tid, get_engines(env["cfg"]), env["cfg"],

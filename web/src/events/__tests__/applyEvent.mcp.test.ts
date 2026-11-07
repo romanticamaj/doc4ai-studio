@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { applyEvent } from "@/events/applyEvent";
 import { qk } from "@/api/mcp";
-import type { AidocEvent, McpClient } from "@/api/types";
+import type { Doc4aiEvent, McpClient } from "@/api/types";
 
 const qc = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -11,7 +11,7 @@ test("mcp.call is merged into the calls cache and bumps status/stats", () => {
   c.setQueryData(qk.mcp.calls({}), { pages: [{ calls: [], next_cursor: null }], pageParams: [undefined] });
   c.setQueryData(qk.mcp.status(), { calls_24h: 0 });
   const ev = { kind: "mcp.call", seq: 1, payload: { id: 7, ts: 1, token_id: "t", token_name: "a", client_id: "c", client_name: "cc",
-    method: "tools/call", tool_name: "read_document", status: "ok", error_code: null, http_status: 200, duration_ms: 3, response_tokens_est: 2, job_id: null } } as AidocEvent;
+    method: "tools/call", tool_name: "read_document", status: "ok", error_code: null, http_status: 200, duration_ms: 3, response_tokens_est: 2, job_id: null } } as Doc4aiEvent;
   applyEvent(c, ev);
   const data = c.getQueryData<{ pages: { calls: { id: number }[] }[] }>(qk.mcp.calls({}))!;
   expect(data.pages[0].calls[0].id).toBe(7);
@@ -24,11 +24,11 @@ test("mcp.client upserts and mcp.token invalidates", () => {
     user_agent: null, first_seen: 1, last_seen: 1, last_ip: "::1", request_count: 1, active: true };
   c.setQueryData(qk.mcp.clients({}), { clients: [old] });
   c.setQueryData(qk.mcp.tokens(), { tokens: [] });
-  applyEvent(c, { kind: "mcp.client", seq: 2, payload: { ...old, last_seen: 9, request_count: 2, state: "active" } } as AidocEvent);
+  applyEvent(c, { kind: "mcp.client", seq: 2, payload: { ...old, last_seen: 9, request_count: 2, state: "active" } } as Doc4aiEvent);
   expect(c.getQueryData<{ clients: McpClient[] }>(qk.mcp.clients({}))!.clients[0].request_count).toBe(2);
-  applyEvent(c, { kind: "mcp.client", seq: 3, payload: { ...old, id: "c2", client_name: "cursor", state: "new" } } as AidocEvent);
+  applyEvent(c, { kind: "mcp.client", seq: 3, payload: { ...old, id: "c2", client_name: "cursor", state: "new" } } as Doc4aiEvent);
   expect(c.getQueryData<{ clients: McpClient[] }>(qk.mcp.clients({}))!.clients.map((x) => x.id)).toEqual(["c2", "c1"]);
-  applyEvent(c, { kind: "mcp.token", seq: 4, payload: { id: "t", name: "a", prefix: "doc4ai_pat_AAAA", action: "revoked" } } as AidocEvent);
+  applyEvent(c, { kind: "mcp.token", seq: 4, payload: { id: "t", name: "a", prefix: "doc4ai_pat_AAAA", action: "revoked" } } as Doc4aiEvent);
   expect(c.getQueryState(qk.mcp.tokens())?.isInvalidated).toBe(true);
 });
 
@@ -40,7 +40,7 @@ test("mcp.call bumps the client's request count and last request, and the token'
   c.setQueryData(qk.mcp.tokens(), [{ id: "t9", name: "a", last_used_at: 1, last_used_ip: null, calls_24h: 4, errors_24h: 0 }]);
   const ev = (id: number, status = "ok") => ({ kind: "mcp.call", seq: id, payload: { id, ts: 500, token_id: "t9", token_name: "a", client_id: "c9",
     client_name: "cc", method: "tools/call", tool_name: "read_document", status, error_code: null, http_status: 200, duration_ms: 3,
-    response_tokens_est: 2, job_id: null, ip: "100.64.0.9" } } as AidocEvent);
+    response_tokens_est: 2, job_id: null, ip: "100.64.0.9" } } as Doc4aiEvent);
   applyEvent(c, ev(901));
   applyEvent(c, ev(901));                                       // the same row re-published (auth-flood aggregate) counts once
   applyEvent(c, ev(902, "tool_error"));

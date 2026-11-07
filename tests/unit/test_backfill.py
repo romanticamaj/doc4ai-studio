@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from aidoc import source_copy
-from aidoc.source_copy import BackfillRunning, InsufficientDisk, backfill, ensure_copy, not_copied, summary
+from doc4ai import source_copy
+from doc4ai.source_copy import BackfillRunning, InsufficientDisk, backfill, ensure_copy, not_copied, summary
 from tests.unit.test_pipeline_source_copy import Lib
 
 
@@ -306,12 +306,12 @@ def test_backfill_racing_a_conversion_for_the_same_target_keeps_the_conversions_
     lands its copy there. B must neither overwrite nor delete A's file."""
     lb = Lib(tmp_root, fixtures, monkeypatch)
     pdf = (fixtures / "text.pdf").read_bytes()
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root / "old"))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_root / "old"))
     _, tb = lb.convert(lb.place("rep.pdf", content=pdf + b"%B\n"))
     b = lb.doc(tb)
     _pre_v7_doc(lb.store, lb.store.get_document(b["id"]))
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root))
-    from aidoc.config import load_config
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_root))
+    from doc4ai.config import load_config
     cfg = load_config()
     a_src = tmp_root / "in2" / "rep.pdf"
     a_src.parent.mkdir()
@@ -337,7 +337,7 @@ def test_backfill_racing_a_conversion_for_the_same_target_keeps_the_conversions_
 def test_one_physical_file_has_one_owner_even_through_an_unnormalized_root(tmp_root, fixtures, monkeypatch):
     """Verifier P4: a record made under `lib` and a lookup through `lib\\x\\..` name the same file."""
     lb = Lib(tmp_root, fixtures, monkeypatch)
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root / "lib"))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_root / "lib"))
     _, ta = lb.convert(lb.place("same.pdf", content=(fixtures / "text.pdf").read_bytes() + b"%P4\n"))
     a = lb.doc(ta)
     cp = Path(a["source_copy_path"])
@@ -348,7 +348,7 @@ def test_one_physical_file_has_one_owner_even_through_an_unnormalized_root(tmp_r
 
 def test_unreferenced_files_compare_real_paths(tmp_root, fixtures, monkeypatch):
     """Verifier V8: a copy recorded under another spelling of the same path is referenced, not stray."""
-    from aidoc.source_copy import unreferenced_files
+    from doc4ai.source_copy import unreferenced_files
     lb = Lib(tmp_root, fixtures, monkeypatch)
     _, t = lb.convert(lb.place("spelled.pdf"))
     d = lb.doc(t)
@@ -365,12 +365,12 @@ def test_already_present_is_rechecked_under_the_lock_before_recording(tmp_root, 
     discards X — nobody owned it yet. B must not record 'copied' for a file that is gone."""
     lb = Lib(tmp_root, fixtures, monkeypatch)
     pdf = (fixtures / "text.pdf").read_bytes() + b"%P6\n"
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root / "old"))
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_root / "old"))
     _, tb = lb.convert(lb.place("rep.pdf", content=pdf))
     b = lb.doc(tb)
     _pre_v7_doc(lb.store, lb.store.get_document(b["id"]))
-    monkeypatch.setenv("AIDOC_LIBRARY_ROOT", str(tmp_root))
-    from aidoc.config import load_config
+    monkeypatch.setenv("DOC4AI_LIBRARY_ROOT", str(tmp_root))
+    from doc4ai.config import load_config
     cfg = load_config()
     a_src = tmp_root / "in2" / "rep.pdf"
     a_src.parent.mkdir()
@@ -397,7 +397,7 @@ def test_adopting_does_its_copy_outside_the_record_lock(tmp_root, fixtures, monk
     RECORD_LOCK; only the final check + record does."""
     import threading as _t
 
-    from aidoc.source_copy import CopyResult, record_copy
+    from doc4ai.source_copy import CopyResult, record_copy
     lb = Lib(tmp_root, fixtures, monkeypatch)
     _, ta = lb.convert(lb.place("own.pdf"))
     a = lb.doc(ta)
@@ -431,11 +431,11 @@ def test_adopting_does_its_copy_outside_the_record_lock(tmp_root, fixtures, monk
 def _same_stem_docs(lb, fixtures, tmp_root, n: int, *, tag: bytes = b"%same-stem\n") -> list[dict]:
     """n documents with one sha256 and one stem, each converted into its own output root (like sample.docx
     converted three times into different out folders), then put back into the pre-v7 state."""
-    from aidoc.batch import register_source
-    from aidoc.config import load_config
-    from aidoc.engines.registry import get_engines
-    from aidoc.models import ConvertOptions
-    from aidoc.pipeline import run_task
+    from doc4ai.batch import register_source
+    from doc4ai.config import load_config
+    from doc4ai.engines.registry import get_engines
+    from doc4ai.models import ConvertOptions
+    from doc4ai.pipeline import run_task
     data = (fixtures / "text.pdf").read_bytes() + tag
     docs = []
     for i in range(n):
@@ -505,8 +505,8 @@ def test_failed_collisions_are_retried_by_the_next_backfill(tmp_root, fixtures, 
 
 
 def test_plan_path_derives_further_free_names(tmp_path):
-    from aidoc.source_copy import plan_path
-    from aidoc.store import Store
+    from doc4ai.source_copy import plan_path
+    from doc4ai.store import Store
     s = Store(tmp_path / "db" / "aidoc.db")
     root = tmp_path / "source"
     sha = "c" * 64

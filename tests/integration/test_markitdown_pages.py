@@ -3,7 +3,7 @@ import shutil
 
 import pytest
 
-from aidoc.cli import main
+from doc4ai.cli import main
 from tests.manual import manual_sample, require_engine
 
 pytestmark = pytest.mark.slow
