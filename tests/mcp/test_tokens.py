@@ -54,7 +54,8 @@ def test_hash_is_keyed_and_stable():
     h1 = T.token_hash(b"k" * 32, t)
     assert h1 == T.token_hash(b"k" * 32, t) and len(h1) == 64
     assert h1 != T.token_hash(b"j" * 32, t)
-    assert h1 != T.token_hash(b"k" * 32, t[:-1] + "0")
+    other = t[:-1] + ("0" if t[-1] != "0" else "1")     # a random token can already end in 0
+    assert h1 != T.token_hash(b"k" * 32, other)
 
 
 def test_secret_created_once_and_private(tmp_path):
