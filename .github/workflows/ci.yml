@@ -55,3 +55,26 @@ jobs:
       - run: pnpm exec tsc -b --noEmit
       - run: pnpm test
       - run: pnpm build
+
+  docker:
+    name: Docker image converts a document
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t doc4ai:ci .
+      - name: Start the container
+        run: |
+          docker run -d --name doc4ai -p 127.0.0.1:8765:8765 -v "$PWD/tests/fixtures:/in:ro" doc4ai:ci
+          for i in $(seq 1 60); do curl -fs http://127.0.0.1:8765/health && break; sleep 2; done
+          curl -fs http://127.0.0.1:8765/health
+      - name: The web studio is served and the API needs the token
+        run: |
+          curl -fs http://127.0.0.1:8765/ | grep -q '<div id="root"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/api/documents)" = 401
+      - name: A real conversion through MarkItDown
+        run: |
+          docker exec doc4ai sh -c 'DOC4AI_TOKEN=$(cat /data/serve.token) doc4ai convert /in/sample.docx -o /tmp/o'
+          docker exec doc4ai sh -c 'find /tmp/o /library -name "*.md" -size +0 | grep .'
+      - if: failure()
+        run: docker logs doc4ai

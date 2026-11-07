@@ -1,0 +1,22 @@
+services:
+  doc4ai:
+    image: ghcr.io/romanticamaj/doc4ai-studio:latest
+    build: .
+    ports:
+      - "127.0.0.1:8765:8765"     # this computer only; change it only with TLS in front
+    volumes:
+      - doc4ai-data:/data
+      - doc4ai-library:/library
+      - doc4ai-envs:/app/envs
+    restart: unless-stopped
+    # For Docling and MinerU on an NVIDIA GPU, uncomment this and run: docker compose exec doc4ai doc4ai setup all
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - { driver: nvidia, count: all, capabilities: [gpu] }
+
+volumes:
+  doc4ai-data:
+  doc4ai-library:
+  doc4ai-envs:
