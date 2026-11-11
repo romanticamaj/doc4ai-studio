@@ -190,6 +190,27 @@ class _LockedConnection:
             self._con.close()
 
 
+class _OpenLock:
+    """Cross-process lock held while a Store opens <db>.open.lock. The OS releases it when the holder dies, so a
+    crash never leaves it stuck; after OPEN_LOCK_WAIT_S we go on without it (every step is idempotent anyway)."""
+
+    def __init__(self, db_path: Path):
+        from doc4ai.tasklock import TaskLock
+        self._lock = TaskLock(db_path.with_name(db_path.name + ".open.lock"))
+
+    def __enter__(self):
+        deadline = time.monotonic() + OPEN_LOCK_WAIT_S
+        while not self._lock.acquire() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        return self
+
+    def __exit__(self, *exc):
+        self._lock.release()
+
+
+OPEN_LOCK_WAIT_S = 30
+
+
 class Store:
     def __init__(self, db_path: Path, threadsafe: bool = False):
         # `threadsafe` is accepted for the P3 interface (index §4); the lock below is always on since P2.
@@ -201,16 +222,20 @@ class Store:
         raw = sqlite3.connect(str(self.db_path), isolation_level=None, check_same_thread=False)
         raw.row_factory = sqlite3.Row
         self.con = _LockedConnection(raw)
-        self.con.execute("PRAGMA journal_mode=WAL")
         self.con.execute("PRAGMA busy_timeout=5000")
         self.con.execute("PRAGMA foreign_keys=ON")
-        self.con.executescript(_DDL)
-        self._add_column("tasks", "flags_json", "TEXT NOT NULL DEFAULT '{}'")      # schema v1 -> v2 (index §4, A18)
-        self._migrate_v7()
-        self._migrate_v8()
-        self.con.execute("INSERT INTO meta(key, value) VALUES('schema_version', ?) "
-                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
-        self._page_index_tokenizer = self._ensure_page_index()
+        # Opening is a schema upgrade, and processes opening one file together (the server and a CLI run starting
+        # at once) take turns: SQLite can answer "database is locked" at once, without waiting, while another
+        # connection switches the file to WAL or alters its tables.
+        with _OpenLock(self.db_path):
+            self.con.execute("PRAGMA journal_mode=WAL")
+            self.con.executescript(_DDL)
+            self._add_column("tasks", "flags_json", "TEXT NOT NULL DEFAULT '{}'")  # schema v1 -> v2 (index §4, A18)
+            self._migrate_v7()
+            self._migrate_v8()
+            self.con.execute("INSERT INTO meta(key, value) VALUES('schema_version', ?) "
+                             "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
+            self._page_index_tokenizer = self._ensure_page_index()
 
     def _add_column(self, table: str, name: str, typ: str) -> None:
         """Add a missing column. Another process opening the same file (the server and a CLI run starting together)

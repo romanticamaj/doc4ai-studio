@@ -7,6 +7,8 @@ import textwrap
 from doc4ai import paths
 
 ROOT = str(paths.project_root())
+# the inner run is rooted at its own tmp_path: rooted elsewhere, pytest walks every folder above the probe file
+# (all of %TEMP%) and fails when another program removes one of them meanwhile
 
 
 def _pytest(tmp_path, env_extra):
@@ -17,7 +19,7 @@ def _pytest(tmp_path, env_extra):
             manual_sample("ortho_p1-80.pdf")
     """), encoding="utf-8")
     env = {**os.environ, **env_extra, "PYTHONPATH": ROOT}
-    return subprocess.run([sys.executable, "-m", "pytest", str(t), "-q", "-p", "no:cacheprovider", "--rootdir", ROOT],
+    return subprocess.run([sys.executable, "-m", "pytest", str(t), "-q", "-p", "no:cacheprovider", "--rootdir", str(tmp_path)],
                           capture_output=True, text=True, env=env, cwd=ROOT, check=False)
 
 
@@ -44,6 +46,6 @@ def test_missing_recorded_fixture_skips_normally_and_fails_in_acceptance(tmp_pat
     """), encoding="utf-8")
     for req, want in (("0", "1 skipped"), ("1", "1 failed")):
         env = {**os.environ, "DOC4AI_REQUIRE_MANUAL": req, "PYTHONPATH": ROOT}
-        r = subprocess.run([sys.executable, "-m", "pytest", str(t), "-q", "-p", "no:cacheprovider", "--rootdir", ROOT],
+        r = subprocess.run([sys.executable, "-m", "pytest", str(t), "-q", "-p", "no:cacheprovider", "--rootdir", str(tmp_path)],
                            capture_output=True, text=True, env=env, cwd=ROOT, check=False)
         assert want in r.stdout, r.stdout
