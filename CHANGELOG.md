@@ -4,7 +4,9 @@ Notable changes to this project are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
-First public release, planned as 0.1.0.
+## [0.1.0] - 2026-11-11
+
+First public release.
 
 ### Added
 
@@ -22,3 +24,6 @@ First public release, planned as 0.1.0.
 ### Changed
 
 - The project was renamed from `aidoc` to `doc4ai`. The `aidoc` command, `AIDOC_*` environment variables and an existing `aidoc.toml` keep working. Stored data keeps its old names, so existing libraries need no migration.
+
+[Unreleased]: https://github.com/romanticamaj/doc4ai-studio/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/romanticamaj/doc4ai-studio/releases/tag/v0.1.0
