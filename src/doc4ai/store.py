@@ -205,36 +205,40 @@ class Store:
         self.con.execute("PRAGMA busy_timeout=5000")
         self.con.execute("PRAGMA foreign_keys=ON")
         self.con.executescript(_DDL)
-        cols = {r[1] for r in self.con.execute("PRAGMA table_info(tasks)")}
-        if "flags_json" not in cols:                     # schema v1 -> v2 (index §4, A18)
-            self.con.execute("ALTER TABLE tasks ADD COLUMN flags_json TEXT NOT NULL DEFAULT '{}'")
+        self._add_column("tasks", "flags_json", "TEXT NOT NULL DEFAULT '{}'")      # schema v1 -> v2 (index §4, A18)
         self._migrate_v7()
         self._migrate_v8()
         self.con.execute("INSERT INTO meta(key, value) VALUES('schema_version', ?) "
                          "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
         self._page_index_tokenizer = self._ensure_page_index()
 
+    def _add_column(self, table: str, name: str, typ: str) -> None:
+        """Add a missing column. Another process opening the same file (the server and a CLI run starting together)
+        may add it between our check and our ALTER: that counts as done, not as an error."""
+        if name in {r[1] for r in self.con.execute(f"PRAGMA table_info({table})")}:
+            return
+        try:
+            self.con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise
+
     def _migrate_v7(self) -> None:
         """Additive and idempotent: missing source_copy_* columns, then the unique index. The index needs the columns,
         so it lives here and never in _DDL (a v6 file runs _DDL before the columns exist)."""
-        cols = {r[1] for r in self.con.execute("PRAGMA table_info(documents)")}
         for name, typ in _SOURCE_COPY_COLS:
-            if name not in cols:
-                self.con.execute(f"ALTER TABLE documents ADD COLUMN {name} {typ}")
+            self._add_column("documents", name, typ)
         self.con.execute("CREATE UNIQUE INDEX IF NOT EXISTS documents_source_copy ON documents("
                          "source_copy_path COLLATE NOCASE) WHERE source_copy_path IS NOT NULL")
 
     def _migrate_v8(self) -> None:
         """Additive and idempotent (spec 2026-11-05 §5.5): the oauth_clients columns first, then the three tables and
         their index (kept out of _DDL so a v7 file gains the columns before anything relies on them)."""
-        cols = {r[1] for r in self.con.execute("PRAGMA table_info(oauth_clients)")}
         for name, typ in _OAUTH_CLIENT_COLS:
-            if name not in cols:
-                self.con.execute(f"ALTER TABLE oauth_clients ADD COLUMN {name} {typ}")
+            self._add_column("oauth_clients", name, typ)
         self.con.executescript(_OAUTH_DDL)
         # the redirect URI the connection was authorized for (admin 「Tokens」 note; codes are pruned after an hour)
-        if "redirect_uri" not in {r[1] for r in self.con.execute("PRAGMA table_info(oauth_grants)")}:
-            self.con.execute("ALTER TABLE oauth_grants ADD COLUMN redirect_uri TEXT")
+        self._add_column("oauth_grants", "redirect_uri", "TEXT")
 
     def close(self) -> None:
         self.con.close()
@@ -941,15 +945,24 @@ class Store:
         return out
 
     # ---- page_index (FTS5; MCP spec §3)
-    def _ensure_page_index(self) -> str:
+    def _existing_page_index(self) -> str | None:
         exists = self._q1("SELECT sql FROM sqlite_master WHERE type='table' AND name='page_index'")
-        if exists is not None:
-            return "trigram" if "trigram" in (exists[0] or "") else "unicode61"
+        if exists is None:
+            return None
+        return "trigram" if "trigram" in (exists[0] or "") else "unicode61"
+
+    def _ensure_page_index(self) -> str:
+        found = self._existing_page_index()
+        if found:
+            return found
         for tok in ("trigram", "unicode61"):          # D6: trigram needs SQLite >= 3.34
             try:
                 self.con.execute("CREATE VIRTUAL TABLE page_index USING fts5(doc_id UNINDEXED, page UNINDEXED, text, "
                                  f"tokenize = '{tok}')")
             except sqlite3.OperationalError:
+                found = self._existing_page_index()   # another process created it meanwhile: use theirs
+                if found:
+                    return found
                 continue
             self.con.execute("INSERT INTO meta(key, value) VALUES('page_index_tokenizer', ?) "
                              "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (tok,))
