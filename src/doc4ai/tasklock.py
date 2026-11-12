@@ -26,7 +26,10 @@ class TaskLock:
         if self._fd is not None:
             return True
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(self.path), os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fd = os.open(str(self.path), os.O_RDWR | os.O_CREAT, 0o644)
+        except PermissionError:            # Windows: the holder is releasing and deleting the file right now
+            return False
         try:
             if sys.platform == "win32":
                 import msvcrt

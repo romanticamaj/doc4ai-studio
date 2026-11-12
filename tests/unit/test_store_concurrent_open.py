@@ -54,3 +54,18 @@ def test_many_processes_open_a_fresh_database_together(tmp_path):
     results = [p.communicate(timeout=120) for p in procs]
     assert [p.returncode for p in procs] == [0] * 8, [err for _, err in results if err]
     assert len({out for out, _ in results}) == 1
+
+
+def test_a_lock_file_being_deleted_counts_as_held(tmp_path, monkeypatch):
+    """Windows refuses to open a file while its last holder deletes it: that is "taken", not a crash."""
+    import os
+
+    from doc4ai import tasklock
+
+    def refused(*a, **k):
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(tasklock.os, "open", refused)
+    assert tasklock.TaskLock(tmp_path / "x.lock").acquire() is False
+    monkeypatch.undo()
+    assert os.path.exists(tmp_path) and tasklock.TaskLock(tmp_path / "x.lock").acquire() is True
