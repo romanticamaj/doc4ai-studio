@@ -32,10 +32,13 @@ def test_real_token_is_filled_everywhere():
     assert "doc4ai_pat_ABC" not in s[2]["text"]                                      # VS Code prompts for it instead
 
 
-def test_readme_contains_the_rendered_block():
-    readme = Path(__file__).resolve().parents[2].joinpath("README.md").read_text(encoding="utf-8")
+def test_mcp_doc_contains_the_rendered_block():
+    """docs/mcp.md carries the client snippets from the same source as the web UI (its own title replaces `## MCP`)."""
+    doc = Path(__file__).resolve().parents[2].joinpath("docs/mcp.md").read_text(encoding="utf-8")
     block = readme_section("http://<host>:<port>/mcp")
-    assert block.strip() in readme and "## MCP" in readme
+    head = "## MCP\n\n"
+    assert block.startswith(head)
+    assert block[len(head):].strip() in doc
 
 
 def test_config_snippets_endpoint(client, ctx):

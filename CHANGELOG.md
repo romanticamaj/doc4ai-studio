@@ -4,6 +4,17 @@ Notable changes to this project are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- `doc4ai convert` and `doc4ai batch` crashed with `No module named 'httpx'` next to a running server: `httpx` was only a development dependency
+- Two processes opening the same database at once (the server and a CLI run starting together) could crash the schema upgrade with "duplicate column name", "database is locked" or a false "SQLite build has no FTS5"; opening is now serialized across processes
+- On Windows, a task lock file being deleted by its holder could crash another process checking it
+
+### Changed
+
+- The README was rewritten, with a Traditional Chinese edition (`README.zh-TW.md`); the long sections moved to `docs/`
+- Dependencies: FastAPI 0.162, TypeScript 7 and the web studio's minor updates
+
 ## [0.1.0] - 2026-11-11
 
 First public release.

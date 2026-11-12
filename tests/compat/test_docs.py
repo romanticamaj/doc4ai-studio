@@ -21,7 +21,7 @@ def test_readme_has_the_rag_section_with_the_rendered_env_block():
     assert "DOCLING_SERVER_URL=http://<host>:<port>\n" in readme
     for name in RECIPES:
         assert f"docs/integrations/{name}.md" in readme
-    assert readme.index("## MCP") < readme.index("## RAG platforms") < readme.index("## When to use something else")
+    assert readme.index("## Connect your AI (MCP)") < readme.index("## RAG platforms") < readme.index("## When to use something else")
 
 
 @pytest.mark.parametrize("name", sorted(RECIPES))

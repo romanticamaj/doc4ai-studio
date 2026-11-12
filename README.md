@@ -1,289 +1,170 @@
-# Doc4AI Studio
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/banner-dark.svg">
+    <img alt="Doc4AI Studio" src="docs/images/banner-light.svg" width="720">
+  </picture>
+</p>
 
-**Not sure whether to use MarkItDown, Docling or MinerU? Doc4AI picks one per document, checks the result page by page, repairs broken pages or switches engines when the output is wrong — and hands the Markdown to your AI through a web studio, a CLI and an MCP server.**
+<p align="center">
+  <b>Markdown your AI can trust, from PDFs, scans and Office files.</b><br>
+  It picks MarkItDown, Docling or MinerU for each document, checks every page against the source,<br>
+  repairs the pages that came back broken, and tells you about the ones it could not fix.
+</p>
 
-Doc4AI Studio is an orchestrator, not a new parser. It runs three existing open-source converters ([MarkItDown](https://github.com/microsoft/markitdown), [Docling](https://github.com/docling-project/docling), [MinerU](https://github.com/opendatalab/MinerU)) side by side in isolated environments, probes each input (text layer, image coverage, formulas, ruled tables, fonts without a Unicode map) to route it, scores the Markdown it gets back, and falls back to the next engine or repairs individual pages when the score says the conversion failed. The output is Markdown with `<!-- page: N -->` markers plus a JSON sidecar describing how it was made, ready for LLMs and RAG pipelines.
+<p align="center">
+  <a href="https://github.com/romanticamaj/doc4ai-studio/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/romanticamaj/doc4ai-studio/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/romanticamaj/doc4ai-studio/releases"><img alt="Release" src="https://img.shields.io/github/v/release/romanticamaj/doc4ai-studio?color=4C5BD4"></a>
+  <a href="https://github.com/romanticamaj/doc4ai-studio/pkgs/container/doc4ai-studio"><img alt="Docker image" src="https://img.shields.io/badge/docker-ghcr.io-4C5BD4?logo=docker&logoColor=white"></a>
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-4C5BD4?logo=python&logoColor=white">
+  <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-4C5BD4">
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-4C5BD4"></a>
+</p>
 
-What exists today:
+<p align="center">
+  English · <a href="README.zh-TW.md">繁體中文</a> · <a href="#quick-start">Quick start</a> · <a href="#connect-your-ai-mcp">Connect your AI</a> · <a href="#documentation">Docs</a>
+</p>
 
-- **Multi-engine routing with fallback** — one engine per document, chosen from a probe of the file; a failed quality check (characters per page, garbage ratio, missing tables, page-map coverage) moves the document to the next engine.
-- **Per-page quality and repair** — every page of a PDF is checked against its own text layer; pages with a broken text layer are re-run with OCR (Docling full-page RapidOCR, then MinerU OCR mode) and spliced back in place. Pages that cannot be repaired are flagged, not hidden.
-- **Isolated engine environments** — each engine has its own `uv` venv under `envs/` and runs as a subprocess, so MinerU 4, Docling 2 and MarkItDown never fight over torch / onnxruntime versions.
-- **Large documents** — PDFs over 40 pages are converted in 40-page segments with resume after a crash or cancel; tables that cross a segment boundary are joined. Tested on a 1,192-page book.
-- **Traditional Chinese + English OCR**, including mixed pages.
-- **Web studio** — resumable chunked uploads, live job progress (SSE), a library with quality badges, and a side-by-side view of the source and the Markdown with page-synced scrolling for PDFs. Word / PowerPoint / Excel / OpenDocument / RTF sources are shown as a PDF preview rendered by LibreOffice when it is installed (without scroll sync: MarkItDown output has no page markers).
-- **CLI** — `doc4ai convert`, `doc4ai batch`, `doc4ai chunk` (heading-aware RAG chunks with page ranges, tables never split), `doc4ai serve`.
-- **Claude Code skill** — [`skill/SKILL.md`](skill/SKILL.md).
-- **MCP server** — Streamable HTTP at `/mcp` with personal access tokens (scopes, expiry, revoke, rotate, rate limits) and an admin dashboard showing tokens, connected clients and every call.
-- **docling-serve compatible API** — `/v1/convert/*` on the same port, so Open WebUI (and other RAG platforms that can call a docling-serve server) use Doc4AI as their document parser, page numbers included.
+<p align="center">
+  <img alt="Uploading a scanned PDF, watching each page get checked, then reading the source and the Markdown side by side" src="docs/images/demo.gif" width="860">
+</p>
 
-## Screenshots
+## Why
 
-Document view — source PDF and Markdown side by side, scrolled in sync:
+Every document converter breaks on some documents, and it rarely tells you. A scanned page comes back empty. A font
+without a Unicode map turns a chapter into gibberish. A table loses its rows. The converter still returns Markdown,
+and your RAG index or your agent reads it as if it were right.
 
-![Document view](docs/images/document-view.png)
+Doc4AI Studio is an orchestrator, not a new parser. It runs three open-source converters side by side, each in its own
+environment, and decides from the file itself which one to use. Then it scores the result **page by page** against
+the PDF's own text layer. Broken pages are re-run with OCR and spliced back in place. A document that fails as a whole
+moves to the next engine. Whatever cannot be repaired is flagged on that page, never hidden.
 
-A 315-page PDF converted in eight 40-page segments:
+You get Markdown with `<!-- page: N -->` markers and a JSON sidecar that says how each page was made. It reaches
+your AI through a web studio, a CLI, an MCP server, and a docling-serve compatible API.
 
-![Job detail with segments](docs/images/job-segments.png)
+## What it does
 
-Library with engine and quality per document:
+- **Picks an engine per document.** A probe reads the text layer, image coverage, formulas, ruled tables and fonts
+  without a Unicode map, then routes to [MarkItDown](https://github.com/microsoft/markitdown),
+  [Docling](https://github.com/docling-project/docling) or [MinerU](https://github.com/opendatalab/MinerU).
+- **Checks every page and repairs what broke.** Pages with a broken text layer are re-run with OCR (Docling's
+  full-page RapidOCR, then MinerU) and put back where they were. Pages it cannot repair carry a flag.
+- **Handles large and mixed documents.** PDFs over 40 pages convert in 40-page segments, resume after a crash or a
+  cancel, and join tables that cross a segment boundary. Tested on a 1,192-page book. Traditional Chinese and
+  English OCR, mixed pages included.
+- **Keeps engines apart.** Each engine has its own `uv` environment and runs as a subprocess, so MinerU 4,
+  Docling 2 and MarkItDown never fight over torch or onnxruntime versions.
+- **Shows its work.** The web studio puts the source and the Markdown side by side with page-synced scrolling, and
+  marks each document's quality in the library.
+- **Talks to your AI.** An MCP server with browser authorization (OAuth) or scoped personal access tokens, plus an
+  admin page for tokens, connected clients and every call.
+- **Plugs into RAG platforms.** The same port speaks the docling-serve API, so Open WebUI and others can use Doc4AI
+  as their document parser and keep page numbers.
+- **Audits other tools.** `doc4ai verify` scores any Markdown against its source PDF, page by page, whoever made it.
 
-![Library](docs/images/library.png)
+## How it works
 
-## Requirements
-
-- Python 3.10+ and [uv](https://docs.astral.sh/uv/)
-- Node 20+ and pnpm (for the web studio)
-- An NVIDIA GPU is strongly recommended for Docling / MinerU. Engine environments pin CUDA 12.8 PyTorch wheels (needed for RTX 50-series / Blackwell).
-- Optional: [LibreOffice](https://www.libreoffice.org/) for the Office preview in the web studio (found on `PATH` or in the usual install folder; otherwise set `[preview] soffice_path` in `doc4ai.toml`).
-- Developed and tested on Windows 11; the code is cross-platform but other OSes are less tested. There is no Docker image yet.
+```mermaid
+flowchart LR
+    IN["PDF, scan, Office file or image"] --> PROBE["Probe the file:<br>text layer, images, formulas,<br>tables, font maps"]
+    PROBE --> ROUTE{"Route"}
+    ROUTE --> MD["MarkItDown"]
+    ROUTE --> DL["Docling"]
+    ROUTE --> MU["MinerU"]
+    MD --> CHECK["Check every page<br>against the source"]
+    DL --> CHECK
+    MU --> CHECK
+    CHECK -- "a page is broken" --> REPAIR["Re-run that page with OCR<br>and splice it back"]
+    REPAIR --> CHECK
+    CHECK -- "the document failed" --> ROUTE
+    CHECK -- "passed, or flagged" --> OUT["Markdown with page markers<br>+ JSON sidecar"]
+    OUT --> USE["Web studio, CLI, MCP,<br>docling-serve API"]
+```
 
 ## Quick start
 
-The command-line tool is `doc4ai`.
+> [!NOTE]
+> The web studio's interface is in Traditional Chinese. The CLI, the API, the MCP tools and these docs are in English.
+
+### Docker: the web studio and MarkItDown, on CPU
 
 ```bash
-uv sync
-uv run doc4ai setup all          # creates the engine envs and downloads models (several GB)
+docker run -d --name doc4ai -p 127.0.0.1:8765:8765 \
+  -v doc4ai-data:/data -v doc4ai-library:/library \
+  ghcr.io/romanticamaj/doc4ai-studio:latest
 
-uv run doc4ai convert report.pdf -o out
-uv run doc4ai batch ./inbox -o out
-uv run doc4ai chunk out --max-tokens 800
+docker exec doc4ai cat /data/serve.token
 ```
 
-Web studio:
+Open <http://127.0.0.1:8765>, go to 設定 (Settings) and paste the token. The image converts Office files, HTML and
+PDFs that have a text layer. Scans need OCR, which comes with Docling and MinerU: install from source on a machine
+with an NVIDIA GPU. [`docker-compose.yml`](docker-compose.yml) has a GPU block and a volume for those engines, but
+that path is not tested yet.
+
+### From source: every engine, on a GPU
+
+You need Python 3.10+ with [uv](https://docs.astral.sh/uv/), Node 20+ with pnpm, and an NVIDIA GPU for Docling and
+MinerU. The engine environments pin CUDA 12.8 PyTorch wheels, which RTX 50-series cards need. It is developed and
+tested on Windows 11, and CI runs the test suite on Linux too.
 
 ```bash
-pnpm --dir web install
-pnpm --dir web build
+git clone https://github.com/romanticamaj/doc4ai-studio.git && cd doc4ai-studio
+uv sync
+uv run doc4ai setup all          # creates the engine environments and downloads models (several GB)
+pnpm --dir web install && pnpm --dir web build
 uv run doc4ai serve              # http://127.0.0.1:8765
 ```
+
+Or skip the server and convert from the command line:
+
+```bash
+uv run doc4ai convert report.pdf -o out
+uv run doc4ai batch ./inbox -o out
+uv run doc4ai chunk out --max-tokens 800     # heading-aware RAG chunks with page ranges; tables never split
+```
+
+While the server runs, `doc4ai convert` and `doc4ai batch` hand their work to its queue.
 
 By default the server binds to `127.0.0.1`. To expose it on your network, a token is required. Give it through the
 `DOC4AI_TOKEN` environment variable (or `server.token` in `doc4ai.toml`), not with `--token`: every local user can read
 a process's command line in the process list.
 
-```powershell
-$env:DOC4AI_TOKEN = (Get-Content data\serve.token -Raw).Trim()   # a file only you can read
-uv run doc4ai serve --host 0.0.0.0
-Remove-Item Env:DOC4AI_TOKEN
-```
-
 ```bash
 DOC4AI_TOKEN="$(cat data/serve.token)" uv run doc4ai serve --host 0.0.0.0
 ```
 
-While the server runs, `doc4ai convert` and `doc4ai batch` hand their work to its queue.
+On Windows, binding a network address brings up the firewall prompt: see [Windows Firewall](docs/windows-firewall.md).
+LibreOffice, when installed, gives Office files a PDF preview in the web studio.
 
-### Windows Firewall
+## Connect your AI (MCP)
 
-On `127.0.0.1` (the default) Windows Firewall is not involved: it never prompts for or blocks loopback traffic, and
-no token is needed.
-
-Binding a network address (`--host 0.0.0.0`) makes Windows ask whether `python.exe` may accept connections. The rule
-it creates names the full path of that executable, and the Python that `uv run` uses lives in a versioned folder
-(e.g. `%APPDATA%\uv\python\cpython-3.12.13-windows-x86_64-none\python.exe`): every Python upgrade is a new program to
-the firewall and asks again. Dismissing the prompt (Cancel, or no network type ticked) silently creates a **Block**
-rule, after which the server is unreachable from other devices with no further prompt.
-
-Allow the port instead of the program, once, in an elevated PowerShell:
-
-```powershell
-New-NetFirewallRule -DisplayName "Doc4AI 3333" -Direction Inbound -Protocol TCP -LocalPort 3333 -Action Allow -Profile Private
-```
-
-- Use the port you serve on (`--port`; the default is 8765).
-- `-Profile Private` keeps the port closed on networks Windows treats as Public (cafés, hotel Wi-Fi). A Tailscale
-  interface must be set to Private for the rule to apply to it.
-- Remove Block rules left by a dismissed prompt:
-
-  ```powershell
-  Get-NetFirewallRule -Direction Inbound | Where-Object { $_.DisplayName -eq 'python.exe' -and $_.Action -eq 'Block' } | Remove-NetFirewallRule
-  ```
-
-- Remove the port rule when you go back to `127.0.0.1`: `Remove-NetFirewallRule -DisplayName "Doc4AI 3333"`.
-
-## VLM OCR (optional, off by default)
-
-A fourth engine, `vlm`, sends page images to any **OpenAI-compatible vision endpoint** (Ollama or LM Studio on this
-computer, vLLM / SGLang you host yourself, or a cloud API). It is only used where everything else failed: it is the
-**last** engine of every PDF / image route (after MarkItDown) and the **last** per-page repair engine (after Docling
-and MinerU). With `[vlm] backend = "none"` (the default) nothing changes.
-
-```toml
-[vlm]
-backend = "openai"
-base_url = "http://127.0.0.1:11434/v1"   # Ollama on this computer
-model = "gemma4:12b"
-remote_enabled = true                    # consent: page images go to base_url
-allow_no_key = true                      # local servers need no key; otherwise set DOC4AI_VLM_API_KEY
-```
-
-- **Privacy:** pages are sent only after `remote_enabled = true` (Settings → VLM OCR has the consent switch; an endpoint
-  that is not on this computer is shown in red). Every use is logged (`vlm(openai): sending N page image(s) to <host>`)
-  and recorded in the sidecar (`vlm.endpoint_host`, `vlm.pages_sent`). `doc4ai convert --no-vlm-remote` turns it off for
-  one run. Keep the key in the `DOC4AI_VLM_API_KEY` environment variable; a key in `doc4ai.toml` is masked by the API.
-- **Limits:** a daily page budget (`remote_daily_page_budget`, default 500) and a per-document page cap
-  (`remote_max_pages_per_doc`, default 200; per-page repair is limited by the budget only).
-- `doc4ai setup vlm` (or 「測試連線」 in Settings) sends one built-in test image and checks the answer.
-- The VLM engine **does not extract images** (no layout boxes): pictures become `<!-- image missing -->`.
-- The **local backend** (a llama.cpp server with PaddleOCR-VL-1.6 managed by doc4ai) is **not available yet**: the
-  feasibility spike did not pass its acceptance rule on this hardware.
-
-## Output
-
-Everything goes into one **Doc4AI folder** — Settings → 「Doc4AI 資料夾」, `[general] root_dir` in `doc4ai.toml`, or
-the `DOC4AI_LIBRARY_ROOT` environment variable. When none is set it is `C:\doc4ai` on Windows and `~/doc4ai` on
-macOS/Linux (created on first use; a folder that cannot be created fails the job with its path, it never falls back
-elsewhere). The old `general.output_dir` key is no longer used for new conversions.
-
-```
-<Doc4AI folder>/
-├─ out/<name>/
-│  ├─ <name>.md      Markdown with <!-- page: N --> markers
-│  ├─ <name>.json    engine, attempts, probe results, quality score and per-page flags, timings, source_copy
-│  └─ assets/        extracted images
-└─ source/<name>/<original file name>   a permanent copy of the input file
-```
-
-Every conversion keeps a **source copy**: copied from the sha256-verified work copy, hashed again after writing,
-written atomically, never removed by the 7-day work-copy cleanup, and hardlinked when two documents have the same
-content. When the original is moved or deleted, the Document view, Office preview, `doc4ai verify`, re-assessment and
-「重新轉換」 use the copy. A copy that fails (disk full, a locked file) never fails the conversion: the document is
-marked 「未備份」 in the Library and can be retried from the Document view. Changing the Doc4AI folder never moves
-converted documents; only new conversions go to the new folder.
-
-Documents converted before source copies existed get one with a **backfill**, which copies only what sha256 still
-proves (the retained work copy, the original, or another document with the same content) and lists the rest:
+The MCP endpoint is `/mcp` on the same port. Clients that support OAuth (Claude Code, Cursor, VS Code, the MCP Python
+SDK, MCP Inspector) need no token: add the URL and approve the connection once in your browser.
 
 ```bash
-uv run doc4ai sources backfill --dry-run   # report only, writes nothing
-uv run doc4ai sources backfill             # exit 0 all copied, 3 some cannot be recovered, 1 unreadable/failed
-uv run doc4ai sources status
+claude mcp add --transport http doc4ai http://127.0.0.1:8765/mcp
 ```
 
-The same is in Settings → 「原始檔備份」 (「檢查（不寫入）」 / 「補齊備份」).
+In Claude Code, type `/mcp`, choose `doc4ai` and authenticate. The browser opens a consent page that shows which
+client is asking, where it will return to, and what it may do. Clients without OAuth use a personal access token with
+the scopes you choose, created on the web studio's MCP page.
 
-## MCP
+Tools: `search_library`, `list_documents`, `get_document_info`, `read_document` (page ranges, capped at a token
+budget and continued with a cursor), `get_chunks`, `convert_document`, `get_job`, `cancel_job`,
+`reconvert_document`, `verify_document`, `verify_markdown`, and `convert_path` when you allow local folders.
 
-Doc4AI Studio serves an MCP endpoint at `/mcp` (Streamable HTTP, Bearer personal access tokens). Create a token in the web UI (MCP → Tokens); it is shown once. Then connect a client:
-
-**Claude Code**
-
-```bash
-claude mcp add --transport http doc4ai http://<host>:<port>/mcp --header "Authorization: Bearer <YOUR_TOKEN>"
-```
-
-**Cursor（~/.cursor/mcp.json）**
-
-```json
-{
-  "mcpServers": {
-    "doc4ai": {
-      "url": "http://<host>:<port>/mcp",
-      "headers": {
-        "Authorization": "Bearer <YOUR_TOKEN>"
-      }
-    }
-  }
-}
-```
-
-**VS Code（.vscode/mcp.json）**
-
-```json
-{
-  "servers": {
-    "doc4ai": {
-      "type": "http",
-      "url": "http://<host>:<port>/mcp",
-      "headers": {
-        "Authorization": "Bearer ${input:doc4ai-token}"
-      }
-    }
-  },
-  "inputs": [
-    {
-      "id": "doc4ai-token",
-      "type": "promptString",
-      "password": true,
-      "description": "Doc4AI Studio token"
-    }
-  ]
-}
-```
-
-**Claude Desktop（claude_desktop_config.json，經 mcp-remote）**
-
-```json
-{
-  "mcpServers": {
-    "doc4ai": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "http://<host>:<port>/mcp",
-        "--header",
-        "Authorization:${DOC4AI_TOKEN}",
-        "--allow-http"
-      ],
-      "env": {
-        "DOC4AI_TOKEN": "Bearer <YOUR_TOKEN>"
-      }
-    }
-  }
-}
-```
-
-Tokens never go in the URL; the endpoint answers `401` with `WWW-Authenticate: Bearer realm="doc4ai"` when one is missing or revoked (after 10 failures a minute from one address: `429` with the same reason, for a minute). Scopes: `doc4ai:read`, `doc4ai:convert`, `doc4ai:convert:local`, `doc4ai:manage`.
-
-
-### Connect without a token: browser authorization (OAuth)
-
-MCP clients that support OAuth (Claude Code, Cursor, VS Code, the MCP Python SDK, MCP Inspector) can connect with **no token at all**. Add the endpoint, then authorize it once in the browser:
-
-```bash
-claude mcp add --transport http doc4ai http://127.0.0.1:3333/mcp
-```
-
-Then in Claude Code type `/mcp`, choose `doc4ai`, and pick 認證 (Authenticate). Your browser opens Doc4AI's 「授權連線」 page: it shows the client's self-reported name (marked 未驗證), where it comes from (bold host such as `claude.ai`, or 「本機註冊的用戶端」), the exact address the browser returns to, and the permissions. `doc4ai:read` and `doc4ai:convert` are ticked; `doc4ai:convert:local` and `doc4ai:manage` carry a small ! mark and stay off unless you tick them. Press 允許連線 and the browser hands the connection back to Claude Code. Cursor (`~/.cursor/mcp.json`) and VS Code (`.vscode/mcp.json`) need only the URL:
-
-```json
-{ "mcpServers": { "doc4ai": { "url": "http://127.0.0.1:3333/mcp" } } }
-```
-
-```json
-{ "servers": { "doc4ai": { "type": "http", "url": "http://127.0.0.1:3333/mcp" } } }
-```
-
-How it works: the `401` from `/mcp` names the protected-resource metadata (`WWW-Authenticate: Bearer realm="doc4ai", resource_metadata=".../.well-known/oauth-protected-resource/mcp", scope="doc4ai:read doc4ai:convert"`); the client finds the authorization server on the same origin, identifies itself by its client metadata document (Claude Code) or registers itself (Cursor, the SDK, Inspector), and uses PKCE (S256 only). Access tokens last 60 minutes and refresh on their own; a connection idle for 30 days, or 90 days old, authorizes again. Each connection appears in the MCP page's Tokens list as an `OAuth` row (撤銷 there, `claude mcp logout`, or a reused refresh token cuts it off at the next request), and the 連線 and 呼叫紀錄 tabs name it. Settings → 「OAuth 授權」 holds the switches and lifetimes; `[oauth] enabled = false` in `doc4ai.toml` turns it off and brings back the token-only `401`.
-
-Limits:
-
-- A token is bound to the address you added: `127.0.0.1`, `localhost` and `[::1]` count as three different servers. Use `http://127.0.0.1:<port>/mcp` everywhere.
-- Claude Code only sends OAuth credentials to an HTTPS or loopback token endpoint, so Claude Code on another machine cannot use OAuth over plain http (token mode, LAN or tailnet address): use a PAT there. The SDK and MCP Inspector are not limited this way.
-- Claude Desktop reaches remote MCP servers only through claude.ai's cloud connectors (public HTTPS), which a local `http://127.0.0.1` server is not; keep the `mcp-remote` + PAT setup above for it.
-- PATs keep working exactly as before; switching a client to OAuth does not revoke its old token (revoke it in the Tokens list when you no longer need it).
-
-Local threat model: when the server runs without a server token (loopback only), anyone at this computer's browser may approve the 授權連線 page; nobody else can. A web page open in your browser can still make the browser *request* things from this server (show you the consent or error page, try a cross-site post, point a client id at its own client document), but it cannot get a connection out of it:
-
-- it cannot read the consent page (no CORS) or its signed one-time form field, and the page refuses to be framed;
-- a cross-site consent post, and a cross-site or non-JSON client registration, is refused (403 / 400) before it counts against any quota, and junk registrations make room for a real one rather than locking it out;
-- a client document that answers slowly cannot hold the server: the fetch has one 5-second deadline, at most 3 run at once, failures are remembered for 30 s, and they run off the request threads;
-- before you approve anything, errors are sent back only to a loopback redirect address: never to a web site or an app handler named by an unverified client (no open redirect);
-- a DNS-rebinding Host, or a Host with another port than the server's, never becomes an issuer.
-
-Another program on this computer can approve its own connection, exactly as it could already create a PAT through the local admin API; OAuth does not widen that. In token mode (`--host 0.0.0.0` with a server token) the page also asks for the server token: each page allows 5 wrong tokens, and wrong guesses from one address are slowed down step by step (1 to 8 s per attempt), so guessing stays slow without letting a neighbour on the same network lock you out.
-
-MCP tools: `search_library`, `get_document_info`, `read_document` (page ranges; every response is capped at a token budget and continues with a cursor), `get_chunks`, `list_documents`, `convert_document`, `get_job`, `cancel_job`, `reconvert_document`, and `convert_path` (only when `[mcp] local_path_roots` is set). The web studio's MCP page lists tokens, connected clients and the call log; its Overview has a field where you can paste a token to fill the snippets above in the browser (the token is never sent or stored).
+Setup for each client, token scopes, limits and the local threat model: [docs/mcp.md](docs/mcp.md).
 
 ## RAG platforms (docling-serve compatible API)
 
-The same server also speaks the [docling-serve](https://github.com/docling-project/docling-serve) v1 HTTP API (`/v1/convert/file`, `/v1/convert/source`, the async `…/async` + `/v1/status/poll` + `/v1/result`, `/health`), so RAG platforms whose document parser can be pointed at a docling-serve URL get Doc4AI's routing, per-page checks and OCR repair instead — with page numbers: the placeholder a client asks for (`md_page_break_placeholder`) goes between every two pages, empty pages included. Authentication is the MCP personal access token (`doc4ai:convert`) in `X-Api-Key` or `Authorization: Bearer`; every request shows up in the MCP page's call log, and jobs carry the source 「相容 API」. Already-converted content (same bytes, any file name) answers from the library at once.
+The same server also speaks the [docling-serve](https://github.com/docling-project/docling-serve) v1 HTTP API
+(`/v1/convert/file`, `/v1/convert/source`, the async `…/async` + `/v1/status/poll` + `/v1/result`, `/health`). RAG
+platforms that can point their document parser at a docling-serve URL get Doc4AI's routing, page checks and OCR
+repair instead, with page numbers: the placeholder a client asks for (`md_page_break_placeholder`) goes between every
+two pages. Authentication is an MCP personal access token with `doc4ai:convert`.
 
-Open WebUI (its "Docling" content extraction engine; the token dialog on the MCP page shows this block with the token filled in):
+Open WebUI (its "Docling" content extraction engine; the token dialog on the MCP page shows this block with the token
+filled in):
 
 ```bash
 CONTENT_EXTRACTION_ENGINE=docling
@@ -291,11 +172,69 @@ DOCLING_SERVER_URL=http://<host>:<port>
 DOCLING_API_KEY=<YOUR_TOKEN>
 ```
 
-Recipes, with what is and is not verified: [Open WebUI](docs/integrations/open-webui.md) (works by configuration; tested with Open WebUI 0.11.4), [RAGFlow](docs/integrations/ragflow.md) (works, but RAGFlow 1.0 only connects to a publicly routable URL), [Kotaemon](docs/integrations/kotaemon.md) (a drop-in reader file), [Dify](docs/integrations/dify.md) (needs a Dify plugin, not written yet) and [curl / any docling-serve client](docs/integrations/curl.md). Not supported: server-side URL fetching (`sources[].kind = "http"`), docling chunking endpoints, `json_content` (always `null`).
+Recipes, with what is and is not verified: [Open WebUI](docs/integrations/open-webui.md) (tested with Open WebUI
+0.11.4), [RAGFlow](docs/integrations/ragflow.md) (RAGFlow 1.0 only connects to a publicly routable URL),
+[Kotaemon](docs/integrations/kotaemon.md) (a drop-in reader file), [Dify](docs/integrations/dify.md) (needs a Dify
+plugin, not written yet) and [curl or any docling-serve client](docs/integrations/curl.md). Not supported:
+server-side URL fetching (`sources[].kind = "http"`), docling chunking endpoints, `json_content` (always `null`).
+
+## What comes out
+
+`two-column.pdf` from the demo library: Docling's result failed the page check, so MinerU converted it again.
+
+```markdown
+<!-- page: 1 -->
+
+## CHAPTER XXXVIII.
+
+On Saturday morning Elizabeth and Mr. Collins met for breakfast a few minutes before the others appeared; …
+```
+
+The sidecar next to it (`two-column.json`, shortened) records why:
+
+```json
+{
+  "engine": "mineru",
+  "pages": 2,
+  "tried": [
+    { "engine": "docling", "attempt": 1, "score": 0.0, "reasons": ["pages_flagged"] },
+    { "engine": "mineru",  "attempt": 2, "score": 1.0, "reasons": [] }
+  ],
+  "quality": { "score": 1.0, "level": "ok", "pages_flagged": 0, "pages_unrepaired": 0 },
+  "source_copy": { "path": "source/two-column/two-column.pdf", "sha256": "672f457d…" }
+}
+```
+
+Everything lands in one Doc4AI folder (`C:\doc4ai` or `~/doc4ai` unless you choose another), with a verified copy of
+every source file next to its Markdown. Details: [docs/output.md](docs/output.md).
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Library with the engine and a quality badge for each document" src="docs/images/library.png"></td>
+    <td width="50%"><img alt="A job, with each page's check and the engine that produced it" src="docs/images/job-pages.png"></td>
+  </tr>
+  <tr>
+    <td><img alt="Document view: the source PDF and the Markdown side by side" src="docs/images/document-view.png"></td>
+    <td><img alt="MCP page: endpoint, connected clients and ready-to-paste configuration" src="docs/images/mcp.png"></td>
+  </tr>
+</table>
+
+## What is measured, and what is not
+
+Doc4AI checks structure: empty or dropped pages, broken text layers, garbage, missing or shifted page markers. It does
+not see OCR misreadings or text lost inside images. The benchmark in [`bench/`](bench/) compares routing and repair
+against each engine alone on documents with ground truth, but no numbers are published yet: the gate that would let
+us publish them (`verify` must track the ground truth) has not passed. The record, including the failed runs, is in
+[docs/benchmark.md](docs/benchmark.md).
 
 ## When to use something else
 
-Doc4AI Studio is useful when you have a mixed pile of documents (scanned and born-digital PDFs, Office files, Traditional Chinese), want the conversion checked rather than trusted, and want to share the result with AI clients over a network. It is heavier than the alternatives below — several GB of models, uv + pnpm, no one-line install, no Docker image, no public benchmark yet — so a single tool is often the better choice:
+Doc4AI Studio is useful when you have a mixed pile of documents (scanned and born-digital PDFs, Office files,
+Traditional Chinese), want the conversion checked rather than trusted, and want to share the result with AI clients.
+Its full install is heavy, with several GB of models and a GPU for the OCR engines, so a single tool is often the
+better choice:
 
 | If you… | Consider |
 |---|---|
@@ -314,116 +253,40 @@ Doc4AI Studio is useful when you have a mixed pile of documents (scanned and bor
 | [MarkItDown](https://github.com/microsoft/markitdown) 0.1.8 | Office files, HTML, EPUB, CSV | MIT |
 | [Docling](https://github.com/docling-project/docling) 2.x (+ RapidOCR / EasyOCR) | Born-digital PDFs (layout, tables, reading order); full-page OCR repair | MIT (OCR backends: Apache-2.0) |
 | [MinerU](https://github.com/opendatalab/MinerU) 4.0.x | Scanned PDFs, images, formulas, complex layouts (GPU) | MinerU Open Source License (Apache-2.0 based, with additional conditions) |
-| VLM OCR (optional) | Any OpenAI-compatible vision endpoint you configure: last fallback and last page repair | depends on the endpoint / model |
+| VLM OCR (optional, [off by default](docs/vlm.md)) | Any OpenAI-compatible vision endpoint you configure: last fallback and last page repair | depends on the endpoint / model |
 | [PyMuPDF](https://github.com/pymupdf/PyMuPDF) | Probing, splitting and checking PDFs in the main program | AGPL-3.0 |
 | [LibreOffice](https://www.libreoffice.org/) (optional, external program) | Office → PDF preview in the web studio | MPL-2.0 |
 
-The engines are separate projects installed into their own environments by `doc4ai setup`; they are not redistributed with this repository. MinerU's license has additional conditions for large-scale or online-service use — check each project's license before redistributing Doc4AI Studio or offering it as a service.
+The engines are separate projects installed into their own environments by `doc4ai setup`; they are not redistributed
+with this repository. MinerU's license has additional conditions for large-scale or online-service use: check each
+project's license before redistributing Doc4AI Studio or offering it as a service.
 
-## Tests
+## Documentation
 
-```bash
-uv run pytest -m "not slow"     # fast suite, uses a fake engine (no GPU)
-uv run pytest -m slow           # real engines on the GPU (and LibreOffice, when installed)
-# VLM slow tests need an endpoint: DOC4AI_VLM_REAL_BASE_URL=http://127.0.0.1:11434/v1 DOC4AI_VLM_REAL_MODEL=gemma4:12b
-pnpm --dir web test             # Vitest
-pnpm --dir web e2e              # Playwright
-```
+| Topic | Page |
+|---|---|
+| MCP clients, OAuth, tokens and the threat model | [docs/mcp.md](docs/mcp.md) |
+| The Doc4AI folder, the sidecar and source copies | [docs/output.md](docs/output.md) |
+| Verifying any Markdown against its PDF | [docs/verify.md](docs/verify.md) |
+| VLM OCR through an OpenAI-compatible endpoint | [docs/vlm.md](docs/vlm.md) |
+| Benchmark method and its record | [docs/benchmark.md](docs/benchmark.md) |
+| Windows Firewall when serving on a network | [docs/windows-firewall.md](docs/windows-firewall.md) |
+| RAG platform recipes | [docs/integrations/](docs/integrations/) |
+| Claude Code skill | [skill/SKILL.md](skill/SKILL.md) |
 
-## Verify
+## Contributing
 
-`doc4ai verify` checks any Markdown against its source PDF, page by page — our own output or one made by MinerU, Docling,
-MarkItDown or another tool — with the same page model the converter uses. It reads `<!-- page: N -->` markers, the
-MinerU / Docling / pdfmux marker styles or a custom marker template (`[[p {page}]]`: literal text around one page number — no free-form regex), and infers the page boundaries from the PDF text layer when
-there are no markers.
-
-```bash
-uv run doc4ai verify out/<stem>/                               # one of our outputs (sidecar + source found for you)
-uv run doc4ai verify book.md --pdf book.pdf --json report.json --html report.html --thumbnails   # any tool's Markdown
-uv run doc4ai verify book.md --pdf book.pdf --fail-on warn     # CI: exit 1 on warn or low
-```
-
-It reports dropped pages (`page_dropped`: the PDF page has text, the Markdown section is empty), page markers that are
-missing, shifted or out of order, broken text layers, garbage, and — as advisories that never change the level — tables
-or formulas that seem missing on a page. Exit codes: `0` passed, `1` failed `--fail-on` (default `low`), `3`
-unverifiable, `4` usage or input error. The same check is `POST /api/verify` and the MCP tools `verify_document` /
-`verify_markdown`; none of them writes anything.
-
-What it cannot do: it sees structural losses only, not OCR misreadings, VLM hallucinations or text missed inside
-images. A scanned PDF whose Markdown has no page markers cannot be verified (no text layer to anchor on: exit 3).
-`page_dropped` also fires when a page is one big picture and the engine rightly kept only the image (use
-`--thumbnails` to look). Table / formula advisories come from ruling-line and math-font heuristics. Inferred page
-boundaries need text the PDF layer and the Markdown share; pages that are mostly tables may stay undecidable, and on
-multi-column books the text layer's order can differ from the reading order, so a boundary may sit a paragraph or
-two off.
-
-Known limits of the per-page checks:
-
-- `page_partial` (a page whose section holds clearly less than half of its text) is an **advisory**: shown on the
-  page, it never raises the level, triggers a repair or an engine fallback, until it has passed on a blind held-out
-  page set. Code listings, tables and body text count as page text; callouts and labels inside a figure kept as a
-  picture do not — but only lines over an embedded picture are recognised as figure lines: labels of a diagram
-  drawn as vectors, and lines shorter than 20 characters (table cells), are left out of the comparison too.
-- Code that exists only as an image in the PDF has no text layer to compare with: its loss is not seen.
-- A paragraph continued across a page break, or across the columns of a two-column page, often lands under the
-  previous page's marker; that is not flagged (it would be on every page of some books), so a page whose whole
-  first column moved is under-reported.
-- A document whose source PDF is gone cannot be re-graded: it keeps its last result (for example a stale `warn`)
-  until it is uploaded or converted again.
-- Text layers drawn through a wrong Unicode map (shifted-cipher fonts) are detected by a language-model check and
-  left out of the coverage checks; such pages are judged only on an empty section.
-- Garbage that is identical in the text layer and in the output is not caught (it "matches"); a script-consistency
-  check is deferred.
-- Moved text can be missed on noisy OCR text layers (the "distinctive n-grams" are unstable under OCR errors).
-- Whether a paragraph continued across a page break is a normal continuation or a moved block is a judgement call.
-- Blind precision / recall is not measured yet: the independent held-out set (183 pages) has only 1–4 positives per
-  reason, so the label gate reports an expected failure (xfail), not a pass.
-- The calibration gate fails (ρ 0.63, precision 0.83, recall 0.72), so the benchmark is not published; those gate
-  numbers predate commit 4a2dd90 (broken-heading garbage check), which the gate was not re-run for.
-
-## Benchmark
-
-`bench/` (not part of the package) measures what the orchestration adds — automatic routing, fallback and per-page
-repair — against each engine alone, on documents with ground truth:
-
-- **Tier A**, synthetic and regenerated from pinned sources: Traditional Chinese and English text from Project
-  Gutenberg typeset with the SIL OFL Noto Sans CJK TC font, degraded scans, PDFs whose fonts lack `/ToUnicode` (the
-  Head First case), ruled tables, formulas, two columns, a 1,200-page book, and Markdown with deliberately dropped,
-  shifted and swapped pages for calibrating `verify`.
-- **Tier B**, real documents under open licences fetched by sha256 from `bench/corpus/MANIFEST.json`: Taiwan
-  government gazettes (Open Government Data License), arXiv CC BY 4.0 papers, NIST publications.
-- **Tier C**, two private books: reported separately and marked not reproducible.
-
-```bash
-uv run python bench/corpus/make_synthetic.py                 # Tier A (about 2 minutes; downloads the pinned sources)
-uv run python bench/corpus/fetch.py                          # Tier B
-uv run python bench/run.py --corpus A,B --configs auto,auto-norepair,docling,mineru,markitdown --out bench/results/<run>
-uv run python bench/calibrate.py --run bench/results/<run>   # gate: verify must track the ground truth
-uv run python bench/report.py --run bench/results/<run>      # summary.md
-```
-
-Single-engine columns and `auto-norepair` run with per-page repair turned off, so the comparison does not borrow
-another engine's repair.
-
-No results are published yet. Before a table goes here, `verify` must track the ground truth (Spearman ρ ≥ 0.6
-between its score and the page text accuracy, page recall ≥ 0.9). The first run on 2026-10-12 did not pass
-(ρ 0.48, recall 0.16 — precision was 1.00: the pages it flags are bad, but it misses most bad pages, mainly OCR
-misreadings in scans and paragraphs moved to a neighbouring page), nor did the re-run on 2026-10-13 after the page-level checks were added (ρ 0.47, recall 0.05 under the unchanged gate definition).
-On 2026-10-20 the user redefined the gate (rows and pages `verify` can judge; ρ ≥ 0.6, page precision and recall
-≥ 0.9 over every page-level reason; scans reported separately) and it was run once on a fresh-seed Tier A plus
-Tier B: ρ 0.63, precision 0.83, recall 0.72 — not passed, so still nothing is published.
-A separate real-sample evaluation (6 Traditional Chinese scans, 4 arXiv papers, 2 English controls; pre-registered rules) ran once on 2026-10-22 and was **invalid**: the shared English-control check failed (NED 0.70 / 0.59 < 0.85), so all three decisions are `insufficient` and nothing changed: the zh scan route, the formula route, and the local VLM backend.
-
-## Docs
-
-Integration guides for RAG platforms live in [`docs/integrations/`](docs/integrations/).
-
-## 繁體中文
-
-Doc4AI Studio 不是新的解析模型，而是編排層：不知道該用 MarkItDown、Docling 還是 MinerU 時，它依每份文件的特徵選引擎、逐頁檢查轉換結果，文字層壞掉的頁面用 OCR 修復後接回原位，整份不合格就換下一個引擎；產出帶頁碼標記的 Markdown 與 JSON 中繼資料。支援繁體中文與英文 OCR、上千頁文件分段轉換與續跑，並提供 Web 介面（原始檔與 Markdown 左右對照）、CLI、Claude Code skill，以及有 token 權限控管與管理後台的 MCP server；同一個 port 也提供 docling-serve 相容 API，Open WebUI 等 RAG 平台把 Docling 伺服器網址指過來就能用（頁碼保留）。如果只需要單一引擎，或只想要一行安裝的本機 MCP，上面「When to use something else」列的工具可能更適合。
+Bug reports with a small sample, docs fixes and code are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Report
+security problems privately, as [SECURITY.md](SECURITY.md) describes. Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-[AGPL-3.0](LICENSE). If you run a modified version as a network service, the AGPL requires you to offer its source to the users of that service. The engines keep their own licenses (see above).
+[AGPL-3.0](LICENSE). If you run a modified version as a network service, the AGPL requires you to offer its source to
+the users of that service. The engines keep their own licenses (see above).
 
-Benchmark corpus: the synthetic documents are generated from public-domain Project Gutenberg texts (licence headers stripped) and the SIL Open Font License 1.1 Noto Sans CJK TC font (downloaded and embedded as subsets, never committed as a font file); Tier B documents are fetched from their publishers and are not in the repository: Taiwan Open Government Data License 1.0 (compatible with CC BY 4.0), arXiv CC BY 4.0 papers, and US-government works (17 U.S.C. §105, may be under copyright elsewhere).
+Benchmark corpus: the synthetic documents are generated from public-domain Project Gutenberg texts (licence headers
+stripped) and the SIL Open Font License 1.1 Noto Sans CJK TC font (downloaded and embedded as subsets, never committed
+as a font file); Tier B documents are fetched from their publishers and are not in the repository: Taiwan Open
+Government Data License 1.0 (compatible with CC BY 4.0), arXiv CC BY 4.0 papers, and US-government works
+(17 U.S.C. §105, may be under copyright elsewhere).
