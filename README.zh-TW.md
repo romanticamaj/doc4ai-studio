@@ -56,7 +56,7 @@ Doc4AI Studio 不是新的解析模型，而是一層編排。它把三套開源
 ## 運作方式
 
 ```mermaid
-flowchart LR
+flowchart TD
     IN["PDF、掃描檔、Office 檔或圖片"] --> PROBE["探測檔案：<br>文字層、圖片、公式、<br>表格、字型對照"]
     PROBE --> ROUTE{"選擇引擎"}
     ROUTE --> MD["MarkItDown"]
@@ -68,8 +68,7 @@ flowchart LR
     CHECK -- "某頁壞掉" --> REPAIR["用 OCR 重跑那一頁<br>再接回原位"]
     REPAIR --> CHECK
     CHECK -- "整份不合格" --> ROUTE
-    CHECK -- "通過，或已標記" --> OUT["帶頁碼標記的 Markdown<br>+ JSON 中繼資料"]
-    OUT --> USE["Web 介面、CLI、MCP、<br>docling-serve API"]
+    CHECK -- "通過，或已標記" --> OUT["帶頁碼標記的 Markdown + JSON 中繼資料<br>交給 Web 介面、CLI、MCP 和 docling-serve API"]
 ```
 
 ## 快速開始

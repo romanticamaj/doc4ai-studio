@@ -65,7 +65,7 @@ your AI through a web studio, a CLI, an MCP server, and a docling-serve compatib
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TD
     IN["PDF, scan, Office file or image"] --> PROBE["Probe the file:<br>text layer, images, formulas,<br>tables, font maps"]
     PROBE --> ROUTE{"Route"}
     ROUTE --> MD["MarkItDown"]
@@ -77,8 +77,7 @@ flowchart LR
     CHECK -- "a page is broken" --> REPAIR["Re-run that page with OCR<br>and splice it back"]
     REPAIR --> CHECK
     CHECK -- "the document failed" --> ROUTE
-    CHECK -- "passed, or flagged" --> OUT["Markdown with page markers<br>+ JSON sidecar"]
-    OUT --> USE["Web studio, CLI, MCP,<br>docling-serve API"]
+    CHECK -- "passed, or flagged" --> OUT["Markdown with page markers + JSON sidecar<br>to the web studio, CLI, MCP and docling-serve API"]
 ```
 
 ## Quick start
