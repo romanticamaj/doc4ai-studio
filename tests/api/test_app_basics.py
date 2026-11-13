@@ -6,7 +6,7 @@ from doc4ai.server.app import create_app
 def test_envelope_and_version(client):
     r = client.get("/api/system")
     assert r.status_code == 200
-    assert r.json()["workspace"] == "default" and r.json()["version"] == "0.1.0"
+    assert r.json()["workspace"] == "default" and r.json()["version"] == __import__("doc4ai").__version__
 
 
 def test_404_has_envelope(client):

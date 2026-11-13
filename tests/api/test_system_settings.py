@@ -9,7 +9,7 @@ def test_system_shape(client, ctx, tmp_root):
     assert set(s["engines"]) == {"markitdown", "docling", "mineru", "vlm"}
     assert s["engines"]["docling"] == {"installed": False, "ready": False}
     assert s["queue"] == {"paused": False, "length": 0, "running_task_id": None}
-    assert s["disk_free"] > 0 and s["output_dir"].endswith("out") and s["version"] == "0.1.0"
+    assert s["disk_free"] > 0 and s["output_dir"].endswith("out") and s["version"] == __import__("doc4ai").__version__
     assert "gpu" in s and "long_paths_enabled" in s and s["workspace"] == "default"
     (tmp_root / "envs" / "mineru" / ".venv" / "Scripts").mkdir(parents=True)
     paths.venv_python("mineru").parent.mkdir(parents=True, exist_ok=True)

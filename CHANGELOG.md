@@ -4,6 +4,8 @@ Notable changes to this project are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-13
+
 ### Fixed
 
 - `doc4ai convert` and `doc4ai batch` crashed with `No module named 'httpx'` next to a running server: `httpx` was only a development dependency
@@ -12,6 +14,7 @@ Notable changes to this project are recorded here. The format follows [Keep a Ch
 
 ### Changed
 
+- The Docker build pins pnpm 10.32.1, like CI; the newest pnpm refused freshly released packages and broke it
 - The README was rewritten, with a Traditional Chinese edition (`README.zh-TW.md`); the long sections moved to `docs/`
 - Dependencies: FastAPI 0.162, TypeScript 7 and the web studio's minor updates
 
@@ -36,5 +39,6 @@ First public release.
 
 - The project was renamed from `aidoc` to `doc4ai`. The `aidoc` command, `AIDOC_*` environment variables and an existing `aidoc.toml` keep working. Stored data keeps its old names, so existing libraries need no migration.
 
-[Unreleased]: https://github.com/romanticamaj/doc4ai-studio/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/romanticamaj/doc4ai-studio/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/romanticamaj/doc4ai-studio/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/romanticamaj/doc4ai-studio/releases/tag/v0.1.0
