@@ -38,7 +38,8 @@ SHIFT_HITS_MIN = 3
 #    two probes, furniture judged per document, link URLs stripped, repairs re-validated
 # 5: verifier round 3 - page_partial advisory, broken fonts per page by share (no symbol fonts), wrong-Unicode-map
 #    guard, figure lines out of the prose layer
-PAGE_CHECK_VERSION = 6                 # 6: scan pages (no text layer) checked by doc4ai.scanchecks (T-002)
+# 6: scan pages (no text layer) checked by doc4ai.scanchecks (T-002)
+PAGE_CHECK_VERSION = 7                 # 7: page_prose_table advisory on scan pages
 DROPPED_LAYER_MIN = 120        # squashed prose-layer chars a page needs before an empty section means "dropped" ...
 DROPPED_BODY_MIN = 300         # ... or body-layer chars (full-page tables, text-heavy diagrams: short lines only)
 DROPPED_SECTION_MAX = 20       # squashed chars (markup stripped) below which a section counts as empty
@@ -63,7 +64,16 @@ PAGE_REASONS = ("page_dropped", "page_misaligned", "page_oversized",   # level-r
                 "page_empty_scan")                                    # T-002: scan pages (doc4ai.scanchecks)
 # page_partial is an advisory (verifier round 3: blind relabel kappa 0.29): shown per page, never raises the level,
 # never triggers repair or engine fallback, until it passes on a fresh held-out set
-PAGE_ADVISORIES = ("page_partial",)
+PAGE_ADVISORIES = ("page_partial", "page_prose_table")
+# page_prose_table: a scan page whose running text came out as a table (a fold, a gutter or vertical lines read as
+# column rules: every cell holds half a line). Scan pages only: text PDFs have genuine prose tables (gazette article
+# comparison tables, NIST control catalogues) that look the same in Markdown. Advisory until labelled samples say more.
+PROSE_TABLE_SHARE = 0.8        # table cells hold at least this share of the section's characters ...
+PROSE_TABLE_CELLS = 4          # ... in at least this many non-empty cells ...
+PROSE_TABLE_PROSE = 0.5        # ... and at least this share of them are prose:
+PROSE_CELL_CHARS = 10          # ... this many non-space characters ...
+PROSE_CELL_DIGITS = 0.2        # ... and fewer digits than this share
+PROSE_TABLE_MIN_CHARS = 200
 VLM_OVERLAP_MIN = 0.2          # VLM spec §7: advisory only (collect numbers; never changes level or score)
 VLM_OVERLAP_MIN_LAYER = 120    # squashed text-layer chars a page needs before the overlap means anything
 SHIFT = 29                     # TrueType standard Mac glyph order: glyph id = char code - 29 (glyph 3 = space)
@@ -93,6 +103,34 @@ def strip_markup(markdown: str) -> str:
 
 def has_table(markdown: str) -> bool:
     return bool(_TABLE_GFM.search(markdown) or _TABLE_HTML.search(markdown))
+
+
+_TABLE_ROW = re.compile(r"^\s*\|(.*)\|\s*$")
+
+
+def _nonspace(s: str) -> int:
+    return sum(1 for c in s if not c.isspace())
+
+
+def prose_table(section: str) -> dict | None:
+    """Metrics when a page section is mostly a GFM table of prose cells (see PROSE_TABLE_*), else None."""
+    cells = []
+    for line in section.splitlines():
+        m = _TABLE_ROW.match(line)
+        if m and not _SEP_LINE.match(line):
+            cells += [c.strip() for c in m.group(1).split("|") if c.strip()]
+    if len(cells) < PROSE_TABLE_CELLS:
+        return None
+    in_table = sum(_nonspace(c) for c in cells)
+    total = _nonspace(strip_markup(section))
+    if in_table < PROSE_TABLE_MIN_CHARS or in_table < PROSE_TABLE_SHARE * total:
+        return None
+    prose = sum(1 for c in cells if _nonspace(c) >= PROSE_CELL_CHARS
+                and sum(ch.isdigit() for ch in c) < PROSE_CELL_DIGITS * len(c))
+    share = prose / len(cells)
+    if share < PROSE_TABLE_PROSE:
+        return None
+    return {"table_share": round(min(1.0, in_table / max(1, total)), 2), "prose_cells": round(share, 2)}
 
 
 def _is_garbage_char(c: str) -> bool:
@@ -489,6 +527,13 @@ def assess(markdown: str, probe: ProbeResult, pages: int | None, *, pdf: Path | 
         ink = scan_ink if scan_ink is not None else scanchecks.page_ink(pdf, layers=layers)
         for e in scanchecks.scan_page_checks(markdown, ink, probe.blank_pages):
             checks.setdefault(e["page"], e)
+        _, secs = pagemap.split_pages(markdown)
+        for p, v in ink.items():
+            if v is None or p in probe.blank_pages or (m := prose_table(secs.get(p, ""))) is None:
+                continue
+            e = checks.get(p) or {"page": p, "reasons": [], "metrics": {"scan": True}}
+            checks[p] = {**e, "advisories": [*e.get("advisories", []), "page_prose_table"],
+                         "metrics": {**e.get("metrics", {}), **m}}
     kept = []
     for e in repaired:
         c = checks.get(e["page"])

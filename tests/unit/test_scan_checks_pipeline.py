@@ -126,3 +126,41 @@ def test_a_scan_misattribution_repairs_both_pages_and_keeps_the_text_once(env):
     got = {p["page"]: (p["reasons"], bool(p.get("repaired_by"))) for p in q["pages"]}
     assert got == {4: (["page_oversized"], True), 5: (["page_misaligned"], True)} and q["level"] == "ok"
     assert _md_out(env).count("UNIQUEPAGEFIVETOKEN") <= 1                   # never twice
+
+
+def _as_prose_table(text: str) -> str:
+    """What a fold or a gutter read as a column rule produces: every line cut in two cells."""
+    s = text.replace("\n", "")
+    rows = [s[i:i + 30] for i in range(0, len(s), 30)]
+    body = "\n".join(f"| {r[:15]} | {r[15:]} |" for r in rows[1:])
+    return f"| {rows[0][:15]} | {rows[0][15:]} |\n| --- | --- |\n{body}"
+
+
+def test_running_text_laid_out_as_a_table_on_a_scan_is_an_advisory(scan):
+    """The scan-fold case (README demo): the text is all there, so every check passes and the score stays 1.00, but
+    the reading order is broken. Shown on the page; never changes the level or the score (advisory)."""
+    from doc4ai.quality import PAGE_ADVISORIES, prose_table
+    assert "page_prose_table" in PAGE_ADVISORIES and PAGE_CHECK_VERSION >= 7
+    secs = _texts()
+    secs[2] = _as_prose_table(secs[2])
+    q = assess(_md(secs), probe_file(scan), N, pdf=scan, page_map_method="docling_per_page")
+    assert q.level == "ok" and q.score == assess(_md(_texts()), probe_file(scan), N, pdf=scan,
+                                                 page_map_method="docling_per_page").score
+    e = next(e for e in q.pages if e["page"] == 2)
+    assert e["reasons"] == [] and e["advisories"] == ["page_prose_table"] and e["metrics"]["table_share"] >= 0.8
+    assert [x["page"] for x in q.pages if "page_prose_table" in (x.get("advisories") or [])] == [2]
+    # a real data table (short cells, numbers) is not prose
+    data = "| 項目 | 數量 | 金額 |\n| --- | --- | --- |\n" + "\n".join(f"| 品項{i} | {i * 3} | {i * 120.5} |" for i in range(30))
+    assert prose_table(data) is None
+
+
+def test_a_prose_table_in_a_text_pdf_is_not_judged(tmp_path):
+    """Text PDFs carry genuine prose tables (gazette article comparison tables): only scan pages are judged."""
+    from tests.fixtures.make_fixtures import make_text_pdf
+    pdf = tmp_path / "t.pdf"
+    make_text_pdf(pdf)                                     # 3 pages: title, ZH * 3, EN * 2
+    from doc4ai.quality import prose_table
+    md = _md({1: _as_prose_table(f"Page 1 標題{ZH * 5}"), 2: f"Page 2 標題\n{ZH * 3}", 3: f"Page 3 標題\n{ZH * 3}"})
+    assert prose_table(md.split("<!-- page: 2 -->")[0]) is not None          # the signal itself would fire
+    q = assess(md, probe_file(pdf), 3, pdf=pdf, page_map_method="docling_per_page")
+    assert not any("page_prose_table" in (e.get("advisories") or []) for e in q.pages)

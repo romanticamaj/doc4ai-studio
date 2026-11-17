@@ -60,12 +60,17 @@ export function pageWarnings(quality: Quality | undefined | null): Map<number, P
     const repaired = !!entry.repaired_by;
     const vlm = vlmModel(entry.repaired_by);
     const metrics = (entry as { metrics?: Record<string, unknown> }).metrics ?? {};
-    // advisories never make a page a problem page; page_partial is shown as an info note (verifier round 3),
-    // the others (e.g. vlm_low_overlap) produce no note
+    // advisories never make a page a problem page; page_partial and page_prose_table are shown as info notes
+    // (verifier round 3), the others (e.g. vlm_low_overlap) produce no note
     const notes = (entry.reasons ?? []).map((r) => textFor(entry.page, r, repaired, vlm, metrics)).filter((n): n is PageWarning => !!n);
     if (((entry as { advisories?: string[] }).advisories ?? []).includes("page_partial") && !repaired) {
       const cov = typeof metrics.coverage === "number" ? `約 ${Math.round(metrics.coverage * 100)}% 的` : "部分";
       notes.push({ text: `第 ${entry.page} 頁：可能只轉出這頁${cov}文字（提示，不影響品質等級）`, tone: "info" });
+    }
+    // a scan page whose running text came out as a table (a fold or gutter read as a column rule): the text is
+    // there, the reading order is not
+    if (((entry as { advisories?: string[] }).advisories ?? []).includes("page_prose_table") && !repaired) {
+      notes.push({ text: `第 ${entry.page} 頁：內文被轉成表格，閱讀順序可能錯亂（掃描的摺痕或欄線被當成表格線；提示，不影響品質等級）`, tone: "info" });
     }
     if (!notes.length) continue;
     const prev = out.get(entry.page);

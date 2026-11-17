@@ -146,8 +146,8 @@ def test_history_wiped_by_an_earlier_regrade_is_recovered_from_the_sidecar(tmp_r
     assert q["page_map"]["method"] == "docling_per_page" and q["page_check"] == PAGE_CHECK_VERSION
 
 
-def test_page_check_version_is_6():
-    assert PAGE_CHECK_VERSION == 6          # 6: scan pages checked on the page image (T-002)
+def test_page_check_version_is_7():
+    assert PAGE_CHECK_VERSION == 7          # 7: page_prose_table advisory on scan pages
 
 
 def test_reassess_uses_source_copy_when_original_gone(tmp_root, fixtures, monkeypatch):

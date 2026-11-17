@@ -32,6 +32,10 @@ Known limits of the per-page checks:
   page set. Code listings, tables and body text count as page text; callouts and labels inside a figure kept as a
   picture do not — but only lines over an embedded picture are recognised as figure lines: labels of a diagram
   drawn as vectors, and lines shorter than 20 characters (table cells), are left out of the comparison too.
+- `page_prose_table` (a scan page whose running text came out as a table: a fold, a gutter or vertical lines were
+  read as column rules, so every cell holds half a line) is an **advisory** too. The text is all there, so the score
+  stays as it was, but the reading order is broken. Only scan pages are judged: text PDFs have genuine tables of
+  prose (gazette article comparison tables, control catalogues) that look the same in Markdown.
 - Code that exists only as an image in the PDF has no text layer to compare with: its loss is not seen.
 - A paragraph continued across a page break, or across the columns of a two-column page, often lands under the
   previous page's marker; that is not flagged (it would be on every page of some books), so a page whose whole

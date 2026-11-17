@@ -62,3 +62,12 @@ test("page_partial is an advisory note: shown as info, never warn", () => {
   expect(w.get(5)?.text).toContain("可能只轉出這頁約 40% 的文字");
   expect(w.has(8)).toBe(false);
 });
+
+test("page_prose_table is an advisory note on the page", () => {
+  const w = pageWarnings({
+    score: 1, level: "ok", reasons: [],
+    pages: [{ page: 1, reasons: [], advisories: ["page_prose_table"], metrics: { table_share: 1, prose_cells: 0.94 } }],
+  } as never);
+  expect(w.get(1)?.tone).toBe("info");
+  expect(w.get(1)?.text).toContain("內文被轉成表格");
+});
