@@ -1,3 +1,4 @@
+import importlib.metadata
 import time
 
 from doc4ai.mcp import tokens as T
@@ -15,7 +16,7 @@ def test_status_shape(client, ctx):
     assert s["enabled"] is True and s["endpoint_urls"] == ["http://127.0.0.1:8765/mcp"]
     assert s["bind"] == {"host": "127.0.0.1", "port": 8765} and "127.0.0.1:*" in s["allowed_hosts"]
     assert s["protocol_versions"] == ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]
-    assert s["sdk_version"].startswith("2.2") and s["active_clients"] == 0 and s["calls_24h"] == 0 and s["errors_24h"] == 0
+    assert s["sdk_version"] == importlib.metadata.version("mcp") and s["active_clients"] == 0 and s["calls_24h"] == 0 and s["errors_24h"] == 0
     assert s["tokens_expiring_soon"] == 0 and s["local_path_roots"] == [] and s["plaintext_http"] is True
     assert s["tokenizer"] in ("trigram", "unicode61") and s["workspace"] == "default"
 
