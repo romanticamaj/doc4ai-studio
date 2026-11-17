@@ -13,11 +13,12 @@ if TYPE_CHECKING:
 
 
 class EngineError(Exception):
-    def __init__(self, kind: ErrorKind, message: str, *, oom: bool = False):
+    def __init__(self, kind: ErrorKind, message: str, *, oom: bool = False, stalled: bool = False):
         super().__init__(message)
         self.kind = ErrorKind(kind)
         self.message = message
         self.oom = oom
+        self.stalled = stalled          # never became ready: a retry would wait the same startup cap again
 
 
 class EngineCancelled(Exception):

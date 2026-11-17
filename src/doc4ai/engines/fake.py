@@ -23,6 +23,9 @@ class FakeEngine(RunnerEngine):
     def script(self) -> Path:
         return paths.runner_script("fake")
 
+    def env_extra(self) -> dict[str, str]:
+        return {**super().env_extra(), "DOC4AI_FAKE_ENGINE": self.name}   # lets a scenario stall one engine's start
+
     def available(self) -> bool:
         # the fake vlm follows the configuration like the real one (backend "none" = not there: zero impact)
         return self._real().available() if self.name == "vlm" else True

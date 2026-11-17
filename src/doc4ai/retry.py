@@ -18,6 +18,8 @@ class RetryDecision:
 
 class RetryPolicy:
     """input -> fail; engine -> fallback; OOM -> downgrade options (free retry) or fallback;
+    startup stall (never became ready) -> fallback: a retry would wait the whole startup cap again, and the cause
+    (GPU memory taken by another program, a stuck model load) usually outlives the backoff;
     other transient (timeout / crash / kill) -> retry with backoff up to max_transient times, then fallback."""
 
     def __init__(self, max_transient: int = 2, backoff: tuple[float, ...] = (5.0, 30.0)):
@@ -34,6 +36,8 @@ class RetryPolicy:
             if new is None:
                 return RetryDecision("fallback", note="oom_no_downgrade")
             return RetryDecision("retry", 0.0, new, note="oom_downgrade")
+        if getattr(err, "stalled", False):
+            return RetryDecision("fallback", note="startup_stalled")
         if transient_retries_used < self.max_transient:
             delay = self.backoff[min(transient_retries_used, len(self.backoff) - 1)] if self.backoff else 0.0
             return RetryDecision("retry", delay, dict(engine_opts), note="transient")

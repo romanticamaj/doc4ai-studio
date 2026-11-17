@@ -249,5 +249,7 @@ def handle(req):
 if __name__ == "__main__":
     # simulated model loading before DOC4AI_READY (index A1 clock / startup-cap tests)
     _proto.log("fake runner loading models")
-    time.sleep(float(_load_scenario().get("startup_delay_s", 0)))
+    _sc = _load_scenario()
+    _by_engine = _sc.get("startup_delay_s_by_engine") or {}
+    time.sleep(float(_by_engine.get(os.environ.get("DOC4AI_FAKE_ENGINE", ""), _sc.get("startup_delay_s", 0))))
     _proto.serve(handle)

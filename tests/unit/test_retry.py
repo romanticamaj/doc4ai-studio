@@ -112,3 +112,22 @@ def test_input_error_from_engine_fails_without_retry(env):
     assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.failed
     t = env["store"].get_task(tid)
     assert t["error_kind"] == "input" and len(t["tried"]) == 1
+
+
+def test_startup_stall_falls_back_at_once():
+    """A runner that never became ready already waited the whole startup cap: retrying it costs that much again."""
+    e = EngineError(ErrorKind.transient, "startup timeout after 900s", stalled=True)
+    assert P.decide(e, 0, DoclingEngine(), {"page_batch_size": 16}).action == "fallback"
+    assert P.decide(e, 0, DoclingEngine(), {}).note == "startup_stalled"
+
+
+def test_pipeline_startup_stall_tries_the_engine_once(env):
+    """Docling hangs before DOC4AI_READY: one attempt, then MinerU, instead of 3 x the startup cap."""
+    write_scenario(env["sc"], startup_delay_s_by_engine={"docling": 60})
+    env["cfg"].limits.startup_timeout_s = 2
+    tid = env["make"]()
+    t0 = time.time()
+    assert run_task(env["store"], tid, env["engines"](), env["cfg"]) == TaskStatus.done
+    t = env["store"].get_task(tid)
+    assert [a["engine"] for a in t["tried"]] == ["docling", "mineru"] and t["engine"] == "mineru"
+    assert "never became ready" in t["tried"][0]["error_msg"] and time.time() - t0 < 30

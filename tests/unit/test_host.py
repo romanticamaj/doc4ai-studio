@@ -57,7 +57,7 @@ def test_timeout_kills(tmp_path, monkeypatch):
     with pytest.raises(EngineError) as ei:
         h.run(req(tmp_path), tmp_path / "wd", 2, lambda f, line: None)
     assert ei.value.kind.value == "transient" and "timeout" in str(ei.value) and time.time() - t0 < 15
-    assert not h.alive()
+    assert not h.alive() and not ei.value.stalled              # it was ready: a normal transient, retried
 
 
 def test_crash_is_transient(tmp_path, monkeypatch):
@@ -115,5 +115,6 @@ def test_no_ready_within_startup_cap_is_transient_and_killed(tmp_path, monkeypat
     with pytest.raises(EngineError) as ei:
         h.run(req(tmp_path), tmp_path / "wd", 30, lambda f, line: None)
     assert ei.value.kind == ErrorKind.transient and "startup timeout" in ei.value.message
+    assert ei.value.stalled and "never became ready" in ei.value.message and "last output" in ei.value.message
     assert time.time() - t0 < 10
     assert h.proc.poll() is not None and not (psutil.pid_exists(h.pid) and psutil.Process(h.pid).status() != "zombie")

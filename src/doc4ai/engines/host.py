@@ -12,7 +12,7 @@ import threading
 import time
 from pathlib import Path
 
-from doc4ai import paths, procs
+from doc4ai import gpu, paths, procs
 from doc4ai.engines.base import EngineCancelled, EngineError
 from doc4ai.models import ConvertOptions, ErrorKind, ProgressCb
 
@@ -146,7 +146,12 @@ class RunnerHost:
         tail = "".join(self._tail)
         oom = _is_oom_text(tail)
         code = self.proc.returncode if self.proc else None
-        raise EngineError(ErrorKind.transient, f"{why} (code {code}): {tail[-500:]}", oom=oom)
+        hint = gpu.memory_hint() if oom else ""
+        raise EngineError(ErrorKind.transient, f"{why} (code {code}): {tail[-500:]}{hint}", oom=oom)
+
+    def _last_log(self, n: int = 3) -> str:
+        lines = [ln.strip() for ln in self._tail if ln.strip() and _parse(ln)[0] is None]
+        return " | ".join(lines[-n:])[-400:]
 
     def _check_cancel(self, cancel: threading.Event | None) -> None:
         if cancel is not None and cancel.is_set():
@@ -170,8 +175,12 @@ class RunnerHost:
                 if kind is None:
                     on_progress(-1.0, line.rstrip("\r\n"))
             if time.monotonic() > deadline:
+                hint = gpu.memory_hint()     # measured before the kill frees the runner's share
+                last = self._last_log()
                 self.kill()
-                raise EngineError(ErrorKind.transient, f"startup timeout after {self.startup_timeout_s:.0f}s")
+                raise EngineError(ErrorKind.transient,
+                                  f"startup timeout after {self.startup_timeout_s:.0f}s: the engine never became "
+                                  f"ready (last output: {last or 'none'}){hint}", stalled=True)
 
     def run(self, request: dict, workdir: Path, timeout_s: float, on_progress: ProgressCb,
             cancel: threading.Event | None = None) -> dict:
@@ -222,8 +231,9 @@ class RunnerHost:
                 self._check_cancel(cancel)
                 self._raise_dead("runner exited")
             if time.monotonic() > deadline:
+                hint = gpu.memory_hint()
                 self.kill()
-                raise EngineError(ErrorKind.transient, f"timeout after {timeout_s:.0f}s")
+                raise EngineError(ErrorKind.transient, f"timeout after {timeout_s:.0f}s{hint}")
             if not line:
                 continue
             kind, payload = _parse(line)
@@ -239,7 +249,7 @@ class RunnerHost:
                 except ValueError:                   # unknown kind from a runner: treat as an engine failure
                     kind_e, msg = ErrorKind.engine, f"[runner error kind {kind_s!r}] {msg}"
                 oom = kind_e == ErrorKind.transient and _is_oom_text(msg)
-                raise EngineError(kind_e, msg, oom=oom)
+                raise EngineError(kind_e, msg + (gpu.memory_hint() if oom else ""), oom=oom)
             elif kind is None:
                 on_progress(-1.0, line.rstrip("\r\n"))   # log line, fraction -1 means "no progress info"
 
